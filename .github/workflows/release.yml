@@ -110,35 +110,27 @@ jobs:
           name: release-apk
           path: ./apk-output
 
-      - name: 检查下载的文件
-        id: apk
+      - name: 检查 APK 并计算 MD5
+        id: md5
         run: |
           echo "当前目录: $(pwd)"
           echo "apk-output 内容:"
-          ls -la ./apk-output/ 2>/dev/null || echo "目录为空或不存在"
+          ls -la ./apk-output/
           echo ""
           # 查找 APK 文件
-          APK_FILE=$(find ./apk-output -name "*.apk" 2>/dev/null | head -1)
-          if [ -z "$APK_FILE" ]; then
+          APK_FILE=$(find ./apk-output -name "*.apk" | head -1)
+          if [ -z "$APK_FILE" ] || [ ! -f "$APK_FILE" ]; then
             echo "错误: 未找到 APK 文件!"
-            echo "搜索范围:"
-            find . -name "*.apk" 2>/dev/null || echo "整个目录也没有 APK"
+            ls -la ./apk-output/
             exit 1
           fi
           echo "找到 APK: $APK_FILE"
+          echo "文件大小: $(wc -c < "$APK_FILE") bytes"
+          MD5=$(md5 "$APK_FILE" | awk '{print $NF}')
+          echo "MD5: $MD5"
           echo "path=$APK_FILE" >> $GITHUB_OUTPUT
-
-      - name: 计算 MD5
-        id: md5
-        run: |
-          APK_FILE="${{ steps.apk.outputs.path }}"
-          echo "计算 MD5: $APK_FILE"
-          MD5=$(md5 "$APK_FILE" 2>/dev/null | awk '{print $NF}')
-          SIZE=$(wc -c < "$APK_FILE" 2>/dev/null || stat -f%z "$APK_FILE" 2>/dev/null || stat -c%s "$APK_FILE" 2>/dev/null)
-          echo "md5=$MD5"   >> $GITHUB_OUTPUT
-          echo "size=$SIZE" >> $GITHUB_OUTPUT
-          echo "✅ MD5: $MD5"
-          echo "✅ SIZE: $SIZE bytes"
+          echo "md5=$MD5" >> $GITHUB_OUTPUT
+          echo "size=$(wc -c < "$APK_FILE")" >> $GITHUB_OUTPUT
 
       - name: 生成 version-info.json
         run: |
