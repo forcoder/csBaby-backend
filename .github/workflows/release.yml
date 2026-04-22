@@ -126,7 +126,8 @@ jobs:
           fi
           echo "找到 APK: $APK_FILE"
           echo "文件大小: $(wc -c < "$APK_FILE") bytes"
-          MD5=$(md5 "$APK_FILE" | awk '{print $NF}')
+          # macOS md5 输出格式: MD5 (file) = hash
+          MD5=$(md5 "$APK_FILE" | sed 's/.*= //')
           echo "MD5: $MD5"
           echo "path=$APK_FILE" >> $GITHUB_OUTPUT
           echo "md5=$MD5" >> $GITHUB_OUTPUT
