@@ -19,7 +19,7 @@ jobs:
   build-debug:
     name: Build Debug APK
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: 检出代码
@@ -90,10 +90,13 @@ jobs:
       - name: 构建 Debug APK
         env:
           CI: true
-          GRADLE_OPTS: "-Xmx2048m -Dorg.gradle.daemon=false"
         run: |
-          ./gradlew assembleDebug --no-daemon -PskipVersionIncrement -PskipUpload \
-            -Dorg.gradle.jvmargs="-Xmx2048m -Xms256m" \
+          ./gradlew assembleDebug --no-daemon \
+            -PskipVersionIncrement -PskipUpload \
+            -Pkotlin.incremental=false \
+            -Pksp.incremental=false \
+            -Dorg.gradle.jvmargs="-Xmx1536m -Xms256m" \
+            --no-build-cache \
             --stacktrace
 
       - name: 读取最终版本（构建后）
