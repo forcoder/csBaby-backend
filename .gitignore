@@ -1,0 +1,49 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android Studio
+*.iml
+.idea/
+local.properties
+
+# Build outputs
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Node
+node_modules/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup
+*.bak
+*.backup
+*.ab
+
+# Local config
+local.properties
+secrets/
+credentials/
+
+# Build scripts (local only)
+clean-cache.bat
+install-sdk.bat
+install-android-sdk.bat
+
+# Disabled sources (old code)
+app/_disabled_sources/
+
+# Temporary files
+*.tmp
+*.swp
+*~
+graphify
