@@ -31,19 +31,6 @@ jobs:
           distribution: 'microsoft'
           cache: gradle
 
-- name: 设置 Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: 设置 JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'microsoft'
-          cache: gradle
-
   # ─────────────────────────────────────────
   # Job 2: 单元测试
   # ─────────────────────────────────────────
