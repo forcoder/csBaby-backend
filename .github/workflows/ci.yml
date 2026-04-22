@@ -17,8 +17,8 @@ jobs:
   # ─────────────────────────────────────────
   lint:
     name: Lint & Code Quality
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: macos-latest
+    timeout-minutes: 20
 
     steps:
       - name: 检出代码
@@ -48,7 +48,10 @@ jobs:
       - name: 运行 Android Lint
         env:
           CI: true
-        run: ./gradlew lint --no-daemon -PskipVersionIncrement -PskipUpload -Dorg.gradle.jvmargs="-Xmx2048m -Xms256m"
+          GRADLE_OPTS: "-Xmx2048m"
+        run: |
+          ./gradlew lint --no-daemon -PskipVersionIncrement -PskipUpload \
+            -Dorg.gradle.jvmargs="-Xmx2048m -Xms512m"
 
       - name: 上传 Lint 报告
         uses: actions/upload-artifact@v4
@@ -63,8 +66,8 @@ jobs:
   # ─────────────────────────────────────────
   unit-test:
     name: Unit Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: macos-latest
+    timeout-minutes: 25
     needs: lint
 
     steps:
@@ -94,7 +97,10 @@ jobs:
       - name: 运行单元测试
         env:
           CI: true
-        run: ./gradlew test --no-daemon -PskipVersionIncrement -PskipUpload -Dorg.gradle.jvmargs="-Xmx2048m -Xms256m"
+          GRADLE_OPTS: "-Xmx2048m"
+        run: |
+          ./gradlew test --no-daemon -PskipVersionIncrement -PskipUpload \
+            -Dorg.gradle.jvmargs="-Xmx2048m -Xms512m"
 
       - name: 上传测试报告
         uses: actions/upload-artifact@v4
