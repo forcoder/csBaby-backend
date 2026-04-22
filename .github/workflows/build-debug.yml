@@ -50,6 +50,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      # 生成 Android debug keystore
+      - name: 生成 Debug Keystore
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            echo "生成 debug.keystore..."
+            keytool -genkeypair -v -keystore ~/.android/debug.keystore \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
       - name: 读取当前版本
         id: version
         run: |
