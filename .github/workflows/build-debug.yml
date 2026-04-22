@@ -88,8 +88,12 @@ jobs:
           echo "🚀 版本升级: v$CUR_NAME ($CUR_CODE) → v$NEW_NAME ($NEW_CODE)"
 
       - name: 构建 Debug APK
+        env:
+          CI: true
+          GRADLE_OPTS: "-Xmx2048m -Dorg.gradle.daemon=false"
         run: |
           ./gradlew assembleDebug --no-daemon -PskipVersionIncrement -PskipUpload \
+            -Dorg.gradle.jvmargs="-Xmx2048m -Xms256m" \
             --stacktrace
 
       - name: 读取最终版本（构建后）

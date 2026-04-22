@@ -46,7 +46,9 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: 运行 Android Lint
-        run: ./gradlew lint --no-daemon -PskipVersionIncrement -PskipUpload
+        env:
+          CI: true
+        run: ./gradlew lint --no-daemon -PskipVersionIncrement -PskipUpload -Dorg.gradle.jvmargs="-Xmx2048m -Xms256m"
 
       - name: 上传 Lint 报告
         uses: actions/upload-artifact@v4
@@ -90,7 +92,9 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: 运行单元测试
-        run: ./gradlew test --no-daemon -PskipVersionIncrement -PskipUpload
+        env:
+          CI: true
+        run: ./gradlew test --no-daemon -PskipVersionIncrement -PskipUpload -Dorg.gradle.jvmargs="-Xmx2048m -Xms256m"
 
       - name: 上传测试报告
         uses: actions/upload-artifact@v4
