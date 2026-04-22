@@ -81,6 +81,7 @@ jobs:
           CI: true
           GRADLE_OPTS: "-Xmx2048m -XX:+HeapDumpOnOutOfMemoryError"
         run: |
+          chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon \
             -PskipVersionIncrement -PskipUpload \
             -Pkotlin.incremental=false \
