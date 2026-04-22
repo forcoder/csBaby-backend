@@ -34,7 +34,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            // release 不签名，CI 中只构建 debug APK
         }
     }
 
