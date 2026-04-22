@@ -4,6 +4,12 @@ on:
   push:
     branches: [ main, develop ]
   workflow_dispatch:
+
+# 添加写入权限以便推送版本号
+permissions:
+  contents: write
+
+jobs:
     inputs:
       skip_version_increment:
         description: '跳过版本号递增（仅构建不升版本）'
