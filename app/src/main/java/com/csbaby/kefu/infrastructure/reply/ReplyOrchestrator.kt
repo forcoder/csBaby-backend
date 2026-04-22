@@ -324,6 +324,12 @@ class ReplyOrchestrator @Inject constructor(
     /**
      * Search knowledge base rules using hybrid search (keyword + semantic).
      * Supports multiple search modes based on user preference.
+     * 
+     * Search strategy:
+     * 1. Always perform keyword search in keyword field
+     * 2. If semantic search enabled, also do hybrid/semantic search
+     * 3. Also search in reply templates, categories, and target names
+     * 4. Merge and deduplicate all results
      */
     suspend fun searchKnowledgeRules(
         query: String,
@@ -347,51 +353,73 @@ class ReplyOrchestrator @Inject constructor(
                 else -> HybridSearchEngine.SearchMode.HYBRID
             }
             
-            // Use hybrid search if enabled
-            val results = if (preferences.semanticSearchEnabled) {
-                knowledgeBaseManager.hybridSearch(
-                    query = query,
-                    context = null,
-                    mode = searchMode
+            // 1. Always perform keyword search in keyword field (most reliable)
+            val keywordSearchResults = knowledgeBaseManager.searchRulesByKeyword(query, limit = 20).map { rule ->
+                KnowledgeBaseManager.HybridSearchResult(
+                    rule = rule,
+                    keywordScore = 1.0f,
+                    semanticScore = 0f,
+                    combinedScore = 1.0f,
+                    matchedText = null,
+                    matchType = com.csbaby.kefu.infrastructure.search.SearchType.KEYWORD
                 )
-            } else {
-                // Fallback to keyword-only search
-                knowledgeBaseManager.searchRulesByKeyword(query, limit = 10).map { rule ->
-                    KnowledgeBaseManager.HybridSearchResult(
-                        rule = rule,
-                        keywordScore = 1.0f,
-                        semanticScore = 0f,
-                        combinedScore = 1.0f,
-                        matchedText = null,
-                        matchType = com.csbaby.kefu.infrastructure.search.SearchType.KEYWORD
-                    )
+            }
+            Log.d(TAG, "Keyword search found ${keywordSearchResults.size} results")
+            
+            // 2. If semantic search enabled, also do hybrid/semantic search
+            val semanticSearchResults = if (preferences.semanticSearchEnabled) {
+                try {
+                    knowledgeBaseManager.hybridSearch(
+                        query = query,
+                        context = null,
+                        mode = searchMode
+                    ).also { results ->
+                        Log.d(TAG, "Semantic/hybrid search found ${results.size} results")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Semantic search failed, falling back to keyword-only", e)
+                    emptyList()
                 }
+            } else {
+                emptyList()
             }
             
-            // 同时搜索回复模板（与知识库页面的搜索功能一致）
-            val templateMatchedRules = knowledgeBaseManager.getAllRules()
-                .first()
-                .filter { rule ->
-                    rule.replyTemplate.contains(query, ignoreCase = true) ||
-                        rule.category.contains(query, ignoreCase = true) ||
-                        rule.targetNames.any { it.contains(query, ignoreCase = true) }
-                }
-                .map { rule ->
-                    KnowledgeBaseManager.HybridSearchResult(
-                        rule = rule,
-                        keywordScore = 0f,
-                        semanticScore = 0f,
-                        combinedScore = 0.5f,  // 回复模板匹配给一个中等评分
-                        matchedText = null,
-                        matchType = com.csbaby.kefu.infrastructure.search.SearchType.KEYWORD
-                    )
-                }
+            // 3. Also search in reply templates, categories, and target names
+            val templateMatchedRules = try {
+                knowledgeBaseManager.getAllRules()
+                    .first()
+                    .filter { rule ->
+                        // Skip rules that already matched via keyword search
+                        keywordSearchResults.none { it.rule.id == rule.id } &&
+                        (rule.replyTemplate.contains(query, ignoreCase = true) ||
+                            rule.category.contains(query, ignoreCase = true) ||
+                            rule.targetNames.any { it.contains(query, ignoreCase = true) })
+                    }
+                    .map { rule ->
+                        KnowledgeBaseManager.HybridSearchResult(
+                            rule = rule,
+                            keywordScore = 0f,
+                            semanticScore = 0f,
+                            combinedScore = 0.6f,  // 回复模板匹配给一个中等评分
+                            matchedText = null,
+                            matchType = com.csbaby.kefu.infrastructure.search.SearchType.KEYWORD
+                        )
+                    }
+                    .also { results ->
+                        Log.d(TAG, "Template/category/target search found ${results.size} results")
+                    }
+            } catch (e: Exception) {
+                Log.e(TAG, "Template search failed", e)
+                emptyList()
+            }
 
-            // 合并关键词匹配和回复模板匹配，去重并按评分排序
-            val allResults = (results + templateMatchedRules)
+            // 4. Merge all results, deduplicate and sort by score
+            val allResults = (keywordSearchResults + semanticSearchResults + templateMatchedRules)
                 .distinctBy { it.rule.id }
                 .sortedByDescending { it.combinedScore }
                 .take(15)
+
+            Log.d(TAG, "Total merged results: ${allResults.size}")
 
             allResults.map { result ->
                 FloatingWindowService.KnowledgeRuleItem(
