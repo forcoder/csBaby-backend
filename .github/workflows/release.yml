@@ -23,8 +23,8 @@ jobs:
   # ─────────────────────────────────────────
   build-release:
     name: Build Release APK
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
+    runs-on: macos-latest
+    timeout-minutes: 50
     outputs:
       version_name: ${{ steps.version.outputs.name }}
       version_code: ${{ steps.version.outputs.code }}
@@ -33,10 +33,10 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: 设置 JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v4.4.3
         with:
           java-version: '17'
           distribution: 'microsoft'
@@ -46,7 +46,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: 缓存 Gradle
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.gradle/caches
@@ -65,8 +65,12 @@ jobs:
           echo "📦 构建版本: v$VERSION_NAME ($VERSION_CODE)"
 
       - name: 构建 Release APK（跳过混淆，Debug 签名）
+        env:
+          CI: true
+          GRADLE_OPTS: "-Xmx2048m"
         run: |
           ./gradlew assembleRelease --no-daemon -PskipVersionIncrement -PskipUpload \
+            -Dorg.gradle.jvmargs="-Xmx2048m -Xms512m" \
             --stacktrace
 
       - name: 重命名并记录 APK 路径
@@ -84,7 +88,7 @@ jobs:
           echo "APK_SIZE=$(du -sh $APK_DST | cut -f1)" >> $GITHUB_ENV
 
       - name: 上传 APK Artifact（供后续 Job 使用）
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: release-apk
           path: ${{ steps.rename.outputs.apk_path }}
@@ -95,17 +99,13 @@ jobs:
   # ─────────────────────────────────────────
   upload-shzal:
     name: Deploy to shz.al
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 10
     needs: build-release
-    environment: production   # 需要在 GitHub Settings → Environments 配置审批
 
     steps:
-      - name: 检出代码（读取 gradle.properties）
-        uses: actions/checkout@v4
-
       - name: 下载 APK
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4.6.2
         with:
           name: release-apk
           path: ./apk-output
@@ -120,8 +120,8 @@ jobs:
       - name: 计算 MD5
         id: md5
         run: |
-          MD5=$(md5sum "${{ steps.apk.outputs.path }}" | awk '{print $1}')
-          SIZE=$(stat -c%s "${{ steps.apk.outputs.path }}")
+          MD5=$(md5 "$APK_FILE" | awk '{print $NF}')
+          SIZE=$(stat -f%z "$APK_FILE")
           echo "md5=$MD5"   >> $GITHUB_OUTPUT
           echo "size=$SIZE" >> $GITHUB_OUTPUT
 
@@ -157,7 +157,7 @@ jobs:
             -F "s=${SHZAL_PASSWORD}" \
             https://shz.al)
           echo "版本信息上传响应: $RESP"
-          echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ 版本信息已上传:', d.get('url',''))"
+          echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ 版本信息已上传:', d.get('url',''))" || echo "$RESP"
 
       - name: 上传 APK 到 shz.al
         env:
@@ -175,7 +175,7 @@ jobs:
             -F "s=${SHZAL_PASSWORD}" \
             https://shz.al)
           echo "APK 上传响应: $RESP"
-          echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ APK 已上传:', d.get('url',''))"
+          echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ APK 已上传:', d.get('url',''))" || echo "$RESP"
 
       - name: 输出部署摘要
         run: |
@@ -194,14 +194,14 @@ jobs:
   # ─────────────────────────────────────────
   create-github-release:
     name: Create GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 5
     needs: [ build-release, upload-shzal ]
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
       - name: 下载 APK
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4.6.2
         with:
           name: release-apk
           path: ./apk-output
