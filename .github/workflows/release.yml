@@ -111,7 +111,7 @@ jobs:
           path: ./apk-output
 
       - name: 检查 APK 并计算 MD5
-        id: md5
+        id: apk
         run: |
           echo "当前目录: $(pwd)"
           echo "apk-output 内容:"
