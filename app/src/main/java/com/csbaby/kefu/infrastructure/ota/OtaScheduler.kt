@@ -123,23 +123,32 @@ class OtaScheduler @Inject constructor(
      */
     suspend fun getNextCheckTime(): String? {
         return try {
-            val workInfos = workManager.getWorkInfosByTag(WORK_TAG).await()
-            
-            workInfos
-                .firstOrNull { it.state == WorkInfo.State.ENQUEUED }
-                ?.nextScheduleTimeMillis
-                ?.let { nextRunTime ->
-                    if (nextRunTime > 0) {
-                        val nextRunHours = (nextRunTime - System.currentTimeMillis()) / (1000 * 60 * 60)
-                        if (nextRunHours > 0) {
-                            "约${nextRunHours.toInt()}小时后"
-                        } else {
-                            "即将进行"
-                        }
-                    } else {
-                        null
-                    }
+            // 使用 withContext + ListenableFuture.get() 代替 await()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val future = workManager.getWorkInfosByTag(WORK_TAG)
+                val workInfos = try {
+                    future.get(10, java.util.concurrent.TimeUnit.SECONDS)
+                } catch (e: Exception) {
+                    Timber.e(e, "获取 WorkInfo 失败")
+                    null
                 }
+                
+                workInfos
+                    ?.firstOrNull { it.state == WorkInfo.State.ENQUEUED }
+                    ?.nextScheduleTimeMillis
+                    ?.let { nextRunTime ->
+                        if (nextRunTime > 0) {
+                            val nextRunHours = (nextRunTime - System.currentTimeMillis()) / (1000 * 60 * 60)
+                            if (nextRunHours > 0) {
+                                "约${nextRunHours.toInt()}小时后"
+                            } else {
+                                "即将进行"
+                            }
+                        } else {
+                            null
+                        }
+                    }
+            }
         } catch (e: Exception) {
             Timber.e(e, "获取下次检查时间失败")
             null

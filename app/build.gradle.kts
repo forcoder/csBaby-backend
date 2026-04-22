@@ -56,17 +56,6 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
-
-    lint {
-        // 使用 lint baseline 来忽略已知的 lint 警告，逐步修复
-        baseline = file("lint-baseline.xml")
-        // CI 环境中将 warningsAsErrors 设为 false，避免 lint warnings 导致构建失败
-        warningsAsErrors = false
-        // 忽略一些不影响编译的警告类型
-        disable += "NotInvokedByName"
-        disable += "UnusedParameter"
-        disable += "UnusedVariable"
-    }
 }
 
 kapt {

@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.csbaby.kefu.BuildConfig
 import com.csbaby.kefu.data.model.OtaUpdate
@@ -226,7 +227,7 @@ class OtaManager @Inject constructor(
         }
         
         val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-        context.registerReceiver(downloadReceiver, filter)
+        ContextCompat.registerReceiver(context, downloadReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
     
     /**

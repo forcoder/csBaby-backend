@@ -1,4 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<lint>
-    <!-- 初始 baseline 文件，后续通过 gradlew updateLintBaseline 更新 -->
-</lint>
