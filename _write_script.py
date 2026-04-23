@@ -2,11 +2,10 @@ import os
 
 err_log = "'错误: $_'"
 
-content = f'''# csBaby - Auto Build and Upload to shz.al
-param(
-    [string]$Password = 'Abc@0987',
-    [string]$ExpireDays = '7d'
-)
+content = '''# csBaby - Auto Build and Upload to shz.al
+# 使用方式：设置环境变量 SHZAL_PASSWORD 后运行
+$Password = $env:SHZAL_PASSWORD
+$ExpireDays = '7d'
 $ErrorActionPreference = 'Stop'
 $ApiBaseUrl = 'https://shz.al'
 $VersionFileName = 'csBabyLog'
@@ -31,7 +30,7 @@ function Get-VersionInfo {{
     $versionCode = $null
     $versionName = $null
     foreach ($line in $lines) {{
-        if ($line -match 'APP_VERSION_CODE=(\\d+)') {{
+        if ($line -match 'APP_VERSION_CODE=(\d+)') {{
             $versionCode = [int]$matches[1]
         }}
         if ($line -match 'APP_VERSION_NAME=(.+)') {{
@@ -101,7 +100,7 @@ function Curl-Delete {{
 function Curl-Upload {{
     param([string]$Name, [string]$Content, [byte[]]$BinaryData, [string]$Filename, [string]$ExpireTime)
     Curl-Delete -Name $Name
-    $tempFile = [System.IO.Path]::GetTempFileName()
+    $tempFile = [System.IO.File]::GetTempFileName()
     $curlArgs = @('-s', '-X', 'POST', '-F', "n=$Name", '-F', "e=$ExpireTime")
     if ($BinaryData) {{
         [System.IO.File]::WriteAllBytes($tempFile, $BinaryData)

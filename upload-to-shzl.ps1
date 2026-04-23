@@ -1,8 +1,9 @@
 # csBaby - Auto Build and Upload to shz.al
-param(
-    [string]$Password = 'Abc@0987',
-    [string]$ExpireDays = '7d'
-)
+# 使用方式：设置环境变量 SHZAL_PASSWORD 后运行
+#   Windows: $env:SHZAL_PASSWORD="your_password"; .\upload-to-shzl.ps1
+#   或直接在系统环境变量中设置 SHZAL_PASSWORD
+$Password = $env:SHZAL_PASSWORD
+$ExpireDays = '7d'
 $ErrorActionPreference = 'Stop'
 $ApiBaseUrl = 'https://shz.al'
 $VersionFileName = 'csBabyLog'
@@ -60,18 +61,10 @@ function Save-VersionInfo {
 function Increment-Version {
     param($CurrentVersionCode, $CurrentVersionName)
     $newVersionCode = $CurrentVersionCode + 1
-    # 正确解析和递增版本号
     $parts = $CurrentVersionName -split '\.'
-    if ($parts.Length -ge 3) {
-        $major = [int]$parts[0]
-        $minor = [int]$parts[1]
-        $patch = [int]$parts[2]
-        $patch++
-        $newVersionName = "$major.$minor.$patch"
-    } else {
-        # 如果版本格式不正确，使用默认值
-        $newVersionName = "1.1.62"
-    }
+    $patch = if ($parts.Length -gt 2) { [int]$parts[2] } else { 0 }
+    $patch++
+    $newVersionName = "$parts[0].$parts[1].$patch"
     Write-Log "版本递增: v$CurrentVersionName ($CurrentVersionCode) -> v$newVersionName ($newVersionCode)" -Level 'SUCCESS'
     return @{ VersionCode = $newVersionCode; VersionName = $newVersionName }
 }
@@ -105,7 +98,7 @@ function Curl-Delete {
 function Curl-Upload {
     param([string]$Name, [string]$Content, [byte[]]$BinaryData, [string]$Filename, [string]$ExpireTime)
     Curl-Delete -Name $Name
-    $tempFile = [System.IO.Path]::GetTempFileName()
+    $tempFile = [System.IO.File]::GetTempFileName()
     $curlArgs = @('-s', '-X', 'POST', '-F', "n=$Name", '-F', "e=$ExpireTime")
     if ($BinaryData) {
         [System.IO.File]::WriteAllBytes($tempFile, $BinaryData)
@@ -145,8 +138,12 @@ try {
     $versionInfo = Increment-Version -CurrentVersionCode $currentVersion.VersionCode -CurrentVersionName $currentVersion.VersionName
     Save-VersionInfo -VersionCode $versionInfo.VersionCode -VersionName $versionInfo.VersionName
     Write-Log "新版本: v$($versionInfo.VersionName) ($($versionInfo.VersionCode))" -Level 'SUCCESS'
-    Write-Log '跳过编译步骤，使用现有的APK文件...' -Level 'INFO'
-    Write-Log 'APK准备完成' -Level 'SUCCESS'
+    if (Test-Path 'app\build\outputs\apk') { Remove-Item 'app\build\outputs\apk' -Recurse -Force }
+    Write-Log '正在打包 APK...'
+    $gradleCmd = if (Test-Path 'gradlew.bat') { '.\gradlew.bat' } else { 'gradlew' }
+    & $gradleCmd assembleDebug --no-daemon -q
+    if ($LASTEXITCODE -ne 0) { throw 'APK打包失败' }
+    Write-Log 'APK打包完成' -Level 'SUCCESS'
     if (-not (Test-Path $ApkPath)) { throw 'APK不存在' }
     $apkSize = (Get-Item $ApkPath).Length
     $apkMd5 = Get-FileMD5 $ApkPath
@@ -170,6 +167,6 @@ try {
     Write-Log '版本信息: https://shz.al/~csBabyLog' -Level 'SUCCESS'
     Write-Log 'APK下载: https://shz.al/~csBabyApk' -Level 'SUCCESS'
 } catch {
-    Write-Log '错误: $_' -Level 'ERROR'
+    Write-Log "错误: $_" -Level 'ERROR'
     exit 1
 }

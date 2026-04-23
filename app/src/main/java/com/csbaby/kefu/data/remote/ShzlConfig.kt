@@ -30,8 +30,11 @@ object ShzlConfig {
     
     /**
      * 上传密码
+     * 警告：请勿在代码中硬编码密码！
+     * 本地构建时可通过环境变量 SHZAL_PASSWORD 传入
+     * GitHub Actions 使用 secrets.SHZAL_PASSWORD
      */
-    const val UPLOAD_PASSWORD = "Abc@0987"
+    const val UPLOAD_PASSWORD = "PLACEHOLDER_SET_SHZAL_PASSWORD"
     
     /**
      * 过期时间（7天）

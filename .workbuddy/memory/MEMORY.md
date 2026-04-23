@@ -28,6 +28,15 @@
 
 - 2026-04-06：悬浮回复现已改为"发送成功后再学习主人风格"：`FloatingWindowService` 会在自动发送成功后调用 `ReplyOrchestrator.recordFinalReply()` 写入真实采用的回复，`StyleLearningEngine` 则结合本地文本特征与最近回复的 AI 深度分析，持续更新正式度/热情度/专业度、长度偏好和常用短语；悬浮窗中的建议回复标题与元信息也会按 `AI` / `规则` 显示对应图标与来源文案。
 
+- 2026-04-23（更新）：敏感信息管理重构：
+  - 已创建 `.env.example` 环境变量模板文件
+  - `upload-to-shzl.py` 和 `upload-to-shzl.ps1` 密码改为环境变量 `SHZAL_PASSWORD`
+  - `ShzlConfig.kt` 中密码改为 placeholder
+  - `.gitignore` 已添加 `.env` 等环境变量文件
+  - GitHub Actions workflow (`release.yml`) 已正确使用 `secrets.SHZAL_PASSWORD`
+  - 已创建 `cleanup-git-history.ps1` 脚本用于清除 Git 历史中的敏感信息
+  - ⚠️ GitHub 历史清理需要手动执行（重写历史，危险操作）
+
 
 
 

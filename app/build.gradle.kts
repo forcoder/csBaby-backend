@@ -1,142 +1,131 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("com.google.devtools.ksp")
-    id("org.jetbrains.kotlin.kapt")
-    id("com.google.dagger.hilt.android")
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'kotlin-kapt'
+    id 'com.google.dagger.hilt.android'
 }
 
 android {
-    namespace = "com.csbaby.kefu"
-    compileSdk = 34
+    namespace 'com.csbaby.kefu'
+    compileSdk 34
 
     defaultConfig {
-        applicationId = "com.csbaby.kefu"
-        minSdk = 26
-        targetSdk = 34
-        versionCode = project.property("APP_VERSION_CODE").toString().toInt()
-        versionName = project.property("APP_VERSION_NAME").toString()
+        applicationId "com.csbaby.kefu"
+        minSdk 24
+        targetSdk 34
+        versionCode 75
+        versionName "1.1.69"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
-            useSupportLibrary = true
+            useSupportLibrary true
         }
     }
 
     buildTypes {
-        debug {
-            isDebuggable = true
-            signingConfig = signingConfigs.getByName("debug")
-        }
         release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-            signingConfig = signingConfigs.getByName("debug")
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
-
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
-
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = '1.8'
     }
-
-    signingConfigs {
-        getByName("debug") {
-            // Android Studio 自动创建的 debug keystore
-            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-    }
-
     buildFeatures {
-        compose = true
-        buildConfig = true
+        compose true
     }
-
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.6"
+        kotlinCompilerExtensionVersion '1.5.4'
     }
-
     packaging {
         resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
         }
     }
-}
-
-kapt {
-    correctErrorTypes = true
 }
 
 dependencies {
-    // Core Android
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
-    implementation("androidx.activity:activity-compose:1.8.2")
 
-    // Compose BOM
-    implementation(platform("androidx.compose:compose-bom:2023.10.01"))
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+    implementation 'androidx.activity:activity-compose:1.8.2'
+    implementation platform('androidx.compose:compose-bom:2023.10.01')
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-graphics'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.navigation:navigation-compose:2.7.6'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
+    implementation 'androidx.hilt:hilt-navigation-compose:1.1.0'
 
-    // Navigation
-    implementation("androidx.navigation:navigation-compose:2.7.6")
+    // Hilt dependency injection
+    implementation 'com.google.dagger:hilt-android:2.50'
+    kapt 'com.google.dagger:hilt-android-compiler:2.50'
 
-    // ViewModel
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.6.2")
+    // Retrofit for networking
+    implementation 'com.squareup.retrofit2:retrofit:2.9.0'
+    implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
 
-    // Hilt: kapt handles annotation processing
-    implementation("com.google.dagger:hilt-android:2.50")
-    kapt("com.google.dagger:hilt-compiler:2.50")
-    implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
-    implementation("androidx.hilt:hilt-work:1.1.0")
-    kapt("androidx.hilt:hilt-compiler:1.1.0")
+    // OkHttp for logging/interceptors
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
 
-    // Room: KSP
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
-
-    // DataStore
-    implementation("androidx.datastore:datastore-preferences:1.0.0")
-
-    // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-
-    // Retrofit
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-
-    // Coil for image loading
-    implementation("io.coil-kt:coil-compose:2.5.0")
-
-    // WorkManager for background updates
-    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    // Gson for JSON parsing
+    implementation 'com.google.code.gson:gson:2.10.1'
 
     // Timber for logging
-    implementation("com.jakewharton.timber:timber:5.0.1")
+    implementation 'com.jakewharton.timber:timber:5.0.1'
 
-    // Testing
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2023.10.01"))
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    // Preferences DataStore
+    implementation 'androidx.datastore:datastore-preferences:1.0.0'
+
+    // Coil for image loading
+    implementation 'io.coil-kt:coil-compose:2.5.0'
+
+    // SwipeRefreshLayout
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
+
+    // Testing dependencies
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+    androidTestImplementation platform('androidx.compose:compose-bom:2023.10.01')
+    androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+    debugImplementation 'androidx.compose.ui:ui-test-manifest'
+
+    // Mockito for mocking
+    testImplementation 'org.mockito:mockito-core:5.7.0'
+    testImplementation 'org.mockito.kotlin:mockito-kotlin:5.1.0'
+
+    // Coroutines testing
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
+
+    // Hilt testing
+    androidTestImplementation 'com.google.dagger:hilt-android-testing:2.50'
+    kaptAndroidTest 'com.google.dagger:hilt-android-compiler:2.50'
+
+    // Truth assertions
+    testImplementation 'com.google.truth:truth:1.1.5'
+
+    // Robolectric for unit tests
+    testImplementation 'androidx.test.ext:junit:1.1.5'
+    testImplementation 'org.robolectric:robolectric:4.11.1'
+
+    // Compose testing
+    androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
+    debugImplementation 'androidx.compose.ui:ui-test-manifest'
+
+    // Parameterized tests
+    testImplementation 'org.junit.jupiter:junit-jupiter-params:5.9.3'
+
+    // JSON parsing for API testing
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+
+    // Kapt for annotation processing
+    kapt 'com.google.dagger:hilt-android-compiler:2.50'
 }

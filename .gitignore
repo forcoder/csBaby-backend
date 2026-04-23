@@ -35,6 +35,9 @@ Thumbs.db
 local.properties
 secrets/
 credentials/
+.env
+.env.local
+.env.*.local
 
 # Build scripts (local only)
 clean-cache.bat

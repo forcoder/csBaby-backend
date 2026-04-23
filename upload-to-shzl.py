@@ -8,7 +8,7 @@ import subprocess
 import urllib.request
 import time
 
-PASSWORD = "Abc@0987"
+PASSWORD = os.environ.get("SHZAL_PASSWORD", "")
 EXPIRE_DAYS = "7d"
 API_BASE = "https://shz.al"
 VERSION_FILE = "gradle.properties"
