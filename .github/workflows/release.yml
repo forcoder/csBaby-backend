@@ -17,6 +17,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false   # Release 不允许并发取消
 
+permissions:
+  contents: write
+
 jobs:
   # ─────────────────────────────────────────
   # Job 1: 构建 Release APK
