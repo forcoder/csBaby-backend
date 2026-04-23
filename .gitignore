@@ -4,10 +4,14 @@ build/
 !gradle/wrapper/gradle-wrapper.jar
 *.jar
 *.zip
+graphify-out/
 
 # Android Studio
 *.iml
 .idea/
+.claude/
+.codebuddy/
+.workbuddy/
 local.properties
 
 # Build outputs
@@ -52,3 +56,10 @@ app/_disabled_sources/
 *.swp
 *~
 graphify
+.gradle
+build/
+app/build/
+app/build/
+.gradle/
+app/build/
+gradle/

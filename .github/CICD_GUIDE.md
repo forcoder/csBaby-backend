@@ -18,7 +18,7 @@
 
 | Secret 名称 | 说明 |
 |------------|------|
-| `SHZAL_PASSWORD` | shz.al 上传密码（即当前脚本里的 `Abc@0987`） |
+| `SHZAL_PASSWORD` | shz.al 上传密码（即当前脚本里的 `REMOVED_SHZAL_PASSWORD`） |
 
 > ⚠️ **安全提示**：密码已从脚本中移除，改为从 Secret 读取。请确保不要在代码里硬编码密码。
 
