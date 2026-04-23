@@ -79,7 +79,26 @@ jobs:
           VERSION_NAME=$(grep 'APP_VERSION_NAME' gradle.properties | cut -d'=' -f2)
           echo "name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "code=$VERSION_CODE" >> $GITHUB_OUTPUT
-          echo "📦 构建版本: v$VERSION_NAME ($VERSION_CODE)"
+          echo "📦 当前版本: v$VERSION_NAME ($VERSION_CODE)"
+
+      - name: 递增版本号
+        id: bump
+        run: |
+          CUR_CODE=$(grep 'APP_VERSION_CODE' gradle.properties | cut -d'=' -f2)
+          CUR_NAME=$(grep 'APP_VERSION_NAME' gradle.properties | cut -d'=' -f2)
+          NEW_CODE=$((CUR_CODE + 1))
+          IFS='.' read -ra PARTS <<< "$CUR_NAME"
+          if [ ${#PARTS[@]} -ge 3 ]; then
+            NEW_PATCH=$((PARTS[2] + 1))
+            NEW_NAME="${PARTS[0]}.${PARTS[1]}.$NEW_PATCH"
+          else
+            NEW_NAME="$CUR_NAME"
+          fi
+          sed -i '' "s/APP_VERSION_CODE=.*/APP_VERSION_CODE=$NEW_CODE/" gradle.properties
+          sed -i '' "s/APP_VERSION_NAME=.*/APP_VERSION_NAME=$NEW_NAME/" gradle.properties
+          echo "new_code=$NEW_CODE" >> $GITHUB_OUTPUT
+          echo "new_name=$NEW_NAME" >> $GITHUB_OUTPUT
+          echo "🚀 版本升级: v$CUR_NAME → v$NEW_NAME"
 
       - name: 构建 Release APK（跳过混淆，Debug 签名）
         env:
@@ -112,12 +131,22 @@ jobs:
           else
             APK_SRC="app/build/outputs/apk/release/app-release-unsigned.apk"
           fi
-          APK_NAME="csBaby-v${{ steps.version.outputs.name }}.apk"
+          APK_NAME="csBaby-v${{ steps.bump.outputs.new_name }}.apk"
           APK_DST="app/build/outputs/apk/release/$APK_NAME"
           cp "$APK_SRC" "$APK_DST"
           echo "apk_path=$APK_DST" >> $GITHUB_OUTPUT
           echo "apk_name=$APK_NAME"  >> $GITHUB_OUTPUT
+          echo "new_code=${{ steps.bump.outputs.new_code }}" >> $GITHUB_OUTPUT
+          echo "new_name=${{ steps.bump.outputs.new_name }}" >> $GITHUB_OUTPUT
           echo "APK_SIZE=$(du -sh $APK_DST | cut -f1)" >> $GITHUB_ENV
+
+      - name: 提交版本号变更
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add gradle.properties
+          git diff --cached --quiet || git commit -m "chore: bump version to v${{ steps.bump.outputs.new_name }} (${{ steps.bump.outputs.new_code }) [skip ci]"
+          git push
 
       - name: 上传 APK Artifact（供后续 Job 使用）
         uses: actions/upload-artifact@v4
