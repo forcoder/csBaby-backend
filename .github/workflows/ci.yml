@@ -64,6 +64,23 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: 创建 debug keystore
+        run: |
+          KEYSTORE_DIR="$HOME/.android"
+          mkdir -p "$KEYSTORE_DIR"
+          if [ ! -f "$KEYSTORE_DIR/debug.keystore" ]; then
+            keytool -genkeypair \
+              -v \
+              -keystore "$KEYSTORE_DIR/debug.keystore" \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
       - name: 运行单元测试
         env:
           CI: true
@@ -86,6 +103,6 @@ jobs:
         if: always()
         with:
           name: Unit Test Results
-          path: app/build/test-results/**/*.xml
+          path: app/build/test-results/testDebugUnitTest
           reporter: java-junit
           fail-on-error: false
