@@ -2,17 +2,10 @@
 .gradle/
 build/
 !gradle/wrapper/gradle-wrapper.jar
-*.jar
-*.zip
-graphify-out/
 
 # Android Studio
 *.iml
 .idea/
-.claude/
-.codebuddy/
-.workbuddy/
-local.properties
 
 # Build outputs
 *.apk
@@ -48,18 +41,10 @@ clean-cache.bat
 install-sdk.bat
 install-android-sdk.bat
 
-# Disabled sources (old code)
-app/_disabled_sources/
-
 # Temporary files
 *.tmp
 *.swp
 *~
-graphify
-.gradle
-build/
-app/build/
-app/build/
-.gradle/
-app/build/
-gradle/
+
+# Graphify output
+graphify-out/

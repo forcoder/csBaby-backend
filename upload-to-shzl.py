@@ -76,7 +76,7 @@ def curl_delete(name):
 def curl_upload(name, content=None, filepath=None, filename=None):
     curl_delete(name)
     url = API_BASE
-    
+
     if filepath:
         log(f"Uploading file: {filename} ({os.path.getsize(filepath)} bytes)")
         result = run_curl(
@@ -104,7 +104,7 @@ def curl_upload(name, content=None, filepath=None, filename=None):
         )
         if not filepath:
             os.remove(tmp)
-    
+
     log(f"API: {result[:100]}")
     try:
         obj = json.loads(result)
@@ -117,20 +117,20 @@ def curl_upload(name, content=None, filepath=None, filename=None):
 
 def main():
     log("========== Build and Upload Start ==========")
-    
+
     code, name = get_version()
     log(f"Current: {name} ({code})")
     new_code, new_name = increment_version(code, name)
     save_version(new_code, new_name)
-    
+
     log("Cleaning old build...")
     apk_dir = os.path.dirname(APK_PATH)
     if os.path.exists(apk_dir):
         import shutil
         shutil.rmtree(apk_dir)
-    
+
     log("Building APK...")
-    gradle_cmd = "gradlew.bat" if os.path.exists("gradlew.bat") else "gradlew"
+    gradle_cmd = "./gradlew" if os.path.exists("./gradlew") else "gradlew"
     result = subprocess.run(
         [gradle_cmd, "assembleDebug", "--no-daemon", "-q"],
         shell=True, capture_output=True, text=True
@@ -139,13 +139,13 @@ def main():
         log(f"Build failed: {result.stderr}", "ERROR")
         raise RuntimeError("APK build failed")
     log("APK built", "SUCCESS")
-    
+
     if not os.path.exists(APK_PATH):
         raise RuntimeError(f"APK not found: {APK_PATH}")
     apk_size = os.path.getsize(APK_PATH)
     apk_md5 = file_md5(APK_PATH)
     log(f"APK: {apk_size} bytes, MD5: {apk_md5}")
-    
+
     version_json = {
         "versionCode": new_code,
         "versionName": new_name,
@@ -158,10 +158,10 @@ def main():
     }
     log("[1/2] Uploading version info...")
     curl_upload(VERSION_FNAME, content=json.dumps(version_json, indent=2))
-    
+
     log("[2/2] Uploading APK...")
     curl_upload(APK_FNAME, filepath=APK_PATH, filename="app-debug.apk")
-    
+
     log("========== Complete ==========", "SUCCESS")
     log(f"Version: {API_BASE}/~{VERSION_FNAME}", "SUCCESS")
     log(f"APK: {API_BASE}/~{APK_FNAME}", "SUCCESS")
