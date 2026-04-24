@@ -79,7 +79,7 @@ dependencies {
 
     // Hilt dependency injection
     implementation("com.google.dagger:hilt-android:2.50")
-    kapt("com.google.dagger:hilt-android-compiler:2.50")
+    annotationProcessor("com.google.dagger:hilt-android-compiler:2.50")
 
     // Retrofit for networking
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
@@ -122,7 +122,7 @@ dependencies {
 
     // Hilt testing
     androidTestImplementation("com.google.dagger:hilt-android-testing:2.50")
-    kaptAndroidTest("com.google.dagger:hilt-android-compiler:2.50")
+    androidTestAnnotationProcessor("com.google.dagger:hilt-android-compiler:2.50")
 
     // Truth assertions
     testImplementation("com.google.truth:truth:1.1.5")
