@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import androidx.work.Data
 import com.csbaby.kefu.BuildConfig
 import com.csbaby.kefu.data.repository.OtaRepository
 import dagger.assisted.Assisted
@@ -37,7 +38,7 @@ class OtaUpdateWorker @AssistedInject constructor(
                 
                 if (result.isSuccess) {
                     val update = result.getOrNull()
-                    
+
                     if (update != null && update.needsUpdate(BuildConfig.VERSION_CODE)) {
                         Timber.d("发现新版本: ${update.versionName} (${update.versionCode})")
                         // 这里可以发送通知或存储更新信息
@@ -45,16 +46,17 @@ class OtaUpdateWorker @AssistedInject constructor(
                     } else {
                         Timber.d("当前已是最新版本")
                     }
-                    
+
                     Result.success()
                 } else {
-                    Timber.e("检查更新失败: ${result.exceptionOrNull()?.message}")
-                    Result.failure()
+                    val errorMsg = result.exceptionOrNull()?.message ?: "未知错误"
+                    Timber.e("检查更新失败: $errorMsg")
+                    Result.retry()
                 }
             }
         } catch (e: Exception) {
             Timber.e(e, "OTA更新检查Worker执行失败")
-            Result.failure()
+            Result.retry()
         }
     }
     
