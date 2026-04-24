@@ -47,16 +47,16 @@ class OtaUpdateWorker @AssistedInject constructor(
                         Timber.d("当前已是最新版本")
                     }
 
-                    Result.success()
+                    Result.success(Data.EMPTY)
                 } else {
                     val errorMsg = result.exceptionOrNull()?.message ?: "未知错误"
                     Timber.e("检查更新失败: $errorMsg")
-                    Result.retry()
+                    Result.failure(Data.EMPTY)
                 }
             }
         } catch (e: Exception) {
             Timber.e(e, "OTA更新检查Worker执行失败")
-            Result.retry()
+            Result.failure(Data.EMPTY)
         }
     }
     
