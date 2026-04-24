@@ -57,11 +57,12 @@ class AliyunOssManager(private val context: Context) {
         versionName: String,
         versionCode: Int,
         timestamp: Long,
-        fileMd5: String
+        fileMd5: String?
     ): String {
+        val md5 = fileMd5 ?: "unknown"
         val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
             .format(java.util.Date(timestamp))
-        return "apks/$appName/v${versionName}_$versionCode/$dateStr/${timestamp}_$fileMd5.apk"
+        return "apks/$appName/v${versionName}_$versionCode/$dateStr/${timestamp}_$md5.apk"
     }
 
     /**
@@ -70,7 +71,7 @@ class AliyunOssManager(private val context: Context) {
     fun generatePutSignature(
         objectKey: String,
         contentType: String,
-        contentMd5: String
+        contentMd5: String?
     ): String {
         return "placeholder_signature"
     }
