@@ -82,6 +82,9 @@ dependencies {
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
+    // Hilt WorkManager
+    implementation("androidx.hilt:hilt-work:1.1.0")
+
     // Hilt dependency injection
     implementation("com.google.dagger:hilt-android:2.50")
     annotationProcessor("com.google.dagger:hilt-android-compiler:2.50")

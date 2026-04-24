@@ -179,14 +179,9 @@ class OtaManager @Inject constructor(
                             when (status) {
                                 DownloadManager.STATUS_SUCCESSFUL -> {
                                     // 使用应用专属下载目录获取文件（最可靠，不依赖废弃API）
-                                    var apkFile: File? = null
-                                    _availableUpdate.value?.let { update ->
-                                        val file = getApkFile(update)
-                                        if (file.exists() && file.length() > 0) {
-                                            apkFile = file
-                                        }
-                                    }
-                                    
+                                    val update = _availableUpdate.value
+                                    val apkFile: File? = update?.let { getApkFile(it) }?.takeIf { it.exists() && it.length() > 0 }
+
                                     if (apkFile != null) {
                                         pendingApkFile = apkFile
                                         Log.d(TAG, "下载完成，APK路径: ${apkFile.absolutePath}，大小: ${apkFile.length()} bytes")
