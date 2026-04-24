@@ -5,8 +5,10 @@ import android.content.Context
 import android.content.Intent
 import com.csbaby.kefu.data.local.PreferencesManager
 import com.csbaby.kefu.infrastructure.window.FloatingWindowService
-import dagger.hilt.android.EntryPoint
-import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -30,7 +32,7 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     @EntryPoint
-    @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+    @InstallIn(SingletonComponent::class)
     interface PreferencesManagerEntryPoint {
         fun preferencesManager(): PreferencesManager
     }
