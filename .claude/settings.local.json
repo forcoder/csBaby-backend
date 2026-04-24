@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(gh *)"
+      "Bash(gh *)",
+      "Bash(./gradlew clean *)",
+      "Bash(./gradlew *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
   }
 }

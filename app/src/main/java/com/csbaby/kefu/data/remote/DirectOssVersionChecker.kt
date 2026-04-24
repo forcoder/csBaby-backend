@@ -9,6 +9,10 @@ import com.csbaby.kefu.infrastructure.oss.AliyunOssManager
 class DirectOssVersionChecker(
     private val ossManager: AliyunOssManager
 ) {
+    companion object {
+        const val VERSION_MANIFEST_FILE = "version.json"
+    }
+
     /**
      * 检查OSS上的更新
      */
