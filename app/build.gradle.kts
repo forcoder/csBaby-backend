@@ -52,6 +52,11 @@ android {
     }
 }
 
+// Add Room schema directory configuration
+room {
+    schemaDirectory("$projectDir/schemas")
+}
+
 
 dependencies {
 
