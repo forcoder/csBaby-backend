@@ -52,6 +52,11 @@ android {
     }
 }
 
+// Add Room schema directory configuration
+room {
+    schemaDirectory("$projectDir/schemas")
+}
+
 dependencies {
 
     implementation("androidx.core:core-ktx:1.12.0")
@@ -124,7 +129,6 @@ dependencies {
     testImplementation("com.google.truth:truth:1.1.5")
 
     // Robolectric for unit tests
-    testImplementation("androidx.test.ext:junit:1.1.5")
     testImplementation("org.robolectric:robolectric:4.11.1")
 
     // Compose testing
@@ -136,7 +140,4 @@ dependencies {
 
     // JSON parsing for API testing
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
-
-    // Kapt for annotation processing
-    kapt("com.google.dagger:hilt-android-compiler:2.50")
 }

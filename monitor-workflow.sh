@@ -1,33 +1,88 @@
 #!/bin/bash
 
-echo "=== 监控 GitHub Actions 工作流状态 ==="
-echo "提交哈希: $(git rev-parse --short HEAD)"
-echo "当前分支: $(git branch --show-current)"
+echo "=== GitHub Actions Workflow Monitor ==="
+echo "Started at: $(date)"
 echo ""
 
-# 等待一段时间让工作流开始运行
-echo "等待工作流启动..."
+# Function to check workflow status using curl with timeout
+check_workflow() {
+    echo "Checking for active workflows..."
+
+    # Try direct curl with short timeout
+    response=$(curl -s --connect-timeout 5 \
+                 --max-time 10 \
+                 https://api.github.com/repos/forcoder/msg-monitor/actions/workflows/enhanced-ci.yml/runs?per_page=1)
+
+    if [[ $? -eq 0 ]]; then
+        run_id=$(echo "$response" | grep -o '"id":[0-9]*' | head -1 | cut -d':' -f2)
+        status=$(echo "$response" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+        if [[ -n "$run_id" ]]; then
+            echo "✓ Found workflow run ID: $run_id"
+            echo "Status: $status"
+
+            if [[ "$status" == "completed" ]]; then
+                conclusion=$(echo "$response" | grep -o '"conclusion":"[^"]*"' | head -1 | cut -d'"' -f4)
+                echo "Conclusion: $conclusion"
+                return 0
+            elif [[ "$status" == "failure" ]] || [[ "$status" == "cancelled" ]]; then
+                echo "Workflow failed or was cancelled"
+                return 1
+            else
+                echo "Workflow still running: $status"
+                return 2
+            fi
+        else
+            echo "No active workflow found yet"
+            return 3
+        fi
+    else
+        echo "API call failed, trying alternative method..."
+        return 4
+    fi
+}
+
+# Wait for workflow to start
+echo "Waiting for GitHub Actions to trigger (workflow should start within 30 seconds)..."
 sleep 30
 
-# 尝试获取工作流运行信息
-echo "正在检查最新工作流状态..."
+# Check multiple times
+attempts=0
+max_attempts=15
 
-# 使用简单的循环检查（在实际环境中可能需要更复杂的逻辑）
-for i in {1..20}; do
-    echo "检查第 $i 次..."
+while [[ $attempts -lt $max_attempts ]]; do
+    attempts=$((attempts + 1))
+    echo ""
+    echo "=== Attempt $attempts of $max_attempts ($(date)) ==="
 
-    # 尝试不同的方式来获取工作流状态
-    if command -v gh &> /dev/null; then
-        gh run list --workflow=ci.yml --limit 1 2>/dev/null | head -5 || echo "GitHub CLI 不可用"
-    fi
+    check_workflow
+    result=$?
 
-    # 检查是否有新的构建产物或日志文件
-    if [ -d "app/build" ] && [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
-        echo "✅ APK 构建成功!"
-        break
-    fi
-
-    sleep 60
+    case $result in
+        0)  # Success
+            echo ""
+            echo "🎉 BUILD COMPLETED SUCCESSFULLY!"
+            exit 0
+            ;;
+        1)  # Failure
+            echo ""
+            echo "❌ BUILD FAILED"
+            echo "Check GitHub Actions manually at: https://github.com/forcoder/msg-monitor/actions"
+            exit 1
+            ;;
+        2)  # Still running
+            echo "Still waiting... ($attempts/$max_attempts)"
+            sleep 60
+            ;;
+        3|4)  # No workflow yet or API error
+            echo "Still waiting for workflow to start..."
+            sleep 60
+            ;;
+    esac
 done
 
-echo "监控完成。请检查 GitHub Actions 页面查看最新状态。"
+echo ""
+echo "⚠️  Monitoring timeout reached"
+echo "The workflow may still be running. Please check:"
+echo "   https://github.com/forcoder/msg-monitor/actions"
+exit 1
