@@ -54,7 +54,8 @@ android {
 
 // Add Room schema directory configuration
 room {
-    schemaDirectory("$projectDir/schemas")
+    schemaDirectory("$projectDir/src/main/assets/schemas")
+    includeSourceControlSchemas = false
 }
 
 dependencies {

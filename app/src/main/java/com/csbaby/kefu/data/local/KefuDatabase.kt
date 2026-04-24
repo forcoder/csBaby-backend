@@ -18,7 +18,7 @@ import com.csbaby.kefu.data.local.entity.*
     ],
     version = 4,
 
-    exportSchema = false
+    exportSchema = true
 )
 abstract class KefuDatabase : RoomDatabase() {
     abstract fun appConfigDao(): AppConfigDao
