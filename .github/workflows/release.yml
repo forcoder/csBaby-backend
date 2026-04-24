@@ -217,7 +217,6 @@ jobs:
           cat version-info.json
 
       - name: 上传版本信息到 shz.al
-        if: ${{ secrets.SHZAL_PASSWORD }}
         env:
           SHZAL_PASSWORD: ${{ secrets.SHZAL_PASSWORD }}
         run: |
@@ -263,7 +262,6 @@ jobs:
           fi
 
       - name: 上传 APK 到 shz.al
-        if: ${{ secrets.SHZAL_PASSWORD }}
         env:
           SHZAL_PASSWORD: ${{ secrets.SHZAL_PASSWORD }}
         run: |
