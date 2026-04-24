@@ -46,6 +46,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: Create Room schema directory
+        run: mkdir -p app/src/main/assets/schemas
+
       - name: Run static analysis
         run: ./gradlew lintDebug --no-daemon --stacktrace
 
@@ -88,6 +91,9 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
+
+      - name: Create Room schema directory
+        run: mkdir -p app/src/main/assets/schemas
 
       - name: Run unit tests
         run: |
@@ -149,6 +155,9 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
+
+      - name: Create Room schema directory
+        run: mkdir -p app/src/main/assets/schemas
 
       - name: Validate debug build
         run: ./gradlew assembleDebug --no-daemon --stacktrace
