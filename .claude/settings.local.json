@@ -11,7 +11,9 @@
       "Bash(git stash *)",
       "Bash(echo sdk.dir=C\\\\:\\\\\\\\Users\\\\\\\\13880\\\\\\\\AppData\\\\\\\\Local\\\\\\\\Android\\\\\\\\Sdk *)",
       "Bash(where android *)",
-      "Bash(export ANDROID_HOME=/d/Android/SDK)"
+      "Bash(export ANDROID_HOME=/d/Android/SDK)",
+      "Bash(curl *)",
+      "WebFetch(domain:shz.al)"
     ]
   }
 }
