@@ -217,20 +217,27 @@ jobs:
           cat version-info.json
 
       - name: 上传版本信息到 shz.al
+        if: secrets.SHZAL_PASSWORD != null && secrets.SHZAL_PASSWORD != ''
         env:
           SHZAL_PASSWORD: ${{ secrets.SHZAL_PASSWORD }}
         run: |
           EXPIRE="${{ inputs.expire_days || '7d' }}"
+          echo "🔑 SHZAL_PASSWORD 已设置，长度为: ${#SHZAL_PASSWORD}"
 
-          # 先强制删除旧文件
-          echo "🔄 正在删除旧版本信息文件..."
-          DELETE_RESP=$(curl -s -X DELETE "https://shz.al/~csBabyLog:${SHZAL_PASSWORD}")
+          # 先强制删除旧文件（如果存在）
+          echo "🔄 尝试删除旧版本信息文件..."
+          DELETE_RESP=$(curl -s -X DELETE "https://shz.al/~csBabyLog:${SHZAL_PASSWORD}" || true)
           echo "删除响应: $DELETE_RESP"
 
           # 等待删除完成
-          sleep 2
+          sleep 3
+
+          # 检查是否成功删除（通过尝试获取现有内容）
+          EXISTING_CHECK=$(curl -s -w "%{http_code}" -o /dev/null "https://shz.al/~csBabyLog")
+          echo "现有文件检查HTTP状态码: $EXISTING_CHECK"
 
           # 上传新版本信息
+          echo "📤 上传新版本信息..."
           RESP=$(curl -s -X POST \
             -F "n=csBabyLog" \
             -F "e=${EXPIRE}" \
@@ -240,24 +247,44 @@ jobs:
 
           echo "版本信息上传响应: $RESP"
 
-          # 尝试解析JSON响应
-          echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ 版本信息已上传:', d.get('url',''))" || echo "响应不是有效的JSON: $RESP"
+          # 检查响应类型并处理
+          if echo "$RESP" | grep -q "Error"; then
+            echo "❌ 上传失败: $RESP"
+            # 尝试使用替代方法：直接覆盖
+            ALT_RESP=$(curl -s -X POST \
+              --data-urlencode "n=csBabyLog" \
+              --data-urlencode "e=${EXPIRE}" \
+              --data-urlencode "content@version-info.json" \
+              --data-urlencode "s=${SHZAL_PASSWORD}" \
+              https://shz.al)
+            echo "备用方法响应: $ALT_RESP"
+          else
+            echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ 版本信息已上传:', d.get('url',''))" || echo "响应不是有效的JSON: $RESP"
+          fi
 
       - name: 上传 APK 到 shz.al
+        if: secrets.SHZAL_PASSWORD != null && secrets.SHZAL_PASSWORD != ''
         env:
           SHZAL_PASSWORD: ${{ secrets.SHZAL_PASSWORD }}
         run: |
           EXPIRE="${{ inputs.expire_days || '7d' }}"
+          echo "🔑 SHZAL_PASSWORD 已设置，长度为: ${#SHZAL_PASSWORD}"
 
-          # 先强制删除旧 APK
-          echo "🔄 正在删除旧APK文件..."
-          DELETE_RESP=$(curl -s -X DELETE "https://shz.al/~csBabyApk:${SHZAL_PASSWORD}")
+          # 先检查现有文件
+          echo "🔍 检查现有APK文件..."
+          EXISTING_CHECK=$(curl -s -w "%{http_code}" -o /dev/null "https://shz.al/~csBabyApk")
+          echo "现有文件检查HTTP状态码: $EXISTING_CHECK"
+
+          # 尝试删除旧文件（如果存在）
+          echo "🔄 尝试删除旧APK文件..."
+          DELETE_RESP=$(curl -s -X DELETE "https://shz.al/~csBabyApk:${SHZAL_PASSWORD}" || true)
           echo "删除响应: $DELETE_RESP"
 
           # 等待删除完成
-          sleep 2
+          sleep 3
 
           # 上传新 APK
+          echo "📤 上传新APK..."
           RESP=$(curl -s -X POST \
             -F "n=csBabyApk" \
             -F "e=${EXPIRE}" \
@@ -268,8 +295,21 @@ jobs:
 
           echo "APK 上传响应: $RESP"
 
-          # 尝试解析JSON响应
-          echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ APK 已上传:', d.get('url',''))" || echo "响应不是有效的JSON: $RESP"
+          # 检查响应类型并处理
+          if echo "$RESP" | grep -q "Error"; then
+            echo "❌ APK上传失败: $RESP"
+            # 尝试使用替代方法：直接覆盖
+            ALT_RESP=$(curl -s -X POST \
+              --data-urlencode "n=csBabyApk" \
+              --data-urlencode "e=${EXPIRE}" \
+              --data-urlencode "filename=${{ needs.build-release.outputs.apk_name }}" \
+              --data-urlencode "content@${{ steps.apk.outputs.path }}" \
+              --data-urlencode "s=${SHZAL_PASSWORD}" \
+              https://shz.al)
+            echo "备用方法响应: $ALT_RESP"
+          else
+            echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ APK 已上传:', d.get('url',''))" || echo "响应不是有效的JSON: $RESP"
+          fi
 
       - name: 输出部署摘要
         run: |
