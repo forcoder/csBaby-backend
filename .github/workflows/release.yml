@@ -221,26 +221,40 @@ jobs:
           SHZAL_PASSWORD: ${{ secrets.SHZAL_PASSWORD }}
         run: |
           EXPIRE="${{ inputs.expire_days || '7d' }}"
-          # 先删除旧文件
-          curl -s -X DELETE "https://shz.al/~csBabyLog:${SHZAL_PASSWORD}" || true
-          # 上传新版本信息
+          # 尝试上传新版本信息（如果文件存在会返回409）
           RESP=$(curl -s -X POST \
             -F "n=csBabyLog" \
             -F "e=${EXPIRE}" \
             -F "c=@version-info.json" \
             -F "s=${SHZAL_PASSWORD}" \
             https://shz.al)
+
           echo "版本信息上传响应: $RESP"
-          echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ 版本信息已上传:', d.get('url',''))" || echo "$RESP"
+
+          # 检查是否是409错误（文件已存在）
+          if echo "$RESP" | grep -q "Error 409"; then
+            echo "⚠️  检测到文件已存在，尝试更新..."
+            # 强制覆盖现有文件
+            RESP2=$(curl -s -X POST \
+              -F "n=csBabyLog" \
+              -F "e=${EXPIRE}" \
+              -F "c=@version-info.json" \
+              -F "force=true" \
+              -F "s=${SHZAL_PASSWORD}" \
+              https://shz.al)
+            echo "强制更新响应: $RESP2"
+            RESP="$RESP2"
+          fi
+
+          # 尝试解析JSON响应
+          echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ 版本信息已上传:', d.get('url',''))" || echo "响应不是有效的JSON: $RESP"
 
       - name: 上传 APK 到 shz.al
         env:
           SHZAL_PASSWORD: ${{ secrets.SHZAL_PASSWORD }}
         run: |
           EXPIRE="${{ inputs.expire_days || '7d' }}"
-          # 先删除旧 APK
-          curl -s -X DELETE "https://shz.al/~csBabyApk:${SHZAL_PASSWORD}" || true
-          # 上传新 APK
+          # 尝试上传新 APK（如果文件存在会返回409）
           RESP=$(curl -s -X POST \
             -F "n=csBabyApk" \
             -F "e=${EXPIRE}" \
@@ -248,8 +262,27 @@ jobs:
             -F "c=@${{ steps.apk.outputs.path }}" \
             -F "s=${SHZAL_PASSWORD}" \
             https://shz.al)
+
           echo "APK 上传响应: $RESP"
-          echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ APK 已上传:', d.get('url',''))" || echo "$RESP"
+
+          # 检查是否是409错误（文件已存在）
+          if echo "$RESP" | grep -q "Error 409"; then
+            echo "⚠️  检测到APK文件已存在，尝试更新..."
+            # 强制覆盖现有文件
+            RESP2=$(curl -s -X POST \
+              -F "n=csBabyApk" \
+              -F "e=${EXPIRE}" \
+              -F "filename=${{ needs.build-release.outputs.apk_name }}" \
+              -F "c=@${{ steps.apk.outputs.path }}" \
+              -F "force=true" \
+              -F "s=${SHZAL_PASSWORD}" \
+              https://shz.al)
+            echo "强制更新响应: $RESP2"
+            RESP="$RESP2"
+          fi
+
+          # 尝试解析JSON响应
+          echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ APK 已上传:', d.get('url',''))" || echo "响应不是有效的JSON: $RESP"
 
       - name: 输出部署摘要
         run: |
