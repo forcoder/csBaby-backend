@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -92,24 +91,37 @@ class OtaManager @Inject constructor(
     }
     
     /**
+     * 获取下载目录（应用专属外部目录，不需要存储权限）
+     */
+    private fun getDownloadDir(): File {
+        // 使用应用专属外部目录，不受Scoped Storage限制
+        // 路径: /storage/emulated/0/Android/data/com.csbaby.kefu/files/Updates
+        val dir = File(context.getExternalFilesDir(null), "Updates")
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        return dir
+    }
+
+    /**
+     * 获取APK文件引用
+     */
+    private fun getApkFile(update: OtaUpdate): File {
+        return File(getDownloadDir(), "kefu_v${update.versionName}_${update.versionCode}.apk")
+    }
+
+    /**
      * 开始下载更新
      */
     fun startDownload(update: OtaUpdate): Boolean {
         _updateStatus.value = UpdateStatus.DOWNLOADING
         _errorMessage.value = null
+        _availableUpdate.value = update  // 确保下载完成时能正确获取文件路径
         
         try {
             downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             
-            // 创建下载目录
-            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val appDir = File(downloadsDir, "KefuUpdates")
-            if (!appDir.exists()) {
-                appDir.mkdirs()
-            }
-            
-            val fileName = "kefu_v${update.versionName}_${update.versionCode}.apk"
-            val downloadFile = File(appDir, fileName)
+            val downloadFile = getApkFile(update)
             
             // 如果文件已存在，先删除
             if (downloadFile.exists()) {
@@ -120,7 +132,7 @@ class OtaManager @Inject constructor(
                 .setTitle("客服助手更新 v${update.versionName}")
                 .setDescription("正在下载更新...")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationUri(Uri.fromFile(downloadFile))
+                .setDestinationInExternalFilesDir(context, null, "Updates/${downloadFile.name}")
                 .setAllowedOverMetered(true)
                 .setAllowedOverRoaming(true)
             
@@ -166,42 +178,22 @@ class OtaManager @Inject constructor(
                             
                             when (status) {
                                 DownloadManager.STATUS_SUCCESSFUL -> {
-                                    _updateStatus.value = UpdateStatus.DOWNLOADED
-                                    
-                                    // 获取下载文件的路径
+                                    // 使用应用专属下载目录获取文件（最可靠，不依赖废弃API）
                                     var apkFile: File? = null
-                                    
-                                    // 方式1: 使用COLUMN_LOCAL_FILENAME（最可靠）
-                                    val localFilenameIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_FILENAME)
-                                    if (localFilenameIndex != -1) {
-                                        val localFilename = cursor.getString(localFilenameIndex)
-                                        if (!localFilename.isNullOrEmpty()) {
-                                            val file = File(localFilename)
-                                            if (file.exists()) {
-                                                apkFile = file
-                                            }
+                                    _availableUpdate.value?.let { update ->
+                                        val file = getApkFile(update)
+                                        if (file.exists() && file.length() > 0) {
+                                            apkFile = file
                                         }
                                     }
                                     
-                                    // 方式2: 直接使用下载目录
-                                    if (apkFile == null) {
-                                        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                                        val appDir = File(downloadsDir, "KefuUpdates")
-                                        _availableUpdate.value?.let { update ->
-                                            val fileName = "kefu_v${update.versionName}_${update.versionCode}.apk"
-                                            val file = File(appDir, fileName)
-                                            if (file.exists()) {
-                                                apkFile = file
-                                            }
-                                        }
-                                    }
-                                    
-                                    // 保存APK路径供后续安装使用
-                                    apkFile?.let {
-                                        pendingApkFile = it
-                                        Log.d(TAG, "下载完成，APK路径: ${it.absolutePath}")
-                                        prepareInstallation(it)
-                                    } ?: run {
+                                    if (apkFile != null) {
+                                        pendingApkFile = apkFile
+                                        Log.d(TAG, "下载完成，APK路径: ${apkFile.absolutePath}，大小: ${apkFile.length()} bytes")
+                                        // 只设置下载完成状态，不自动安装，等用户点击"安装"按钮
+                                        _updateStatus.value = UpdateStatus.DOWNLOADED
+                                        _downloadProgress.value = 1f
+                                    } else {
                                         _errorMessage.value = "无法找到下载文件"
                                         _updateStatus.value = UpdateStatus.FAILED
                                     }
@@ -235,25 +227,21 @@ class OtaManager @Inject constructor(
      */
     fun triggerInstall() {
         val apk = pendingApkFile
-        if (apk != null && apk.exists()) {
-            _updateStatus.value = UpdateStatus.INSTALLING
+        if (apk != null && apk.exists() && apk.length() > 0) {
+            Log.d(TAG, "开始安装，APK路径: ${apk.absolutePath}，大小: ${apk.length()} bytes")
             _errorMessage.value = null
-            prepareInstallation(apk)
+            installApk(apk)
         } else {
             // 找不到APK，重新查找
-            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val appDir = File(downloadsDir, "KefuUpdates")
             val update = _availableUpdate.value
             if (update != null) {
-                val fileName = "kefu_v${update.versionName}_${update.versionCode}.apk"
-                val file = File(appDir, fileName)
-                if (file.exists()) {
+                val file = getApkFile(update)
+                if (file.exists() && file.length() > 0) {
                     pendingApkFile = file
-                    _updateStatus.value = UpdateStatus.INSTALLING
                     _errorMessage.value = null
-                    prepareInstallation(file)
+                    installApk(file)
                 } else {
-                    _errorMessage.value = "APK文件未找到，请重新下载"
+                    _errorMessage.value = "APK文件未找到或已损坏，请重新下载"
                     _updateStatus.value = UpdateStatus.FAILED
                 }
             } else {
@@ -264,21 +252,35 @@ class OtaManager @Inject constructor(
     }
     
     /**
-     * 准备安装APK
+     * 安装APK
      */
-    private fun prepareInstallation(apkFile: File) {
+    private fun installApk(apkFile: File) {
         try {
-            // 保存APK路径
-            pendingApkFile = apkFile
-            
             // 检查文件是否存在且可读
             if (!apkFile.exists() || !apkFile.canRead()) {
                 throw Exception("APK文件不存在或不可读: ${apkFile.absolutePath}")
             }
             
-            // 检查文件大小
-            if (apkFile.length() == 0L) {
-                throw Exception("APK文件为空: ${apkFile.absolutePath}")
+            // 检查文件大小（APK至少要有1KB）
+            if (apkFile.length() < 1024) {
+                throw Exception("APK文件已损坏（文件过小）: ${apkFile.absolutePath}，大小: ${apkFile.length()} bytes")
+            }
+            
+            // Android 8.0+ 先检查安装权限
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val hasInstallPermission = context.packageManager.canRequestPackageInstalls()
+                if (!hasInstallPermission) {
+                    // 没有权限，跳转到设置页面
+                    // 回退到DOWNLOADED状态，授权后用户可以再次点击"安装"
+                    _updateStatus.value = UpdateStatus.DOWNLOADED
+                    _errorMessage.value = "请先授予安装权限，然后返回点击\"安装\"按钮"
+                    Log.w(TAG, "缺少安装未知来源应用权限，跳转到设置页面")
+                    val settingsIntent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+                    settingsIntent.data = Uri.parse("package:${context.packageName}")
+                    settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(settingsIntent)
+                    return
+                }
             }
             
             val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -299,35 +301,21 @@ class OtaManager @Inject constructor(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                
-                // 确保有安装包的权限
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    val hasInstallPermission = context.packageManager.canRequestPackageInstalls()
-                    if (!hasInstallPermission) {
-                        // 没有权限，跳转到设置页面（保持INSTALLING状态，授权后可重试）
-                        pendingApkFile = apkFile
-                        val settingsIntent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
-                        settingsIntent.data = Uri.parse("package:${context.packageName}")
-                        settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        context.startActivity(settingsIntent)
-                        _errorMessage.value = "请授予安装未知来源应用的权限，授权后返回点击\"点击安装\""
-                        // 不改变状态为FAILED，保持INSTALLING，用户授权后可以重新调用triggerInstall
-                        return
-                    }
-                }
             }
             
             // 检查是否有应用可以处理这个意图
             if (installIntent.resolveActivity(context.packageManager) != null) {
                 context.startActivity(installIntent)
+                Log.d(TAG, "已触发系统安装页面")
             } else {
                 throw Exception("没有应用可以处理安装请求")
             }
             
         } catch (e: Exception) {
-            Log.e(TAG, "安装准备失败", e)
-            _errorMessage.value = "安装准备失败: ${e.message}"
-            _updateStatus.value = UpdateStatus.FAILED
+            Log.e(TAG, "安装失败", e)
+            _errorMessage.value = "安装失败: ${e.message}"
+            // 回退到DOWNLOADED状态，允许用户重试
+            _updateStatus.value = UpdateStatus.DOWNLOADED
         }
     }
     

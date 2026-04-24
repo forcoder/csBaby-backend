@@ -1,41 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <!-- External files directory -->
-    <external-path
-        name="external_files"
-        path="." />
+    <!-- 应用专属外部文件目录（OTA更新下载目标路径） -->
+    <external-files-path
+        name="app_updates"
+        path="Updates/" />
     
-    <!-- External download directory -->
-    <external-path
-        name="downloads"
-        path="Download/" />
-    
-    <!-- External download subdirectory for our app -->
-    <external-path
-        name="kefu_updates"
-        path="Download/KefuUpdates/" />
-    
-    <!-- External app-specific files directory -->
+    <!-- 应用专属外部文件根目录 -->
     <external-files-path
         name="external_app_files"
         path="." />
     
-    <!-- External app-specific cache directory -->
+    <!-- 应用专属外部缓存目录 -->
     <external-cache-path
         name="external_app_cache"
         path="." />
     
-    <!-- External media directory -->
-    <external-media-path
-        name="external_media"
-        path="." />
-    
-    <!-- Internal files directory -->
+    <!-- 内部文件目录 -->
     <files-path
         name="internal_files"
         path="." />
     
-    <!-- Internal cache directory -->
+    <!-- 内部缓存目录 -->
     <cache-path
         name="internal_cache"
         path="." />

@@ -558,25 +558,14 @@ class ProfileViewModel @Inject constructor(
      * 从阿里云OSS下载更新
      */
     fun downloadOssUpdate(update: OtaUpdate) {
+        // 先保存更新信息到OtaManager，然后通过OtaManager统一管理状态
+        // 不再直接覆盖updateStatus，避免与setupOtaUpdates的Flow监听冲突
         viewModelScope.launch {
             try {
-                _uiState.update { 
-                    it.copy(
-                        updateStatus = "正在下载OSS更新...",
-                        downloadProgress = 0f
-                    )
-                }
-                
-                // 使用现有的OTA管理器下载更新
+                // 更新availableUpdate，让OtaManager知道要下载什么
                 otaManager.startDownload(update)
-                
             } catch (e: Exception) {
-                _uiState.update { 
-                    it.copy(
-                        updateStatus = "下载失败: ${e.message}",
-                        downloadProgress = 0f
-                    )
-                }
+                // startDownload内部已有错误处理，这里仅做兜底日志
                 Timber.e(e, "下载OSS更新失败")
             }
         }
