@@ -1,4 +1,7 @@
 {
+  "name": "csbaby",
+  "version": "1.0.0",
+  "description": "客服小秘 Android项目",
   "dependencies": {
     "graphify": "^1.0.0"
   }
