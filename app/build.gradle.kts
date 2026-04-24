@@ -43,7 +43,7 @@ android {
         compose = true
     }
     room {
-        schemaDirectory("src/main/assets/schemas")
+        schemaDirectory(file("src/main/assets/schemas"))
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.4"
