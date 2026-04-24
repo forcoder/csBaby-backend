@@ -6,10 +6,6 @@ plugins {
     id("androidx.room") version "2.6.1"
 }
 
-room {
-    schemaDirectory("src/main/assets/schemas")
-}
-
 android {
     namespace = "com.csbaby.kefu"
     compileSdk = 34

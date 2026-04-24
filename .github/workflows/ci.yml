@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [ main, develop ]
 
-# 同一分支同时触发时，取消旧的运行
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -30,6 +29,36 @@ jobs:
           java-version: '17'
           distribution: 'microsoft'
           cache: gradle
+
+      - name: 授权 gradlew 执行权限
+        run: chmod +x ./gradlew
+
+      - name: 缓存 Gradle
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: 运行 Lint 检查
+        env:
+          CI: true
+          GRADLE_OPTS: "-Xmx2048m"
+        run: |
+          ./gradlew lintDebug --no-daemon \
+            -Dorg.gradle.jvmargs="-Xmx2048m -Xms512m" \
+            --stacktrace
+
+      - name: 上传 Lint 报告
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-debug.xml
+          retention-days: 7
 
   # ─────────────────────────────────────────
   # Job 2: 单元测试
@@ -88,7 +117,7 @@ jobs:
         run: |
           ./gradlew testDebugUnitTest --no-daemon -PskipVersionIncrement -PskipUpload \
             -Dorg.gradle.jvmargs="-Xmx2048m -Xms512m" \
-            || echo "跳过单元测试"
+            --stacktrace || echo "跳过单元测试"
 
       - name: 上传测试报告
         uses: actions/upload-artifact@v4
