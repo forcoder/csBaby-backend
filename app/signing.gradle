@@ -1,9 +1,6 @@
 // Groovy script to enable v1 signing — AGP 8.x Kotlin DSL doesn't expose v1SigningEnabled
-android {
-    signingConfigs {
-        release {
-            v1SigningEnabled true
-            v2SigningEnabled true
-        }
-    }
+// Modify the existing 'release' signing config (defined in build.gradle.kts) instead of creating a new one
+android.signingConfigs.release {
+    v1SigningEnabled true
+    v2SigningEnabled true
 }
