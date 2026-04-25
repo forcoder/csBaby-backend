@@ -44,8 +44,23 @@ data class ProfileUiState(
     val uploadProgress: Float = 0f, // 上传进度
     val isUploading: Boolean = false, // 是否正在上传
     // 主题设置
-    val themeMode: String = "system" // light, dark, system
-)
+    val themeMode: String = "system", // light, dark, system
+    // 数据备份与恢复
+    val backupStatus: BackupStatus = BackupStatus.IDLE,
+    val backupMessage: String? = null,
+    val isBackupOperation: Boolean = true // true=备份操作, false=恢复操作
+) {
+    companion object {
+        val TAG = "ProfileViewModel"
+    }
+}
+
+enum class BackupStatus {
+    IDLE,       // 空闲
+    IN_PROGRESS, // 进行中
+    SUCCESS,    // 成功
+    FAILED      // 失败
+}
 
 data class OtaUpdateInfo(
     val versionName: String,
@@ -630,22 +645,38 @@ class ProfileViewModel @Inject constructor(
     fun performBackup(uri: Uri) {
         viewModelScope.launch {
             try {
-                _uiState.update { it.copy(updateStatus = "正在备份数据...") }
+                _uiState.update {
+                    it.copy(
+                        backupStatus = BackupStatus.IN_PROGRESS,
+                        backupMessage = "正在备份数据...",
+                        isBackupOperation = true
+                    )
+                }
                 val result = backupManager.performBackup(uri)
 
                 if (result.success) {
-                    _uiState.update { it.copy(updateStatus = result.message) }
-                    showSnackbar("${result.message} - 保存位置: ${uri.lastPathSegment}")
+                    _uiState.update {
+                        it.copy(
+                            backupStatus = BackupStatus.SUCCESS,
+                            backupMessage = result.message
+                        )
+                    }
+                    showSnackbar("${result.message}")
                 } else {
-                    _uiState.update { it.copy(updateStatus = result.message, errorMessage = result.message) }
+                    _uiState.update {
+                        it.copy(
+                            backupStatus = BackupStatus.FAILED,
+                            backupMessage = result.message
+                        )
+                    }
                     showSnackbar("备份失败: ${result.message}")
                 }
             } catch (e: Exception) {
                 Timber.e(e, "备份异常")
                 _uiState.update {
                     it.copy(
-                        updateStatus = "空闲",
-                        errorMessage = "备份异常: ${e.message}"
+                        backupStatus = BackupStatus.FAILED,
+                        backupMessage = "备份异常: ${e.message}"
                     )
                 }
                 showSnackbar("备份异常: ${e.message}")
@@ -660,26 +691,54 @@ class ProfileViewModel @Inject constructor(
     fun restoreData(uri: Uri) {
         viewModelScope.launch {
             try {
-                _uiState.update { it.copy(updateStatus = "正在从备份恢复数据...") }
+                _uiState.update {
+                    it.copy(
+                        backupStatus = BackupStatus.IN_PROGRESS,
+                        backupMessage = "正在从备份恢复数据...",
+                        isBackupOperation = false
+                    )
+                }
                 val result = backupManager.restoreData(uri)
 
                 if (result.success) {
-                    _uiState.update { it.copy(updateStatus = result.message) }
+                    _uiState.update {
+                        it.copy(
+                            backupStatus = BackupStatus.SUCCESS,
+                            backupMessage = result.message
+                        )
+                    }
                     showSnackbar(result.message)
                 } else {
-                    _uiState.update { it.copy(updateStatus = result.message, errorMessage = result.message) }
+                    _uiState.update {
+                        it.copy(
+                            backupStatus = BackupStatus.FAILED,
+                            backupMessage = result.message
+                        )
+                    }
                     showSnackbar("恢复失败: ${result.message}")
                 }
             } catch (e: Exception) {
                 Timber.e(e, "恢复异常")
                 _uiState.update {
                     it.copy(
-                        updateStatus = "空闲",
-                        errorMessage = "恢复异常: ${e.message}"
+                        backupStatus = BackupStatus.FAILED,
+                        backupMessage = "恢复异常: ${e.message}"
                     )
                 }
                 showSnackbar("恢复异常: ${e.message}")
             }
+        }
+    }
+
+    /**
+     * 重置备份状态
+     */
+    fun resetBackupStatus() {
+        _uiState.update {
+            it.copy(
+                backupStatus = BackupStatus.IDLE,
+                backupMessage = null
+            )
         }
     }
 

@@ -22,7 +22,8 @@ import timber.log.Timber
 class OtaUpdateWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
-    private val repository: OtaRepository
+    private val repository: OtaRepository,
+    private val otaManager: OtaManager
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -34,26 +35,18 @@ class OtaUpdateWorker @AssistedInject constructor(
         return try {
             withContext(Dispatchers.IO) {
                 Timber.d("开始后台检查更新...")
-                
-                val result = repository.checkForUpdate(BuildConfig.VERSION_CODE)
-                
-                if (result.isSuccess) {
-                    val update = result.getOrNull()
 
-                    if (update != null && update.needsUpdate(BuildConfig.VERSION_CODE)) {
-                        Timber.d("发现新版本: ${update.versionName} (${update.versionCode})")
-                        // 这里可以发送通知或存储更新信息
-                        // 在实际应用中，可以发送本地通知提醒用户
-                    } else {
-                        Timber.d("当前已是最新版本")
-                    }
+                val hasUpdate = otaManager.checkForUpdate(resetStatus = false)
 
-                    Result.success(Data.EMPTY)
+                if (hasUpdate) {
+                    val update = otaManager.availableUpdate.value
+                    Timber.d("发现新版本: ${update?.versionName} (${update?.versionCode})")
+                    // 这里可以发送通知提醒用户
                 } else {
-                    val errorMsg = result.exceptionOrNull()?.message ?: "未知错误"
-                    Timber.e("检查更新失败: $errorMsg")
-                    Result.failure(Data.EMPTY)
+                    Timber.d("当前已是最新版本")
                 }
+
+                Result.success(Data.EMPTY)
             }
         } catch (e: Exception) {
             Timber.e(e, "OTA更新检查Worker执行失败")

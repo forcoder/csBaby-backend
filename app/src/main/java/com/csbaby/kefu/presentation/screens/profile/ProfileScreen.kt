@@ -24,10 +24,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.platform.LocalContext
 import android.net.Uri
 import androidx.compose.ui.graphics.Color
 import com.csbaby.kefu.presentation.theme.ThemeMode
@@ -133,6 +129,38 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
         }
     }
 
+    // 确认重启对话框
+    var showRestartDialog by remember { mutableStateOf(false) }
+    if (showRestartDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestartDialog = false },
+            title = { Text("恢复完成") },
+            text = { Text("数据已恢复。部分更改需要重启应用才能生效，是否立即重启？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRestartDialog = false
+                    // 重启应用
+                    val pm = context.packageManager
+                    val intent = pm.getLaunchIntentForPackage(context.packageName)
+                    intent?.addFlags(
+                        android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                    )
+                    context.startActivity(intent)
+                    // 结束当前进程
+                    Runtime.getRuntime().exit(0)
+                }) {
+                    Text("重启")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestartDialog = false }) {
+                    Text("稍后")
+                }
+            }
+        )
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -142,12 +170,49 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            Text(
-                text = "数据备份与恢复",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "数据备份与恢复",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
+                )
+
+                // 状态标签
+                when (uiState.backupStatus) {
+                    BackupStatus.IN_PROGRESS -> {
+                        AssistChip(
+                            onClick = { },
+                            label = { Text("进行中", style = MaterialTheme.typography.labelSmall) },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer
+                            )
+                        )
+                    }
+                    BackupStatus.SUCCESS -> {
+                        AssistChip(
+                            onClick = { viewModel.resetBackupStatus() },
+                            label = { Text("已完成", style = MaterialTheme.typography.labelSmall) },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer
+                            )
+                        )
+                    }
+                    BackupStatus.FAILED -> {
+                        AssistChip(
+                            onClick = { viewModel.resetBackupStatus() },
+                            label = { Text("失败", style = MaterialTheme.typography.labelSmall) },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer
+                            )
+                        )
+                    }
+                    BackupStatus.IDLE -> { /* 不显示 */ }
+                }
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -159,6 +224,27 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // 进度指示器
+            if (uiState.backupStatus == BackupStatus.IN_PROGRESS) {
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = uiState.backupMessage ?: "处理中...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            }
+
+            // 操作按钮
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -170,6 +256,7 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
                         backupLauncher.launch("csbaby_backup_$timestamp.zip")
                     },
                     modifier = Modifier.weight(1f),
+                    enabled = uiState.backupStatus != BackupStatus.IN_PROGRESS,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary
                     )
@@ -183,7 +270,8 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
                     onClick = {
                         restoreLauncher.launch("*/*")
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    enabled = uiState.backupStatus != BackupStatus.IN_PROGRESS
                 ) {
                     Icon(Icons.Default.Restore, contentDescription = "恢复数据")
                     Spacer(modifier = Modifier.width(8.dp))
@@ -191,19 +279,73 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
                 }
             }
 
-            // 显示备份/恢复进度和状态
-            uiState.errorMessage?.let { error ->
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = error,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
+            // 结果消息
+            uiState.backupMessage?.let { message ->
+                if (uiState.backupStatus == BackupStatus.SUCCESS || uiState.backupStatus == BackupStatus.FAILED) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    val isError = uiState.backupStatus == BackupStatus.FAILED
+                    Surface(
+                        color = if (isError) {
+                            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                        } else {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        },
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (isError) Icons.Default.Error else Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = if (isError) MaterialTheme.colorScheme.error
+                                       else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isError) MaterialTheme.colorScheme.error
+                                        else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    // 恢复成功后显示重启按钮
+                    if (!uiState.isBackupOperation && uiState.backupStatus == BackupStatus.SUCCESS) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = { showRestartDialog = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(Icons.Default.RestartAlt, contentDescription = "重启应用")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("重启应用以生效")
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedButton(
+                            onClick = { viewModel.resetBackupStatus() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("关闭")
+                        }
+                    }
+                }
             }
         }
     }
 
-    // 添加 SnackbarHost
+    // Snackbar
     SnackbarHost(
         hostState = snackbarHostState,
         modifier = Modifier.fillMaxWidth()

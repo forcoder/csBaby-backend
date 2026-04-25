@@ -27,17 +27,23 @@ class BackupManager @Inject constructor(
         private const val BACKUP_FILE_NAME = "kefu_backup.zip"
         private const val DATASTORE_DIR = "datastore"
         private const val DATABASE_DIR = "databases"
+        private const val MIN_BACKUP_SIZE = 50L // 最小备份大小 50 bytes
+        private const val META_FILE = ".backup_meta"
+        private const val META_SIGNATURE = "CSBABY_BACKUP_V1"
     }
 
     data class BackupResult(
         val success: Boolean,
         val message: String,
-        val backupPath: String? = null
+        val backupPath: String? = null,
+        val fileCount: Int = 0,
+        val totalSize: Long = 0
     )
 
     data class RestoreResult(
         val success: Boolean,
-        val message: String
+        val message: String,
+        val restoredFileCount: Int = 0
     )
 
     /**
@@ -53,31 +59,59 @@ class BackupManager @Inject constructor(
                 return@withContext BackupResult(false, "没有找到需要备份的数据")
             }
 
+            var totalBytesWritten = 0L
+            var fileCount = 0
+
             context.contentResolver.openOutputStream(outputUri)?.use { outputStream ->
-                ZipOutputStream(BufferedOutputStream(outputStream)).use { zipOut ->
-                    backupFiles.forEach { (relativePath, file) ->
-                        if (file.exists() && file.length() > 0) {
-                            val entry = ZipEntry(relativePath)
-                            zipOut.putNextEntry(entry)
-                            file.inputStream().use { input ->
-                                input.copyTo(zipOut)
+                BufferedOutputStream(outputStream).use { buffered ->
+                    ZipOutputStream(buffered).use { zipOut ->
+                        // 写入元数据标识
+                        val metaEntry = ZipEntry(META_FILE)
+                        zipOut.putNextEntry(metaEntry)
+                        zipOut.write(META_SIGNATURE.toByteArray(Charsets.UTF_8))
+                        zipOut.closeEntry()
+
+                        backupFiles.forEach { (relativePath, file) ->
+                            if (file.exists() && file.length() > 0) {
+                                val entry = ZipEntry(relativePath)
+                                zipOut.putNextEntry(entry)
+                                file.inputStream().use { input ->
+                                    input.copyTo(zipOut)
+                                }
+                                zipOut.closeEntry()
+                                totalBytesWritten += file.length()
+                                fileCount++
+                                Timber.d("已备份: $relativePath (${file.length()} bytes)")
                             }
-                            zipOut.closeEntry()
-                            Timber.d("已备份: $relativePath (${file.length()} bytes)")
                         }
                     }
                 }
-            } ?: return@withContext BackupResult(false, "无法创建备份文件")
+            } ?: return@withContext BackupResult(false, "无法创建备份文件，请检查存储权限")
 
-            val totalSize = backupFiles.values.sumOf { if (it.exists()) it.length() else 0 }
-            val fileCount = backupFiles.count { it.value.exists() && it.value.length() > 0 }
+            if (totalBytesWritten < MIN_BACKUP_SIZE) {
+                return@withContext BackupResult(false, "备份文件不完整，请重试")
+            }
+
+            val formattedSize = formatFileSize(totalBytesWritten)
+            Timber.i("备份完成: $fileCount 个文件, $formattedSize")
             BackupResult(
                 success = true,
-                message = "备份完成：共 $fileCount 个文件，${formatFileSize(totalSize)}"
+                message = "备份完成：共 $fileCount 个文件，$formattedSize",
+                fileCount = fileCount,
+                totalSize = totalBytesWritten
             )
+        } catch (e: SecurityException) {
+            Timber.e(e, "备份失败: 存储权限不足")
+            BackupResult(false, "备份失败：无法访问存储，请在设置中授予存储权限")
+        } catch (e: FileNotFoundException) {
+            Timber.e(e, "备份失败: 文件未找到")
+            BackupResult(false, "备份失败：无法创建备份文件，请检查存储空间是否充足")
+        } catch (e: IOException) {
+            Timber.e(e, "备份失败: IO异常")
+            BackupResult(false, "备份失败：读写错误，请检查存储空间并重试")
         } catch (e: Exception) {
-            Timber.e(e, "备份失败")
-            BackupResult(false, "备份失败: ${e.message}")
+            Timber.e(e, "备份失败: 未知异常")
+            BackupResult(false, "备份失败：${e.message}")
         }
     }
 
@@ -89,6 +123,12 @@ class BackupManager @Inject constructor(
         try {
             Timber.d("开始从备份恢复数据: $inputUri")
 
+            // 验证输入文件大小
+            val fileSize = getFileSize(inputUri)
+            if (fileSize != null && fileSize < MIN_BACKUP_SIZE) {
+                return@withContext RestoreResult(false, "备份文件无效或已损坏（文件过小）")
+            }
+
             val tempDir = File(context.cacheDir, "restore_temp")
             if (tempDir.exists()) {
                 tempDir.deleteRecursively()
@@ -97,36 +137,69 @@ class BackupManager @Inject constructor(
 
             // 1. 解压备份文件到临时目录
             val extractedFiles = mutableListOf<File>()
-            context.contentResolver.openInputStream(inputUri)?.use { inputStream ->
-                ZipInputStream(BufferedInputStream(inputStream)).use { zipIn ->
-                    var entry: ZipEntry? = zipIn.nextEntry
-                    while (entry != null) {
-                        val file = File(tempDir, entry.name)
-                        file.parentFile?.mkdirs()
+            var magicVerified = false
 
-                        if (!entry.isDirectory) {
-                            file.outputStream().use { output ->
-                                zipIn.copyTo(output)
+            context.contentResolver.openInputStream(inputUri)?.use { inputStream ->
+                BufferedInputStream(inputStream).use { buffered ->
+                    ZipInputStream(buffered).use { zipIn ->
+                        var entry: ZipEntry? = zipIn.nextEntry
+                        while (entry != null) {
+                            // 检查元数据标识
+                            if (entry.name == META_FILE) {
+                                val metaBytes = zipIn.readBytes()
+                                val meta = String(metaBytes, Charsets.UTF_8)
+                                if (META_SIGNATURE == meta) {
+                                    magicVerified = true
+                                }
+                                zipIn.closeEntry()
+                                entry = zipIn.nextEntry
+                                continue
                             }
-                            extractedFiles.add(file)
-                            Timber.d("已解压: ${entry.name} (${file.length()} bytes)")
+
+                            // 防止ZIP炸弹：限制单个文件大小
+                            val maxEntrySize = 100 * 1024 * 1024L // 100MB
+                            if (entry.size > maxEntrySize) {
+                                zipIn.closeEntry()
+                                entry = zipIn.nextEntry
+                                continue
+                            }
+
+                            val file = File(tempDir, entry.name)
+                            file.parentFile?.mkdirs()
+
+                            if (!entry.isDirectory) {
+                                file.outputStream().use { output ->
+                                    zipIn.copyTo(output)
+                                }
+                                extractedFiles.add(file)
+                                Timber.d("已解压: ${entry.name} (${file.length()} bytes)")
+                            }
+                            zipIn.closeEntry()
+                            entry = zipIn.nextEntry
                         }
-                        zipIn.closeEntry()
-                        entry = zipIn.nextEntry
                     }
                 }
-            } ?: return@withContext RestoreResult(false, "无法读取备份文件")
+            } ?: return@withContext RestoreResult(false, "无法读取备份文件，文件可能已被移动或删除")
 
             if (extractedFiles.isEmpty()) {
                 return@withContext RestoreResult(false, "备份文件为空或格式不正确")
             }
 
+            // 若不是本应用生成的备份，给出警告但仍继续恢复
+            if (!magicVerified) {
+                Timber.w("备份文件缺少应用标识，可能不是由本应用生成")
+            }
+
             // 2. 恢复 DataStore 文件
             val datastoreDir = File(context.filesDir.parentFile, DATASTORE_DIR)
-            val datastoreFiles = extractedFiles.filter { it.absolutePath.contains(DATASTORE_DIR) }
+            val datastoreFiles = extractedFiles.filter {
+                it.absolutePath.replace("\\", "/").contains(DATASTORE_DIR)
+            }
             var restoredCount = 0
             datastoreFiles.forEach { file ->
-                val relativePath = file.absolutePath.substringAfter("$DATASTORE_DIR/")
+                val relativePath = file.absolutePath
+                    .replace("\\", "/")
+                    .substringAfter("$DATASTORE_DIR/")
                 val targetFile = File(datastoreDir, relativePath)
                 targetFile.parentFile?.mkdirs()
                 file.copyTo(targetFile, overwrite = true)
@@ -136,7 +209,9 @@ class BackupManager @Inject constructor(
 
             // 3. 恢复数据库文件
             val databaseDir = File(context.filesDir.parentFile, DATABASE_DIR)
-            val dbFiles = extractedFiles.filter { it.absolutePath.contains(DATABASE_DIR) }
+            val dbFiles = extractedFiles.filter {
+                it.absolutePath.replace("\\", "/").contains(DATABASE_DIR)
+            }
             dbFiles.forEach { file ->
                 val dbName = file.name
                 val targetFile = File(databaseDir, dbName)
@@ -149,13 +224,64 @@ class BackupManager @Inject constructor(
             // 清理临时目录
             tempDir.deleteRecursively()
 
+            if (restoredCount == 0) {
+                return@withContext RestoreResult(
+                    false,
+                    "备份文件中未找到可恢复的数据文件"
+                )
+            }
+
+            Timber.i("恢复完成: $restoredCount 个文件")
             RestoreResult(
                 success = true,
-                message = "恢复完成：共恢复 $restoredCount 个文件。请重启应用以生效。"
+                message = "恢复完成：共恢复 $restoredCount 个文件。建议重启应用以生效。",
+                restoredFileCount = restoredCount
             )
+        } catch (e: SecurityException) {
+            Timber.e(e, "恢复失败: 权限不足")
+            RestoreResult(false, "恢复失败：无法读取备份文件，请检查文件权限")
+        } catch (e: FileNotFoundException) {
+            Timber.e(e, "恢复失败: 文件未找到")
+            RestoreResult(false, "恢复失败：备份文件未找到，文件可能已被移动或删除")
+        } catch (e: IOException) {
+            Timber.e(e, "恢复失败: IO异常")
+            RestoreResult(false, "恢复失败：读取备份文件时出错，文件可能已损坏")
         } catch (e: Exception) {
-            Timber.e(e, "恢复失败")
-            RestoreResult(false, "恢复失败: ${e.message}")
+            Timber.e(e, "恢复失败: 未知异常")
+            RestoreResult(false, "恢复失败：${e.message}")
+        }
+    }
+
+    /**
+     * 检查备份文件是否有效（不实际恢复数据）
+     * @param backupUri 备份文件URI
+     */
+    suspend fun validateBackupFile(backupUri: Uri): Boolean = withContext(Dispatchers.IO) {
+        try {
+            context.contentResolver.openInputStream(backupUri)?.use { inputStream ->
+                BufferedInputStream(inputStream).use { buffered ->
+                    ZipInputStream(buffered).use { zipIn ->
+                        var entryCount = 0
+                        var hasMeta = false
+                        var entry: ZipEntry? = zipIn.nextEntry
+                        while (entry != null) {
+                            if (entry.name == META_FILE) {
+                                val metaBytes = zipIn.readBytes()
+                                val meta = String(metaBytes, Charsets.UTF_8)
+                                if (META_SIGNATURE == meta) hasMeta = true
+                            } else {
+                                entryCount++
+                            }
+                            zipIn.closeEntry()
+                            entry = zipIn.nextEntry
+                        }
+                        return@use hasMeta || entryCount > 0
+                    }
+                }
+            } ?: false
+        } catch (e: Exception) {
+            Timber.e(e, "备份文件验证失败")
+            false
         }
     }
 
@@ -187,11 +313,31 @@ class BackupManager @Inject constructor(
         return files
     }
 
+    /**
+     * 获取URI对应文件的大小
+     */
+    private fun getFileSize(uri: Uri): Long? {
+        return try {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val sizeIndex = cursor.getColumnIndex(
+                        android.provider.OpenableColumns.SIZE
+                    )
+                    if (sizeIndex >= 0) cursor.getLong(sizeIndex) else null
+                } else null
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "无法获取文件大小")
+            null
+        }
+    }
+
     private fun formatFileSize(bytes: Long): String {
         return when {
             bytes < 1024 -> "$bytes B"
             bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-            else -> "${bytes / (1024 * 1024)} MB"
+            bytes < 1024 * 1024 * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
+            else -> String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
         }
     }
 }
