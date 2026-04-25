@@ -9,6 +9,15 @@ plugins {
 // Apply v1 signing config via Groovy (Kotlin DSL doesn't expose v1SigningEnabled)
 apply(from = "signing.gradle")
 
+// 从 gradle.properties 读取版本号（CI 自动 bump 写入此处）
+val versionPropsFile = rootProject.file("gradle.properties")
+val versionProps = java.util.Properties()
+if (versionPropsFile.exists()) {
+    versionPropsFile.reader().use { versionProps.load(it) }
+}
+val appVersionCode = versionProps.getProperty("APP_VERSION_CODE")?.toIntOrNull() ?: 75
+val appVersionName = versionProps.getProperty("APP_VERSION_NAME") ?: "1.1.69"
+
 android {
     namespace = "com.csbaby.kefu"
     compileSdk = 34
@@ -17,8 +26,8 @@ android {
         applicationId = "com.csbaby.kefu"
         minSdk = 24
         targetSdk = 34
-        versionCode = 75
-        versionName = "1.1.69"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -29,9 +38,9 @@ android {
     signingConfigs {
         create("release") {
             storeFile = rootProject.file("keystore/csbaby-release.p12")
-            storePassword = findProperty("SIGNING_STORE_PASSWORD") as String
-            keyAlias = findProperty("SIGNING_KEY_ALIAS") as? String ?: "csbaby-release"
-            keyPassword = findProperty("SIGNING_KEY_PASSWORD") as String
+            storePassword = findProperty("SIGNING_STORE_PASSWORD") ?: ""
+            keyAlias = findProperty("SIGNING_KEY_ALIAS") ?: "csbaby-release"
+            keyPassword = findProperty("SIGNING_KEY_PASSWORD") ?: ""
             storeType = "PKCS12"
         }
     }
