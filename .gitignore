@@ -54,3 +54,136 @@ install-android-sdk.bat
 
 # Graphify output
 graphify-out/
+
+# Claude Code directories
+.claude/
+.claude-local/
+
+# GitHub workflows (if not using)
+.github/workflows/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Browser harness
+browser-harness-main/
+browser-harness.zip
+
+# Graphify
+graphify/
+
+# Build outputs
+build/
+*.apk
+*.aab
+*.dex
+*.ap_
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+.cache/
+.parcel-cache/
+dist/
+
+# Node
+node_modules/
+
+# Android
+local.properties
+.gradle/
+.idea/
+*.iml
+
+# Signing (NEVER commit)
+keystore/
+*.jks
+*.p12
+*.keystore
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Credentials
+secrets/
+credentials/
+config/secrets/
+config/credentials/
+
+# Test outputs
+coverage/
+.nyc_output/
+
+# CI/CD
+.circleci/
+.travis.yml
+
+# Build scripts
+build.sh
+build.bat
+clean-cache.sh
+clean-cache.bat
+install-sdk.bat
+install-android-sdk.bat
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Debug
+debug/
+*.debug
+
+# Documentation (if auto-generated)
+docs/_build/
+site/
+
+# SmartRouter outputs
+SmartRouterDemo.kt
+router-output/
+
+# Test files
+test-output/
+reports/
+
+# Upload scripts
+upload-to-shzl.ps1
+upload-to-shzl.py
+upload-history.json

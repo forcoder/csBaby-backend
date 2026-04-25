@@ -60,12 +60,24 @@ class OtaManager @Inject constructor(
      * 检查更新
      */
     suspend fun checkForUpdate(): Boolean {
+        return checkForUpdate(true)
+    }
+
+    /**
+     * 检查更新（内部使用，支持是否重置状态）
+     */
+    suspend fun checkForUpdate(resetStatus: Boolean = true): Boolean {
         _updateStatus.value = UpdateStatus.CHECKING
         _errorMessage.value = null
         
+        if (resetStatus) {
+            _updateStatus.value = UpdateStatus.CHECKING
+            _errorMessage.value = null
+        }
+
         return try {
             val result = repository.checkForUpdate(BuildConfig.VERSION_CODE)
-            
+
             if (result.isSuccess) {
                 val update = result.getOrNull()
                 

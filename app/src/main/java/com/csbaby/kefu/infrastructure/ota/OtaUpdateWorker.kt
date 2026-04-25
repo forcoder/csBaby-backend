@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import androidx.work.Data
 import com.csbaby.kefu.BuildConfig
 import com.csbaby.kefu.data.repository.OtaRepository
+import com.csbaby.kefu.infrastructure.ota.OtaManager
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
