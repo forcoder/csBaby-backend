@@ -365,33 +365,55 @@ class OtaManager @Inject constructor(
      */
     private fun startProgressMonitoring() {
         progressUpdateJob = kotlinx.coroutines.GlobalScope.launch {
+            var lastDownloadedBytes = 0L
+            var stuckCount = 0
             while (downloadId != -1L) {
                 try {
                     val query = DownloadManager.Query()
                     query.setFilterById(downloadId)
-                    
+
                     val cursor = downloadManager?.query(query)
                     if (cursor?.moveToFirst() == true) {
                         val statusCol = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
                         val status = if (statusCol >= 0) cursor.getInt(statusCol) else -1
-                        
+
                         if (status == DownloadManager.STATUS_SUCCESSFUL || status == DownloadManager.STATUS_FAILED) {
                             break
                         }
-                        
+
                         val totalCol = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
                         val downloadedCol = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
-                        val totalBytes = if (totalCol >= 0) cursor.getLong(totalCol) else 0L
+                        val totalBytes = if (totalCol >= 0) cursor.getLong(totalCol) else -1L
                         val downloadedBytes = if (downloadedCol >= 0) cursor.getLong(downloadedCol) else 0L
-                        
-                        if (totalBytes > 0) {
-                            val progress = downloadedBytes.toFloat() / totalBytes
-                            _downloadProgress.value = progress
+
+                        when {
+                            // 服务器返回了正确的总大小，直接计算百分比
+                            totalBytes > 0 -> {
+                                val progress = downloadedBytes.toFloat() / totalBytes
+                                _downloadProgress.value = progress.coerceIn(0f, 0.99f)
+                                stuckCount = 0
+                            }
+                            // 服务器未返回总大小（-1），用已下载字节数做增量估算
+                            downloadedBytes > 0 -> {
+                                // 检测进度是否卡住（连续3次字节数不变）
+                                if (downloadedBytes == lastDownloadedBytes) {
+                                    stuckCount++
+                                } else {
+                                    stuckCount = 0
+                                }
+                                lastDownloadedBytes = downloadedBytes
+                                // 如果卡住超过5秒，说明可能下载速度很慢或停滞，保持当前进度
+                                // 如果还在缓慢下载，做一个微增让进度条动起来
+                                if (stuckCount > 5 && _downloadProgress.value < 0.95f) {
+                                    // 缓慢微增，给用户反馈
+                                    _downloadProgress.value = (_downloadProgress.value + 0.01f).coerceAtMost(0.95f)
+                                }
+                            }
                         }
                     }
-                    
+
                     cursor?.close()
-                    kotlinx.coroutines.delay(1000) // 每秒更新一次进度
+                    kotlinx.coroutines.delay(1000)
                 } catch (e: Exception) {
                     Log.e(TAG, "监控下载进度失败", e)
                     break
