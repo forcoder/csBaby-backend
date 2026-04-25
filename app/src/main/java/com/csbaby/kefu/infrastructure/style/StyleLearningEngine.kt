@@ -6,6 +6,7 @@ import com.csbaby.kefu.domain.repository.ReplyHistoryRepository
 import com.csbaby.kefu.domain.repository.UserStyleRepository
 import com.csbaby.kefu.infrastructure.ai.AIService
 import kotlinx.coroutines.flow.first
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 

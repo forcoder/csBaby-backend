@@ -335,7 +335,7 @@ object TestDataFactory {
         md5 = md5,
         releaseNotes = releaseNotes,
         isForce = isForce,
-        minVersionCode = minVersionCount,
+        minVersionCode = minVersionCode,
         uploader = uploader,
         downloadCount = downloadCount,
         signature = signature,

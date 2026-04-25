@@ -1,0 +1,52 @@
+{
+  "models": [
+    {
+      "modelId": "gpt-4-turbo",
+      "vendorId": "openai",
+      "maxTokens": 128000,
+      "supportsStreaming": true,
+      "capabilities": ["LONG_CONTEXT", "HIGH_ACCURACY", "CODING", "CREATIVE_WRITING"],
+      "performanceScores": {
+        "GENERAL_CHAT": 0.95,
+        "CUSTOMER_SERVICE": 0.92,
+        "CODING_ASSISTANCE": 0.90,
+        "REASONING": 0.88,
+        "CONTENT_WRITING": 0.94,
+        "TRANSLATION": 0.85
+      },
+      "costPerToken": 0.00003,
+      "avgResponseTime": 1500
+    },
+    {
+      "modelId": "longcat-pro",
+      "vendorId": "longcat",
+      "maxTokens": 65536,
+      "supportsStreaming": true,
+      "capabilities": ["LONG_CONTEXT", "HIGH_ACCURACY", "CODING"],
+      "performanceScores": {
+        "GENERAL_CHAT": 0.88,
+        "CUSTOMER_SERVICE": 0.85,
+        "CODING_ASSISTANCE": 0.87,
+        "REASONING": 0.82,
+        "DOCUMENT_PROCESSING": 0.90
+      },
+      "costPerToken": 0.000015,
+      "avgResponseTime": 1200
+    },
+    {
+      "modelId": "deepseek-reasoner",
+      "vendorId": "deepseek",
+      "maxTokens": 64000,
+      "supportsStreaming": false,
+      "capabilities": ["HIGH_ACCURACY", "REASONING", "MATHEMATICAL"],
+      "performanceScores": {
+        "REASONING": 0.92,
+        "MATHEMATICAL_CALC": 0.89,
+        "CUSTOMER_SERVICE": 0.75,
+        "GENERAL_CHAT": 0.80
+      },
+      "costPerToken": 0.000025,
+      "avgResponseTime": 3000
+    }
+  ]
+}
