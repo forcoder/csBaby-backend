@@ -8,15 +8,15 @@ object ShzlConfig {
     
     /**
      * 版本文件名称
-     * 访问URL: https://shz.al/~csBabyLog
+     * 访问URL: https://shz.al/~csBabyLog2
      */
-    const val VERSION_FILE_NAME = "csBabyLog"
-    
+    const val VERSION_FILE_NAME = "csBabyLog2"
+
     /**
      * APK文件名称
-     * 访问URL: https://shz.al/~csBabyApk
+     * 访问URL: https://shz.al/~csBabyApk2
      */
-    const val APK_FILE_NAME = "csBabyApk"
+    const val APK_FILE_NAME = "csBabyApk2"
     
     /**
      * 版本文件完整URL
@@ -37,7 +37,7 @@ object ShzlConfig {
     const val UPLOAD_PASSWORD = "PLACEHOLDER_SET_SHZAL_PASSWORD"
     
     /**
-     * 过期时间（7天）
+     * 过期时间（24小时）
      */
-    const val EXPIRE_TIME = "7d"
+    const val EXPIRE_TIME = "1d"
 }

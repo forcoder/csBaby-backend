@@ -11,8 +11,8 @@ import retrofit2.http.Streaming
  * API 文档: https://shz.al/api
  * 
  * 使用方式:
- * - 版本文件: ${ShzlConfig.VERSION_FILE_URL} (JSON 格式)
- * - APK 文件: ${ShzlConfig.APK_FILE_URL} (APK 二进制文件)
+ * - 版本文件: ${ShzlConfig.VERSION_FILE_URL} (JSON 格式, ~csBabyLog2)
+ * - APK 文件: ${ShzlConfig.APK_FILE_URL} (APK 二进制文件, ~csBabyApk2)
  */
 interface ShzlApiService {
     

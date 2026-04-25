@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       expire_days:
-        description: '文件有效期（如 7d / 30d / 永久留空）'
+        description: '文件有效期（如 1d / 7d / 30d / 永久留空）'
         required: false
-        default: '7d'
+        default: '1d'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -209,7 +209,7 @@ jobs:
             "releaseDate": "$(date +%Y-%m-%d)",
             "fileSize": ${{ steps.md5.outputs.size }},
             "md5": "${{ steps.md5.outputs.md5 }}",
-            "downloadUrl": "https://shz.al/~csBabyApk",
+            "downloadUrl": "https://shz.al/~csBabyApk2",
             "releaseNotes": "v${{ needs.build-release.outputs.version_name }} 更新",
             "forceUpdate": false
           }
@@ -225,20 +225,20 @@ jobs:
 
           # 先强制删除旧文件（如果存在）
           echo "🔄 尝试删除旧版本信息文件..."
-          DELETE_RESP=$(curl -s -X DELETE "https://shz.al/~csBabyLog:${SHZAL_PASSWORD}" || true)
+          DELETE_RESP=$(curl -s -X DELETE "https://shz.al/~csBabyLog2:${SHZAL_PASSWORD}" || true)
           echo "删除响应: $DELETE_RESP"
 
           # 等待删除完成
           sleep 3
 
           # 检查是否成功删除（通过尝试获取现有内容）
-          EXISTING_CHECK=$(curl -s -w "%{http_code}" -o /dev/null "https://shz.al/~csBabyLog")
+          EXISTING_CHECK=$(curl -s -w "%{http_code}" -o /dev/null "https://shz.al/~csBabyLog2")
           echo "现有文件检查HTTP状态码: $EXISTING_CHECK"
 
           # 上传新版本信息
           echo "📤 上传新版本信息..."
           RESP=$(curl -s -X POST \
-            -F "n=csBabyLog" \
+            -F "n=csBabyLog2" \
             -F "e=${EXPIRE}" \
             -F "c=@version-info.json" \
             -F "s=${SHZAL_PASSWORD}" \
@@ -251,7 +251,7 @@ jobs:
             echo "❌ 上传失败: $RESP"
             # 尝试使用替代方法：直接覆盖
             ALT_RESP=$(curl -s -X POST \
-              --data-urlencode "n=csBabyLog" \
+              --data-urlencode "n=csBabyLog2" \
               --data-urlencode "e=${EXPIRE}" \
               --data-urlencode "content@version-info.json" \
               --data-urlencode "s=${SHZAL_PASSWORD}" \
@@ -270,12 +270,12 @@ jobs:
 
           # 先检查现有文件
           echo "🔍 检查现有APK文件..."
-          EXISTING_CHECK=$(curl -s -w "%{http_code}" -o /dev/null "https://shz.al/~csBabyApk")
+          EXISTING_CHECK=$(curl -s -w "%{http_code}" -o /dev/null "https://shz.al/~csBabyApk2")
           echo "现有文件检查HTTP状态码: $EXISTING_CHECK"
 
           # 尝试删除旧文件（如果存在）
           echo "🔄 尝试删除旧APK文件..."
-          DELETE_RESP=$(curl -s -X DELETE "https://shz.al/~csBabyApk:${SHZAL_PASSWORD}" || true)
+          DELETE_RESP=$(curl -s -X DELETE "https://shz.al/~csBabyApk2:${SHZAL_PASSWORD}" || true)
           echo "删除响应: $DELETE_RESP"
 
           # 等待删除完成
@@ -284,7 +284,7 @@ jobs:
           # 上传新 APK
           echo "📤 上传新APK..."
           RESP=$(curl -s -X POST \
-            -F "n=csBabyApk" \
+            -F "n=csBabyApk2" \
             -F "e=${EXPIRE}" \
             -F "filename=${{ needs.build-release.outputs.apk_name }}" \
             -F "c=@${{ steps.apk.outputs.path }}" \
@@ -298,7 +298,7 @@ jobs:
             echo "❌ APK上传失败: $RESP"
             # 尝试使用替代方法：直接覆盖
             ALT_RESP=$(curl -s -X POST \
-              -F "n=csBabyApk" \
+              -F "n=csBabyApk2" \
               -F "e=${EXPIRE}" \
               -F "filename=${{ needs.build-release.outputs.apk_name }}" \
               -F "c=@${{ steps.apk.outputs.path }}" \
@@ -318,8 +318,8 @@ jobs:
           echo "| 版本 | v${{ needs.build-release.outputs.version_name }} (${{ needs.build-release.outputs.version_code }}) |" >> $GITHUB_STEP_SUMMARY
           echo "| APK | ${{ needs.build-release.outputs.apk_name }} |" >> $GITHUB_STEP_SUMMARY
           echo "| MD5 | ${{ steps.md5.outputs.md5 }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 版本信息 | https://shz.al/~csBabyLog |" >> $GITHUB_STEP_SUMMARY
-          echo "| APK 下载 | https://shz.al/~csBabyApk |" >> $GITHUB_STEP_SUMMARY
+          echo "| 版本信息 | https://shz.al/~csBabyLog2 |" >> $GITHUB_STEP_SUMMARY
+          echo "| APK 下载 | https://shz.al/~csBabyApk2 |" >> $GITHUB_STEP_SUMMARY
 
   # ─────────────────────────────────────────
   # Job 3: 创建 GitHub Release（打 tag 时触发）
@@ -349,8 +349,8 @@ jobs:
             **发布日期：** $(date +%Y-%m-%d)
 
             ### 下载
-            - 📥 **直接下载（7天有效）：** https://shz.al/~csBabyApk
-            - 📋 **版本信息：** https://shz.al/~csBabyLog
+            - 📥 **直接下载（24小时有效）：** https://shz.al/~csBabyApk2
+            - 📋 **版本信息：** https://shz.al/~csBabyLog2
 
             ### 变更内容
             > 请在此补充本版本的主要变更
