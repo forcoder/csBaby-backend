@@ -29,6 +29,8 @@ android {
             keyAlias = findProperty("SIGNING_KEY_ALIAS") as? String ?: "csbaby-release"
             keyPassword = findProperty("SIGNING_KEY_PASSWORD") as String
             storeType = "PKCS12"
+            v1SigningEnabled = true
+            v2SigningEnabled = true
         }
     }
 
