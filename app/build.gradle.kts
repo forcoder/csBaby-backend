@@ -5,6 +5,9 @@ plugins {
     id("androidx.room") version "2.6.1"
 }
 
+// Apply v1 signing config via Groovy (Kotlin DSL doesn't expose v1SigningEnabled)
+apply(from = "signing.gradle")
+
 android {
     namespace = "com.csbaby.kefu"
     compileSdk = 34
@@ -32,13 +35,6 @@ android {
         }
     }
 
-    // AGP 8.x Kotlin DSL: signing config properties must be set via configureEach
-    signingConfigs.configureEach {
-        if (name == "release") {
-            v1SigningEnabled = true
-            v2SigningEnabled = true
-        }
-    }
 
     buildTypes {
         release {
