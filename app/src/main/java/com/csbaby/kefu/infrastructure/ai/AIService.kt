@@ -102,37 +102,18 @@ class AIService @Inject constructor(
         temperature: Float? = null,
         maxTokens: Int? = null
     ): Result<String> {
-        // Get default model first
-        val defaultModel = aiModelRepository.getDefaultModel()
-        if (defaultModel != null && defaultModel.isEnabled && !hasReachedUsageLimit(defaultModel)) {
-            val result = generateCompletionWithModel(
-                modelId = defaultModel.id,
-                prompt = prompt,
-                systemPrompt = systemPrompt,
-                temperature = temperature,
-                maxTokens = maxTokens
-            )
-
-            if (result.isSuccess) {
-                return result
-            }
-            Timber.w("Default model ${defaultModel.modelName} failed, trying other models")
-        }
-
-        // If default model failed or reached limit, try other models
-        val otherModels = mutableListOf<AIModelConfig>()
+        // Get all enabled models and try them in order
+        val models = mutableListOf<AIModelConfig>()
         aiModelRepository.getAllModels().collect {
-            otherModels.addAll(it.filter {
-                model -> model.isEnabled && !hasReachedUsageLimit(model) && model.id != defaultModel?.id
-            })
+            models.addAll(it.filter { model -> model.isEnabled && !hasReachedUsageLimit(model) })
         }
 
-        if (otherModels.isEmpty()) {
-            return Result.failure(Exception("No enabled models available or all reached usage limit"))
+        if (models.isEmpty()) {
+            return Result.failure(Exception("没有可用的AI模型，请检查模型配置"))
         }
 
-        // Sort by last used
-        val sortedModels = otherModels.sortedByDescending { it.lastUsed }
+        // Sort by last used to prioritize recently used models
+        val sortedModels = models.sortedByDescending { it.lastUsed }
 
         // Try each model in order until one succeeds
         var lastException: Exception? = null
@@ -156,7 +137,7 @@ class AIService @Inject constructor(
             Timber.w("Model ${model.modelName} failed: ${lastException?.message}")
         }
 
-        return Result.failure(lastException ?: Exception("All models failed or reached usage limit"))
+        return Result.failure(lastException ?: Exception("所有AI模型都尝试失败，请检查模型配置和网络连接"))
     }
 
     /**
