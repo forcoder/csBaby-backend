@@ -22,18 +22,12 @@ android {
         }
     }
 
-    // 签名配置：优先从 local.properties / -P 参数 / 环境变量读取
-    val keystoreFile = File(project.rootDir, "keystore/csbaby-release.p12")
-    val storePassword = project.findProperty("SIGNING_STORE_PASSWORD") as? String ?: System.getenv("SIGNING_STORE_PASSWORD") ?: ""
-    val keyAlias = project.findProperty("SIGNING_KEY_ALIAS") as? String ?: System.getenv("SIGNING_KEY_ALIAS") ?: "csbaby-release"
-    val keyPassword = project.findProperty("SIGNING_KEY_PASSWORD") as? String ?: System.getenv("SIGNING_KEY_PASSWORD") ?: ""
-
     signingConfigs {
-        named("release") {
-            storeFile = keystoreFile
-            this.storePassword = storePassword
-            this.keyAlias = keyAlias
-            this.keyPassword = keyPassword
+        create("release") {
+            storeFile = file("keystore/csbaby-release.p12")
+            storePassword = findProperty("SIGNING_STORE_PASSWORD") as String
+            keyAlias = findProperty("SIGNING_KEY_ALIAS") as? String ?: "csbaby-release"
+            keyPassword = findProperty("SIGNING_KEY_PASSWORD") as String
             storeType = "PKCS12"
         }
     }

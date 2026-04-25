@@ -111,30 +111,28 @@ jobs:
             -Dorg.gradle.jvmargs="-Xmx2048m -Xms512m" \
             --stacktrace
 
-      - name: 验证 APK 已签名
+      - name: 验证 APK 签名
         run: |
-          APK="app/build/outputs/apk/release/app-release.apk"
-          if [ ! -f "$APK" ]; then
-            echo "❌ 未找到 Release APK: $APK"
+          # Gradle 签名后的 APK 应该是 app-release.apk（不带 unsigned 后缀）
+          SIGNED_APK="app/build/outputs/apk/release/app-release.apk"
+          UNSIGNED_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+
+          if [ -f "$SIGNED_APK" ]; then
+            echo "✅ 已签名 APK 存在: $(ls -lh "$SIGNED_APK" | awk '{print $5}')"
+          elif [ -f "$UNSIGNED_APK" ]; then
+            echo "⚠️ 仅找到未签名 APK，签名可能未生效"
+            echo "未签名 APK: $(ls -lh "$UNSIGNED_APK" | awk '{print $5}')"
+            exit 1
+          else
+            echo "❌ 未找到任何 Release APK"
+            ls -la app/build/outputs/apk/release/
             exit 1
           fi
-          # 使用 jarsigner 验证签名
-          if command -v jarsigner &> /dev/null; then
-            jarsigner -verify -verbose "$APK" 2>&1 | tail -5
-          else
-            echo "⚠️ jarsigner 不可用，跳过验证（Gradle 已在构建时签名）"
-          fi
-          echo "✅ APK 构建完成: $(ls -lh "$APK" | awk '{print $5}')"
 
       - name: 重命名并记录 APK 路径
         id: rename
         run: |
-          # 优先使用已签名的 APK
-          if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
-            APK_SRC="app/build/outputs/apk/release/app-release.apk"
-          else
-            APK_SRC="app/build/outputs/apk/release/app-release-unsigned.apk"
-          fi
+          APK_SRC="app/build/outputs/apk/release/app-release.apk"
           APK_NAME="csBaby-v${{ steps.bump.outputs.new_name }}.apk"
           APK_DST="app/build/outputs/apk/release/$APK_NAME"
           cp "$APK_SRC" "$APK_DST"
