@@ -1,11 +1,14 @@
 package com.csbaby.kefu.infrastructure.simple
 
 import com.csbaby.kefu.domain.model.AIModelConfig
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * 简化的智能任务路由器 - 无需注解处理
  */
-class SimpleTaskRouter {
+@Singleton
+class SimpleTaskRouter @Inject constructor() {
 
     /**
      * 为给定任务选择最佳模型

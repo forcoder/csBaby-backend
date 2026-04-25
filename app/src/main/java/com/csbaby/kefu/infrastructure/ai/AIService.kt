@@ -5,6 +5,10 @@ import com.csbaby.kefu.domain.model.AIModelConfig
 import com.csbaby.kefu.domain.model.ModelType
 import com.csbaby.kefu.domain.model.UserStyleProfile
 import com.csbaby.kefu.domain.repository.AIModelRepository
+import com.csbaby.kefu.infrastructure.simple.SimpleTaskRouter
+import com.csbaby.kefu.infrastructure.simple.TaskType
+import com.csbaby.kefu.infrastructure.simple.RoutingResult
+import com.csbaby.kefu.infrastructure.style.StyleLearningEngine
 import kotlinx.coroutines.delay
 import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap
@@ -17,7 +21,8 @@ import javax.inject.Singleton
 @Singleton
 class AIService @Inject constructor(
     private val aiClient: AIClient,
-    private val aiModelRepository: AIModelRepository
+    private val aiModelRepository: AIModelRepository,
+    private val simpleTaskRouter: SimpleTaskRouter
 ) {
     
     // AI response cache
@@ -191,6 +196,52 @@ class AIService @Inject constructor(
         }
 
         return result
+    }
+
+    /**
+     * Generate completion with intelligent task routing.
+     * Automatically selects the best model based on task type and current model capabilities.
+     */
+    suspend fun generateCompletionWithRouting(
+        prompt: String,
+        systemPrompt: String? = null,
+        taskType: TaskType,
+        temperature: Float? = null,
+        maxTokens: Int? = null
+    ): Result<String> {
+        // Get all available models
+        val models = mutableListOf<AIModelConfig>()
+        aiModelRepository.getAllModels().collect {
+            models.addAll(it.filter { model -> model.isEnabled && !hasReachedUsageLimit(model) })
+        }
+
+        if (models.isEmpty()) {
+            return Result.failure(Exception("没有可用的AI模型，请检查模型配置"))
+        }
+
+        // Use smart routing to select the best model
+        val routingResult = simpleTaskRouter.selectBestModel(taskType, models)
+
+        val selectedModel = when (routingResult) {
+            is RoutingResult.SingleChoice -> routingResult.selectedModel.model
+            is RoutingResult.MultipleChoices -> routingResult.candidates.first().model
+            is RoutingResult.NoSuitableModel -> {
+                Timber.w("No suitable model found for task type $taskType, using default model selection")
+                // Fallback to original logic
+                models.sortedByDescending { it.lastUsed }.first()
+            }
+        }
+
+        Timber.i("Smart routing selected model: ${selectedModel.modelName} for task: $taskType")
+
+        // Generate completion with selected model
+        return generateCompletionWithModel(
+            modelId = selectedModel.id,
+            prompt = prompt,
+            systemPrompt = systemPrompt,
+            temperature = temperature ?: selectedModel.temperature,
+            maxTokens = maxTokens ?: selectedModel.maxTokens
+        )
     }
 
     /**
