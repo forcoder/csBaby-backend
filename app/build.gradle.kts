@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -11,7 +13,7 @@ apply(from = "signing.gradle")
 
 // 从 gradle.properties 读取版本号（CI 自动 bump 写入此处）
 val versionPropsFile = rootProject.file("gradle.properties")
-val versionProps = java.util.Properties()
+val versionProps = Properties()
 if (versionPropsFile.exists()) {
     versionPropsFile.reader().use { versionProps.load(it) }
 }
@@ -38,9 +40,9 @@ android {
     signingConfigs {
         create("release") {
             storeFile = rootProject.file("keystore/csbaby-release.p12")
-            storePassword = findProperty("SIGNING_STORE_PASSWORD") ?: ""
-            keyAlias = findProperty("SIGNING_KEY_ALIAS") ?: "csbaby-release"
-            keyPassword = findProperty("SIGNING_KEY_PASSWORD") ?: ""
+            storePassword = findProperty("SIGNING_STORE_PASSWORD")?.toString() ?: ""
+            keyAlias = findProperty("SIGNING_KEY_ALIAS")?.toString() ?: "csbaby-release"
+            keyPassword = findProperty("SIGNING_KEY_PASSWORD")?.toString() ?: ""
             storeType = "PKCS12"
         }
     }
