@@ -103,6 +103,14 @@ class FloatingWindowService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "FWS.onStartCommand: action=${intent?.action}, extras=${intent?.extras?.keySet() ?: "null"}")
+        // Android 要求 startForegroundService 启动后 5 秒内必须调用 startForeground
+        try {
+            startForeground(NOTIFICATION_ID, createNotification())
+        } catch (e: Exception) {
+            Log.e(TAG, "FWS.onStartCommand: startForeground failed", e)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         try {
             when (intent?.action) {
                 ACTION_SHOW -> {
