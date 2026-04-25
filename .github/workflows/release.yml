@@ -111,9 +111,9 @@ jobs:
             -Dorg.gradle.jvmargs="-Xmx2048m -Xms512m" \
             --stacktrace
 
-      - name: 验证 APK 签名
+      - name: 验证 APK 签名及指纹
+        id: verify
         run: |
-          # Gradle 签名后的 APK 应该是 app-release.apk（不带 unsigned 后缀）
           SIGNED_APK="app/build/outputs/apk/release/app-release.apk"
           UNSIGNED_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
 
@@ -121,12 +121,31 @@ jobs:
             echo "✅ 已签名 APK 存在: $(ls -lh "$SIGNED_APK" | awk '{print $5}')"
           elif [ -f "$UNSIGNED_APK" ]; then
             echo "⚠️ 仅找到未签名 APK，签名可能未生效"
-            echo "未签名 APK: $(ls -lh "$UNSIGNED_APK" | awk '{print $5}')"
+            ls -la app/build/outputs/apk/release/
             exit 1
           else
             echo "❌ 未找到任何 Release APK"
             ls -la app/build/outputs/apk/release/
             exit 1
+          fi
+
+          # 用 apksigner 验证签名并提取指纹
+          APKSIGNER=$(find $ANDROID_HOME -name "apksigner" -type f | head -1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "⚠️ 未找到 apksigner，跳过指纹验证"
+          else
+            echo "🔍 使用 apksigner 验证签名..."
+            $APKSIGNER verify --verbose --print-certs "$SIGNED_APK"
+
+            # 提取 SHA-256 指纹
+            FINGERPRINT=$($APKSIGNER verify --print-certs "$SIGNED_APK" 2>&1 | grep -A1 "certificate SHA-256 digest:" | tail -1 | tr -d ' ')
+            echo "sha256=$FINGERPRINT" >> $GITHUB_OUTPUT
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 APK 签名 SHA-256 指纹: $FINGERPRINT"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "⚠️ 安装时如果提示签名不一致，请确认此指纹与之前版本一致"
           fi
 
       - name: 重命名并记录 APK 路径
