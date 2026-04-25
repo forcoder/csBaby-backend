@@ -24,7 +24,7 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("keystore/csbaby-release.p12")
+            storeFile = rootProject.file("keystore/csbaby-release.p12")
             storePassword = findProperty("SIGNING_STORE_PASSWORD") as String
             keyAlias = findProperty("SIGNING_KEY_ALIAS") as? String ?: "csbaby-release"
             keyPassword = findProperty("SIGNING_KEY_PASSWORD") as String
