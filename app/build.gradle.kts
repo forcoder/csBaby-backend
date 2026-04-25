@@ -22,20 +22,18 @@ android {
         }
     }
 
-    // 签名配置：优先从环境变量 / local.properties 读取，CI 环境通过 -P 参数传入
+    // 签名配置：优先从 local.properties / -P 参数 / 环境变量读取
+    val keystoreFile = File(project.rootDir, "keystore/csbaby-release.p12")
+    val storePassword = project.findProperty("SIGNING_STORE_PASSWORD") as? String ?: System.getenv("SIGNING_STORE_PASSWORD") ?: ""
+    val keyAlias = project.findProperty("SIGNING_KEY_ALIAS") as? String ?: System.getenv("SIGNING_KEY_ALIAS") ?: "csbaby-release"
+    val keyPassword = project.findProperty("SIGNING_KEY_PASSWORD") as? String ?: System.getenv("SIGNING_KEY_PASSWORD") ?: ""
+
     signingConfigs {
-        create("csbabyRelease") {
-            val keystoreFile = File(project.rootDir, "keystore/csbaby-release.p12")
-            if (!keystoreFile.exists()) {
-                throw GradleException("❌ 签名密钥文件不存在: ${keystoreFile.absolutePath}")
-            }
+        named("release") {
             storeFile = keystoreFile
-            storePassword = project.findProperty("SIGNING_STORE_PASSWORD") as? String
-                ?: throw GradleException("❌ 未设置 SIGNING_STORE_PASSWORD")
-            keyAlias = project.findProperty("SIGNING_KEY_ALIAS") as? String
-                ?: throw GradleException("❌ 未设置 SIGNING_KEY_ALIAS")
-            keyPassword = project.findProperty("SIGNING_KEY_PASSWORD") as? String
-                ?: throw GradleException("❌ 未设置 SIGNING_KEY_PASSWORD")
+            this.storePassword = storePassword
+            this.keyAlias = keyAlias
+            this.keyPassword = keyPassword
             storeType = "PKCS12"
         }
     }
@@ -47,7 +45,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("csbabyRelease")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
