@@ -1,8 +1,8 @@
 package com.csbaby.kefu.infrastructure.backup
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
-import androidx.core.content.FileProvider
 import androidx.hilt.work.HiltWorker
 import androidx.work.*
 import com.csbaby.kefu.data.local.BackupManager
@@ -118,12 +118,8 @@ class AutoBackupWorker @AssistedInject constructor(
                 .format(Date())
             val backupFile = File(backupDir, "csbaby_backup_$timestamp.zip")
 
-            // 使用 content URI 备份
-            val uri = androidx.core.content.FileProvider.getUriForFile(
-                applicationContext,
-                "${applicationContext.packageName}.fileprovider",
-                backupFile
-            )
+            // 直接保存到文件（用于自动备份）
+            val uri = android.net.Uri.fromFile(backupFile)
 
             // 执行备份
             val result = backupManager.performBackup(uri) { progress, message ->
