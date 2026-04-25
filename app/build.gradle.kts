@@ -37,10 +37,6 @@ android {
             keyPassword = project.findProperty("SIGNING_KEY_PASSWORD") as? String
                 ?: throw GradleException("❌ 未设置 SIGNING_KEY_PASSWORD")
             storeType = "PKCS12"
-            // 同时启用 v1 (JAR) 和 v2/v3 签名，确保兼容性
-            v1SigningEnabled = true
-            v2SigningEnabled = true
-            v3SigningEnabled = true
         }
     }
 
