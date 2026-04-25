@@ -93,27 +93,48 @@ class StyleLearningEngine @Inject constructor(
         val recentReplies = replyHistoryRepository.getRecentReplies(MAX_LEARNING_SAMPLES)
             .first()
             .filter { it.finalReply.isNotBlank() }
-        if (recentReplies.size < MIN_SAMPLES_FOR_AI_ANALYSIS) return
+        if (recentReplies.size < MIN_SAMPLES_FOR_AI_ANALYSIS) {
+            Timber.d("Not enough samples for deep analysis: ${recentReplies.size} < $MIN_SAMPLES_FOR_AI_ANALYSIS")
+            return
+        }
 
         val combinedText = recentReplies.take(10).joinToString("\n---\n") { it.finalReply }
 
-        val analysisResult = aiService.analyzeTextStyle(combinedText)
-        analysisResult.onSuccess { analysis ->
-            val latestProfile = userStyleRepository.getProfileSync(userId) ?: profile
-            val weightedSamples = (latestProfile.learningSamples / 2).coerceAtLeast(MIN_SAMPLES_FOR_AI_ANALYSIS)
-            val mergedPhrases = mergeCommonPhrases(
-                latestProfile.commonPhrases,
-                extractCommonPhrases(recentReplies.map { it.finalReply })
+        try {
+            val analysisResult = aiService.analyzeTextStyle(combinedText)
+            analysisResult.fold(
+                onSuccess = { analysis ->
+                    val latestProfile = userStyleRepository.getProfileSync(userId) ?: profile
+                    val weightedSamples = (latestProfile.learningSamples / 2).coerceAtLeast(MIN_SAMPLES_FOR_AI_ANALYSIS)
+                    val mergedPhrases = mergeCommonPhrases(
+                        latestProfile.commonPhrases,
+                        extractCommonPhrases(recentReplies.map { it.finalReply })
+                    )
+                    val updatedProfile = latestProfile.copy(
+                        formalityLevel = blendMetric(latestProfile.formalityLevel, analysis.formality, weightedSamples),
+                        enthusiasmLevel = blendMetric(latestProfile.enthusiasmLevel, analysis.enthusiasm, weightedSamples),
+                        professionalismLevel = blendMetric(latestProfile.professionalismLevel, analysis.professionalism, weightedSamples),
+                        commonPhrases = mergedPhrases,
+                        accuracyScore = calculateAccuracyScore(latestProfile.learningSamples),
+                        lastTrained = System.currentTimeMillis()
+                    )
+                    userStyleRepository.updateProfile(updatedProfile)
+                    Timber.d("Deep analysis completed for user $userId, samples: ${latestProfile.learningSamples}")
+                },
+                onFailure = { error ->
+                    Timber.e("Deep style analysis failed: ${error.message}")
+                    // Even if AI analysis fails, we can still update the profile with local analysis
+                    val localPhrases = extractCommonPhrases(recentReplies.map { it.finalReply })
+                    val latestProfile = userStyleRepository.getProfileSync(userId) ?: profile
+                    val updatedProfile = latestProfile.copy(
+                        commonPhrases = mergeCommonPhrases(latestProfile.commonPhrases, localPhrases),
+                        lastTrained = System.currentTimeMillis()
+                    )
+                    userStyleRepository.updateProfile(updatedProfile)
+                }
             )
-            val updatedProfile = latestProfile.copy(
-                formalityLevel = blendMetric(latestProfile.formalityLevel, analysis.formality, weightedSamples),
-                enthusiasmLevel = blendMetric(latestProfile.enthusiasmLevel, analysis.enthusiasm, weightedSamples),
-                professionalismLevel = blendMetric(latestProfile.professionalismLevel, analysis.professionalism, weightedSamples),
-                commonPhrases = mergedPhrases,
-                accuracyScore = calculateAccuracyScore(latestProfile.learningSamples),
-                lastTrained = System.currentTimeMillis()
-            )
-            userStyleRepository.updateProfile(updatedProfile)
+        } catch (e: Exception) {
+            Timber.e(e, "Exception during deep style analysis: ${e.message}")
         }
     }
 
