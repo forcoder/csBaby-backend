@@ -24,13 +24,23 @@ android {
 
     // 签名配置：优先从环境变量 / local.properties 读取，CI 环境通过 -P 参数传入
     signingConfigs {
-        create("release") {
+        create("csbabyRelease") {
             val keystoreFile = File(project.rootDir, "keystore/csbaby-release.p12")
-            storeFile = if (keystoreFile.exists()) keystoreFile else null
-            storePassword = project.findProperty("SIGNING_STORE_PASSWORD") as? String ?: "csbaby2026"
-            keyAlias = project.findProperty("SIGNING_KEY_ALIAS") as? String ?: "csbaby-release"
-            keyPassword = project.findProperty("SIGNING_KEY_PASSWORD") as? String ?: "csbaby2026"
+            if (!keystoreFile.exists()) {
+                throw GradleException("❌ 签名密钥文件不存在: ${keystoreFile.absolutePath}")
+            }
+            storeFile = keystoreFile
+            storePassword = project.findProperty("SIGNING_STORE_PASSWORD") as? String
+                ?: throw GradleException("❌ 未设置 SIGNING_STORE_PASSWORD")
+            keyAlias = project.findProperty("SIGNING_KEY_ALIAS") as? String
+                ?: throw GradleException("❌ 未设置 SIGNING_KEY_ALIAS")
+            keyPassword = project.findProperty("SIGNING_KEY_PASSWORD") as? String
+                ?: throw GradleException("❌ 未设置 SIGNING_KEY_PASSWORD")
             storeType = "PKCS12"
+            // 同时启用 v1 (JAR) 和 v2/v3 签名，确保兼容性
+            v1SigningEnabled = true
+            v2SigningEnabled = true
+            v3SigningEnabled = true
         }
     }
 
@@ -41,7 +51,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.getByName("csbabyRelease")
         }
     }
     compileOptions {
