@@ -1,14 +1,19 @@
 package com.csbaby.kefu.presentation.screens.profile
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.net.Uri
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.csbaby.kefu.BuildConfig
+import com.csbaby.kefu.data.local.BackupManager
+import com.csbaby.kefu.data.local.KefuDatabase
 import com.csbaby.kefu.data.local.PreferencesManager
 import com.csbaby.kefu.data.model.*
 import com.csbaby.kefu.data.model.UpdateStatus
 import com.csbaby.kefu.domain.model.UserStyleProfile
 import com.csbaby.kefu.domain.repository.UserStyleRepository
+import com.csbaby.kefu.infrastructure.backup.AutoBackupWorker
 import com.csbaby.kefu.infrastructure.ota.OtaManager
 import com.csbaby.kefu.infrastructure.oss.AliyunOssManager
 import com.csbaby.kefu.data.remote.VersionListItem
@@ -42,7 +47,16 @@ data class ProfileUiState(
     val uploadProgress: Float = 0f, // 上传进度
     val isUploading: Boolean = false, // 是否正在上传
     // 主题设置
-    val themeMode: String = "system" // light, dark, system
+    val themeMode: String = "system", // light, dark, system
+    // 数据备份/恢复相关状态
+    val isBackingUp: Boolean = false, // 是否正在备份
+    val isRestoring: Boolean = false, // 是否正在恢复
+    val backupProgress: Float = 0f, // 备份/恢复进度
+    val backupStatusMessage: String = "", // 备份/恢复状态消息
+    val lastBackupTime: String? = null, // 上次备份时间
+    val restoreMetadata: BackupManager.BackupMetadata? = null, // 恢复的备份元数据
+    val backupErrorMessage: String? = null, // 备份/恢复错误消息
+    val autoBackupEnabled: Boolean = false // 自动备份是否启用
 )
 
 data class OtaUpdateInfo(
@@ -55,11 +69,14 @@ data class OtaUpdateInfo(
 
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val preferencesManager: PreferencesManager,
     private val userStyleRepository: UserStyleRepository,
     private val styleLearningEngine: StyleLearningEngine,
     private val otaManager: OtaManager,
-    private val ossManager: AliyunOssManager  // 新添加：阿里云OSS管理器
+    private val ossManager: AliyunOssManager,  // 新添加：阿里云OSS管理器
+    private val backupManager: BackupManager,  // 数据备份管理器
+    private val database: KefuDatabase  // Room 数据库（用于恢复时关闭连接）
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -81,7 +98,8 @@ class ProfileViewModel @Inject constructor(
                     it.copy(
                         styleLearningEnabled = prefs.styleLearningEnabled,
                         autoSendEnabled = prefs.autoSendEnabled,
-                        themeMode = prefs.themeMode
+                        themeMode = prefs.themeMode,
+                        autoBackupEnabled = prefs.autoBackupEnabled
                     )
                 }
             }
@@ -578,10 +596,10 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _uiState.update { it.copy(uploadStatus = "正在设置强制更新状态...") }
-                
+
                 // 模拟设置强制更新
                 kotlinx.coroutines.delay(800)
-                
+
                 // 更新本地列表中的版本状态
                 val updatedList = _uiState.value.ossVersionList.map { version ->
                     if (version.versionCode == versionCode) {
@@ -590,23 +608,207 @@ class ProfileViewModel @Inject constructor(
                         version
                     }
                 }
-                
-                _uiState.update { 
+
+                _uiState.update {
                     it.copy(
                         ossVersionList = updatedList,
                         uploadStatus = if (forceUpdate) "已设置为强制更新" else "已取消强制更新"
                     )
                 }
                 Timber.i("版本 $versionCode 强制更新状态设置为: $forceUpdate")
-                
+
             } catch (e: Exception) {
-                _uiState.update { 
+                _uiState.update {
                     it.copy(
                         uploadStatus = "设置强制更新失败: ${e.message}"
                     )
                 }
                 Timber.e(e, "设置强制更新失败")
             }
+        }
+    }
+
+    // ========== 数据备份/恢复功能 ==========
+
+    /**
+     * 执行数据备份
+     * @param outputUri 备份文件输出位置
+     */
+    fun performBackup(outputUri: android.net.Uri) {
+        viewModelScope.launch {
+            try {
+                _uiState.update {
+                    it.copy(
+                        isBackingUp = true,
+                        backupProgress = 0f,
+                        backupStatusMessage = "正在准备备份...",
+                        backupErrorMessage = null
+                    )
+                }
+
+                val result = backupManager.performBackup(outputUri) { progress, message ->
+                    _uiState.update {
+                        it.copy(
+                            backupProgress = progress,
+                            backupStatusMessage = message
+                        )
+                    }
+                }
+
+                when (result) {
+                    is BackupManager.BackupResult.Success -> {
+                        _uiState.update {
+                            it.copy(
+                                isBackingUp = false,
+                                backupProgress = 1f,
+                                backupStatusMessage = "备份完成",
+                                lastBackupTime = result.metadata.backupTimeFormatted,
+                                backupErrorMessage = null
+                            )
+                        }
+                        Timber.i("数据备份成功: ${result.metadata.backupTimeFormatted}")
+                    }
+                    is BackupManager.BackupResult.Error -> {
+                        _uiState.update {
+                            it.copy(
+                                isBackingUp = false,
+                                backupProgress = 0f,
+                                backupStatusMessage = "备份失败",
+                                backupErrorMessage = result.message
+                            )
+                        }
+                        Timber.e(result.exception, "数据备份失败: ${result.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isBackingUp = false,
+                        backupProgress = 0f,
+                        backupStatusMessage = "备份失败",
+                        backupErrorMessage = e.message
+                    )
+                }
+                Timber.e(e, "数据备份异常")
+            }
+        }
+    }
+
+    /**
+     * 执行数据恢复
+     * @param inputUri 备份文件路径
+     */
+    fun performRestore(inputUri: android.net.Uri) {
+        viewModelScope.launch {
+            try {
+                _uiState.update {
+                    it.copy(
+                        isRestoring = true,
+                        backupProgress = 0f,
+                        backupStatusMessage = "正在读取备份文件...",
+                        backupErrorMessage = null,
+                        restoreMetadata = null
+                    )
+                }
+
+                // 先读取元数据
+                val metadata = backupManager.readBackupMetadata(inputUri)
+                if (metadata != null) {
+                    _uiState.update { it.copy(restoreMetadata = metadata) }
+                }
+
+                // 关闭数据库连接（恢复前必须关闭）
+                try {
+                    database.close()
+                    Timber.d("数据库连接已关闭，准备恢复")
+                } catch (e: Exception) {
+                    Timber.w(e, "关闭数据库连接时出错")
+                }
+
+                val result = backupManager.performRestore(inputUri) { progress, message ->
+                    _uiState.update {
+                        it.copy(
+                            backupProgress = progress,
+                            backupStatusMessage = message
+                        )
+                    }
+                }
+
+                when (result) {
+                    is BackupManager.RestoreResult.Success -> {
+                        _uiState.update {
+                            it.copy(
+                                isRestoring = false,
+                                backupProgress = 1f,
+                                backupStatusMessage = "恢复完成，需要重启应用生效",
+                                backupErrorMessage = null
+                            )
+                        }
+                        Timber.i("数据恢复成功: 数据库=${result.databaseRestored}, 设置=${result.settingsRestored}")
+                    }
+                    is BackupManager.RestoreResult.Error -> {
+                        _uiState.update {
+                            it.copy(
+                                isRestoring = false,
+                                backupProgress = 0f,
+                                backupStatusMessage = "恢复失败",
+                                backupErrorMessage = result.message
+                            )
+                        }
+                        Timber.e(result.exception, "数据恢复失败: ${result.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isRestoring = false,
+                        backupProgress = 0f,
+                        backupStatusMessage = "恢复失败",
+                        backupErrorMessage = e.message
+                    )
+                }
+                Timber.e(e, "数据恢复异常")
+            }
+        }
+    }
+
+    /**
+     * 清除备份状态消息
+     */
+    fun clearBackupStatus() {
+        _uiState.update {
+            it.copy(
+                backupStatusMessage = "",
+                backupErrorMessage = null
+            )
+        }
+    }
+
+    /**
+     * 格式化备份文件大小
+     */
+    fun formatBackupSize(bytes: Long): String {
+        return backupManager.formatFileSize(bytes)
+    }
+
+    /**
+     * 切换自动备份开关
+     */
+    fun toggleAutoBackup(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesManager.updateAutoBackupEnabled(enabled)
+
+            if (enabled) {
+                // 启用自动备份：调度定期备份（每 24 小时）
+                AutoBackupWorker.schedule(context, intervalHours = 24)
+                Timber.d("自动备份已启用")
+            } else {
+                // 取消自动备份
+                AutoBackupWorker.cancel(context)
+                Timber.d("自动备份已禁用")
+            }
+
+            _uiState.update { it.copy(autoBackupEnabled = enabled) }
         }
     }
 }

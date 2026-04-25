@@ -54,6 +54,8 @@ class PreferencesManager @Inject constructor(
         val SEARCH_MODE = stringPreferencesKey("search_mode") // KEYWORD, SEMANTIC, HYBRID
         // Theme settings
         val THEME_MODE = stringPreferencesKey("theme_mode") // light, dark, system
+        // Auto backup settings
+        val AUTO_BACKUP_ENABLED = booleanPreferencesKey("auto_backup_enabled")
     }
 
     // Data class for user preferences
@@ -74,7 +76,9 @@ class PreferencesManager @Inject constructor(
         val semanticSearchEnabled: Boolean = true,
         val searchMode: String = "HYBRID", // KEYWORD, SEMANTIC, HYBRID
         // Theme settings
-        val themeMode: String = "system" // light, dark, system
+        val themeMode: String = "system", // light, dark, system
+        // Auto backup settings
+        val autoBackupEnabled: Boolean = false
     )
 
     val userPreferencesFlow: Flow<UserPreferences> = dataStore.data
@@ -103,7 +107,9 @@ class PreferencesManager @Inject constructor(
                 semanticSearchEnabled = preferences[PreferencesKeys.SEMANTIC_SEARCH_ENABLED] ?: true,
                 searchMode = preferences[PreferencesKeys.SEARCH_MODE] ?: "HYBRID",
                 // Theme settings
-                themeMode = preferences[PreferencesKeys.THEME_MODE] ?: "system"
+                themeMode = preferences[PreferencesKeys.THEME_MODE] ?: "system",
+                // Auto backup settings
+                autoBackupEnabled = preferences[PreferencesKeys.AUTO_BACKUP_ENABLED] ?: false
             )
         }
 
@@ -214,6 +220,13 @@ class PreferencesManager @Inject constructor(
     suspend fun updateThemeMode(mode: String) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.THEME_MODE] = mode
+        }
+    }
+
+    // Auto backup settings
+    suspend fun updateAutoBackupEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.AUTO_BACKUP_ENABLED] = enabled
         }
     }
 }
