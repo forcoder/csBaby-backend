@@ -90,7 +90,71 @@ fun ProfileScreen(
                 uiState = uiState
             )
 
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 数据备份
+            DataBackupCard(viewModel = viewModel, uiState = uiState)
+
             Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // 备份文件保存选择器
+    val backupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) {
+            // TODO: 实现备份功能
+        }
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = "数据备份",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "备份知识库、大模型配置等数据。重装应用前请先备份。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = {
+                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+                        .format(Date())
+                    backupLauncher.launch("csbaby_backup_$timestamp.zip")
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Icon(Icons.Default.Backup, contentDescription = "备份数据")
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("备份数据")
+            }
         }
     }
 }
