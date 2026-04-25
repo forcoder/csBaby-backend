@@ -36,6 +36,12 @@ credentials/
 .env.local
 .env.*.local
 
+# Signing keystore (NEVER commit)
+keystore/
+*.jks
+*.p12
+*.keystore
+
 # Build scripts (local only)
 clean-cache.bat
 install-sdk.bat

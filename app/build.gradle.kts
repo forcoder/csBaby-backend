@@ -22,6 +22,18 @@ android {
         }
     }
 
+    // 签名配置：优先从环境变量 / local.properties 读取，CI 环境通过 -P 参数传入
+    signingConfigs {
+        create("release") {
+            val keystoreFile = File(project.rootDir, "keystore/csbaby-release.p12")
+            storeFile = if (keystoreFile.exists()) keystoreFile else null
+            storePassword = project.findProperty("SIGNING_STORE_PASSWORD") as? String ?: "csbaby2026"
+            keyAlias = project.findProperty("SIGNING_KEY_ALIAS") as? String ?: "csbaby-release"
+            keyPassword = project.findProperty("SIGNING_KEY_PASSWORD") as? String ?: "csbaby2026"
+            storeType = "PKCS12"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -29,6 +41,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
