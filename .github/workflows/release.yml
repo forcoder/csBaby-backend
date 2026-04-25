@@ -108,7 +108,7 @@ jobs:
           CI: true
           GRADLE_OPTS: "-Xmx2048m"
         run: |
-          ./gradlew assembleRelease --no-daemon -PskipVersionIncrement -PskipUpload \
+          ./gradlew assembleRelease --no-daemon \
             -Dorg.gradle.jvmargs="-Xmx2048m -Xms512m" \
             --stacktrace
 
