@@ -9,9 +9,6 @@ android {
     namespace = "com.csbaby.kefu"
     compileSdk = 34
 
-    // Enable v1 (JAR) signing — required for Android 9 (API 28) and below
-    v1SigningEnabled = true
-
     defaultConfig {
         applicationId = "com.csbaby.kefu"
         minSdk = 24
@@ -32,6 +29,14 @@ android {
             keyAlias = findProperty("SIGNING_KEY_ALIAS") as? String ?: "csbaby-release"
             keyPassword = findProperty("SIGNING_KEY_PASSWORD") as String
             storeType = "PKCS12"
+        }
+    }
+
+    // AGP 8.x Kotlin DSL: signing config properties must be set via configureEach
+    signingConfigs.configureEach {
+        if (name == "release") {
+            v1SigningEnabled = true
+            v2SigningEnabled = true
         }
     }
 
