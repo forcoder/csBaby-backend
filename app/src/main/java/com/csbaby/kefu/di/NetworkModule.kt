@@ -3,8 +3,6 @@ package com.csbaby.kefu.di
 import android.content.Context
 import com.csbaby.kefu.data.remote.AIClient
 import com.csbaby.kefu.data.remote.AIClientImpl
-import com.csbaby.kefu.data.remote.OtaApiService
-import com.csbaby.kefu.data.remote.ShzlApiService
 import com.csbaby.kefu.infrastructure.error.ErrorHandler
 import dagger.Module
 import dagger.Provides
@@ -12,7 +10,6 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
-import okhttp3.ResponseBody
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -65,9 +62,5 @@ object NetworkModule {
         return ErrorHandler(context)
     }
     
-    @Provides
-    @Singleton
-    fun providePerformanceMonitor(@ApplicationContext context: Context): com.csbaby.kefu.infrastructure.monitoring.PerformanceMonitor {
-        return com.csbaby.kefu.infrastructure.monitoring.PerformanceMonitor(context)
-    }
+    // PerformanceMonitor is auto-provided via @Inject constructor — no explicit binding needed
 }

@@ -204,8 +204,8 @@ jobs:
             "versionCode": ${{ needs.build-release.outputs.version_code }},
             "versionName": "${{ needs.build-release.outputs.version_name }}",
             "releaseDate": "$(date +%Y-%m-%d)",
-            "fileSize": ${{ steps.md5.outputs.size }},
-            "md5": "${{ steps.md5.outputs.md5 }}",
+            "fileSize": ${{ steps.apk.outputs.size }},
+            "md5": "${{ steps.apk.outputs.md5 }}",
             "downloadUrl": "https://shz.al/~csBabyApk2",
             "releaseNotes": "v${{ needs.build-release.outputs.version_name }} 更新",
             "forceUpdate": false
@@ -314,7 +314,7 @@ jobs:
           echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
           echo "| 版本 | v${{ needs.build-release.outputs.version_name }} (${{ needs.build-release.outputs.version_code }}) |" >> $GITHUB_STEP_SUMMARY
           echo "| APK | ${{ needs.build-release.outputs.apk_name }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| MD5 | ${{ steps.md5.outputs.md5 }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| MD5 | ${{ steps.apk.outputs.md5 }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 版本信息 | https://shz.al/~csBabyLog2 |" >> $GITHUB_STEP_SUMMARY
           echo "| APK 下载 | https://shz.al/~csBabyApk2 |" >> $GITHUB_STEP_SUMMARY
 
