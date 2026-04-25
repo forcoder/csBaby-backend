@@ -1920,7 +1920,11 @@ class FloatingWindowService : Service() {
             val intent = Intent(context, FloatingWindowService::class.java).apply {
                 action = ACTION_HIDE
             }
-            context.startService(intent)
+            try {
+                context.startForegroundService(intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "FWS.hide(): startForegroundService failed", e)
+            }
         }
 
         fun update(context: Context, displayData: DisplayData) {
@@ -1928,7 +1932,11 @@ class FloatingWindowService : Service() {
                 action = ACTION_UPDATE
                 putExtra(EXTRA_MESSAGE, displayData)
             }
-            context.startService(intent)
+            try {
+                context.startForegroundService(intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "FWS.update(): startForegroundService failed", e)
+            }
         }
     }
 }
