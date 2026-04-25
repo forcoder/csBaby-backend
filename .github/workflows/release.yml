@@ -29,8 +29,8 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 50
     outputs:
-      version_name: ${{ steps.version.outputs.name }}
-      version_code: ${{ steps.version.outputs.code }}
+      version_name: ${{ steps.bump.outputs.new_name }}
+      version_code: ${{ steps.bump.outputs.new_code }}
       apk_path:     ${{ steps.rename.outputs.apk_path }}
       apk_name:     ${{ steps.rename.outputs.apk_name }}
 
