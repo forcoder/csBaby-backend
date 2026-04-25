@@ -107,13 +107,25 @@ fun ProfileScreen(
 @Composable
 fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
 
     // 备份文件保存选择器
     val backupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip")
     ) { uri ->
         if (uri != null) {
-            // TODO: 实现备份功能
+            viewModel.setSnackbarHost(snackbarHostState)
+            viewModel.performBackup(uri)
+        }
+    }
+
+    // 备份文件恢复选择器
+    val restoreLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.setSnackbarHost(snackbarHostState)
+            viewModel.restoreData(uri)
         }
     }
 
@@ -127,7 +139,7 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
-                text = "数据备份",
+                text = "数据备份与恢复",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.primary
@@ -136,30 +148,62 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = "备份知识库、大模型配置等数据。重装应用前请先备份。",
+                text = "备份知识库、大模型配置、聊天记录等数据。重装应用前请先备份，安装后恢复。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            Button(
-                onClick = {
-                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-                        .format(Date())
-                    backupLauncher.launch("csbaby_backup_$timestamp.zip")
-                },
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Icon(Icons.Default.Backup, contentDescription = "备份数据")
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("备份数据")
+                Button(
+                    onClick = {
+                        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+                            .format(Date())
+                        backupLauncher.launch("csbaby_backup_$timestamp.zip")
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(Icons.Default.Backup, contentDescription = "备份数据")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("备份数据")
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        restoreLauncher.launch("*/*")
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Restore, contentDescription = "恢复数据")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("恢复数据")
+                }
+            }
+
+            // 显示备份/恢复进度和状态
+            uiState.errorMessage?.let { error ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
             }
         }
     }
+
+    // 添加 SnackbarHost
+    SnackbarHost(
+        hostState = snackbarHostState,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -691,33 +735,6 @@ fun OtaUpdateCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
-            }
-
-            // 数据备份功能（占位符）
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                elevation = CardDefaults.cardElevation(2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    Text(
-                        text = "数据备份",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Text(
-                        text = "备份应用数据到外部存储。此功能正在开发中。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
         }
     }

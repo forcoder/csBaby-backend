@@ -13,6 +13,7 @@ import com.csbaby.kefu.infrastructure.ota.OtaManager
 import com.csbaby.kefu.infrastructure.oss.AliyunOssManager
 import com.csbaby.kefu.data.remote.VersionListItem
 import com.csbaby.kefu.infrastructure.style.StyleLearningEngine
+import com.csbaby.kefu.data.local.BackupManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -59,13 +60,22 @@ class ProfileViewModel @Inject constructor(
     private val userStyleRepository: UserStyleRepository,
     private val styleLearningEngine: StyleLearningEngine,
     private val otaManager: OtaManager,
-    private val ossManager: AliyunOssManager  // 新添加：阿里云OSS管理器
+    private val ossManager: AliyunOssManager,  // 阿里云OSS管理器
+    private val backupManager: BackupManager  // 数据备份管理器
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
     private var currentUserId: String = "default_user"
+    private var snackbarHostState: SnackbarHostState? = null
+
+    /**
+     * 设置 Snackbar 状态（从 DataBackupCard 传入）
+     */
+    fun setSnackbarHost(hostState: SnackbarHostState) {
+        snackbarHostState = hostState
+    }
 
     init {
         loadData()
@@ -608,5 +618,83 @@ class ProfileViewModel @Inject constructor(
                 Timber.e(e, "设置强制更新失败")
             }
         }
+    }
+
+    // ========== 数据备份与恢复功能 ==========
+
+    /**
+     * 执行数据备份
+     * @param uri 用户选择的保存位置
+     */
+    fun performBackup(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                _uiState.update { it.copy(updateStatus = "正在备份数据...") }
+                val result = backupManager.performBackup(uri)
+
+                if (result.success) {
+                    _uiState.update { it.copy(updateStatus = result.message) }
+                    showSnackbar("${result.message} - 保存位置: ${uri.lastPathSegment}")
+                } else {
+                    _uiState.update { it.copy(updateStatus = result.message, errorMessage = result.message) }
+                    showSnackbar("备份失败: ${result.message}")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "备份异常")
+                _uiState.update {
+                    it.copy(
+                        updateStatus = "空闲",
+                        errorMessage = "备份异常: ${e.message}"
+                    )
+                }
+                showSnackbar("备份异常: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * 从备份文件恢复数据
+     * @param uri 用户选择的备份文件
+     */
+    fun restoreData(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                _uiState.update { it.copy(updateStatus = "正在从备份恢复数据...") }
+                val result = backupManager.restoreData(uri)
+
+                if (result.success) {
+                    _uiState.update { it.copy(updateStatus = result.message) }
+                    showSnackbar(result.message)
+                } else {
+                    _uiState.update { it.copy(updateStatus = result.message, errorMessage = result.message) }
+                    showSnackbar("恢复失败: ${result.message}")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "恢复异常")
+                _uiState.update {
+                    it.copy(
+                        updateStatus = "空闲",
+                        errorMessage = "恢复异常: ${e.message}"
+                    )
+                }
+                showSnackbar("恢复异常: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * 显示 Snackbar 提示
+     */
+    private fun showSnackbar(message: String) {
+        viewModelScope.launch {
+            snackbarHostState?.showSnackbar(message)
+        }
+    }
+
+    /**
+     * 清除错误消息
+     */
+    fun clearError() {
+        _uiState.update { it.copy(errorMessage = null) }
     }
 }
