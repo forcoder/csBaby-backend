@@ -298,11 +298,11 @@ jobs:
             echo "❌ APK上传失败: $RESP"
             # 尝试使用替代方法：直接覆盖
             ALT_RESP=$(curl -s -X POST \
-              --data-urlencode "n=csBabyApk" \
-              --data-urlencode "e=${EXPIRE}" \
-              --data-urlencode "filename=${{ needs.build-release.outputs.apk_name }}" \
-              --data-urlencode "content@${{ steps.apk.outputs.path }}" \
-              --data-urlencode "s=${SHZAL_PASSWORD}" \
+              -F "n=csBabyApk" \
+              -F "e=${EXPIRE}" \
+              -F "filename=${{ needs.build-release.outputs.apk_name }}" \
+              -F "c=@${{ steps.apk.outputs.path }}" \
+              -F "s=${SHZAL_PASSWORD}" \
               https://shz.al)
             echo "备用方法响应: $ALT_RESP"
           else
