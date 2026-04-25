@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("com.google.dagger.hilt.android")
     id("androidx.room") version "2.6.1"
+    kotlin("kapt")
 }
 
 // Apply v1 signing config via Groovy (Kotlin DSL doesn't expose v1SigningEnabled)
@@ -96,7 +97,7 @@ dependencies {
     // Room database
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
-    annotationProcessor("androidx.room:room-compiler:2.6.1")
+    kapt("androidx.room:room-compiler:2.6.1")
 
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
 
@@ -108,7 +109,7 @@ dependencies {
 
     // Hilt dependency injection
     implementation("com.google.dagger:hilt-android:2.50")
-    annotationProcessor("com.google.dagger:hilt-android-compiler:2.50")
+    kapt("com.google.dagger:hilt-android-compiler:2.50")
 
     // Retrofit for networking
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
@@ -151,7 +152,7 @@ dependencies {
 
     // Hilt testing
     androidTestImplementation("com.google.dagger:hilt-android-testing:2.50")
-    androidTestAnnotationProcessor("com.google.dagger:hilt-android-compiler:2.50")
+    kaptAndroidTest("com.google.dagger:hilt-android-compiler:2.50")
 
     // Truth assertions
     testImplementation("com.google.truth:truth:1.1.5")
