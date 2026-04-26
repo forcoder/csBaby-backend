@@ -1,7 +1,0 @@
-keyword,match_type,reply_template,category,target_type,target_names,priority,enabled
-取消订单,CONTAINS,已为您处理订单取消，退款将在3-5个工作日内原路返回。,售后服务,ALL,,10,true
-申请退款,CONTAINS,请提供订单号，我们将为您处理退款申请。,售后服务,ALL,,8,true
-物流查询,CONTAINS,请提供运单号，我将帮您查询物流信息。,物流配送,ALL,,7,true
-订单被取消,CONTAINS,您的订单已成功取消，如有疑问请联系客服。,售后服务,ALL,,9,true
-专属服务,CONTAINS,您好{name}，这是您的专属服务回复。,售前咨询,PROPERTY,"阳光小区,海景别墅",10,true
-群聊通知,CONTAINS,这是一条群聊通知，请注意查看。,通用问题,GROUP,"客服群,通知群",5,false
