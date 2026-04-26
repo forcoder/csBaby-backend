@@ -1,5 +1,8 @@
 package com.csbaby.kefu.presentation.screens.model
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -9,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -24,14 +28,53 @@ fun ModelScreen(
     val uiState by viewModel.uiState.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
     var editingModel by remember { mutableStateOf<AIModelConfig?>(null) }
+    var showImportModeDialog by remember { mutableStateOf(false) }
+    var pendingImportMode by remember { mutableStateOf(ModelImportMode.APPEND) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // 文件选择器
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            viewModel.importModels(uri, pendingImportMode)
+        }
+    }
+
+    // 监听导入状态，显示 Snackbar
+    LaunchedEffect(uiState.importStatus) {
+        when (val status = uiState.importStatus) {
+            is ImportStatus.Success -> {
+                snackbarHostState.showSnackbar(status.message)
+                viewModel.resetImportStatus()
+            }
+            is ImportStatus.Error -> {
+                snackbarHostState.showSnackbar(status.message)
+                viewModel.resetImportStatus()
+            }
+            else -> { /* 不处理 */ }
+        }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.model_config)) },
+                actions = {
+                    IconButton(
+                        onClick = { showImportModeDialog = true },
+                        enabled = uiState.importStatus !is ImportStatus.IMPORTING
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FileUpload,
+                            contentDescription = "导入配置"
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         },
@@ -41,7 +84,8 @@ fun ModelScreen(
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Add Model")
             }
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -78,13 +122,132 @@ fun ModelScreen(
                 viewModel.saveModel(model)
                 showAddDialog = false
                 editingModel = null
-                viewModel.resetDialogTestState()
             },
             onTest = { config ->
                 viewModel.testConnectionWithConfig(config)
             }
         )
     }
+
+    // Import Mode Dialog
+    if (showImportModeDialog) {
+        ModelImportModeDialog(
+            currentModelCount = uiState.models.size,
+            isImporting = uiState.importStatus is ImportStatus.IMPORTING,
+            onDismiss = { showImportModeDialog = false },
+            onSelectMode = { mode ->
+                showImportModeDialog = false
+                pendingImportMode = mode
+                importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+            }
+        )
+    }
+}
+
+@Composable
+fun ModelImportModeDialog(
+    currentModelCount: Int,
+    isImporting: Boolean,
+    onDismiss: () -> Unit,
+    onSelectMode: (ModelImportMode) -> Unit
+) {
+    var selectedMode by remember { mutableStateOf(ModelImportMode.APPEND) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("导入大模型配置") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "当前已有 $currentModelCount 个模型配置",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Text(
+                    text = "选择导入方式：",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                // 追加选项
+                val appendColor = if (selectedMode == ModelImportMode.APPEND)
+                    MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant
+                Surface(
+                    onClick = { selectedMode = ModelImportMode.APPEND },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = appendColor
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = selectedMode == ModelImportMode.APPEND,
+                            onClick = { selectedMode = ModelImportMode.APPEND }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("追加导入", style = MaterialTheme.typography.titleSmall)
+                            Text("保留现有配置，添加新配置", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+
+                // 覆盖选项
+                val overrideColor = if (selectedMode == ModelImportMode.OVERRIDE)
+                    MaterialTheme.colorScheme.errorContainer
+                else MaterialTheme.colorScheme.surfaceVariant
+                Surface(
+                    onClick = { selectedMode = ModelImportMode.OVERRIDE },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = overrideColor
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = selectedMode == ModelImportMode.OVERRIDE,
+                            onClick = { selectedMode = ModelImportMode.OVERRIDE }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("覆盖导入", style = MaterialTheme.typography.titleSmall)
+                            Text("清空现有配置后导入", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+
+                if (isImporting) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("正在导入...", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSelectMode(selectedMode) },
+                enabled = !isImporting
+            ) {
+                Text("选择文件")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isImporting) {
+                Text("取消")
+            }
+        }
+    )
 }
 
 @Composable
