@@ -25,8 +25,7 @@ import com.csbaby.kefu.data.local.migration.Migration5to6
         ReplyFeedbackEntity::class
     ],
     version = 6,
-    exportSchema = false,
-    migrations = [Migration5to6()]
+    exportSchema = false
 )
 abstract class KefuDatabase : RoomDatabase() {
     abstract fun appConfigDao(): AppConfigDao
