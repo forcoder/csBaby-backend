@@ -14,6 +14,7 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.runBlocking
 
 class AIClientTest {
 
@@ -48,7 +49,7 @@ class AIClientTest {
 
     // AC-001: OpenAI格式请求构建与响应解析
     @Test
-    fun `AC-001 OpenAI request and response`() {
+    fun `AC-001 OpenAI request and response`() = runBlocking {
         mockServer.enqueue(MockResponse().setBody(TestDataFactory.openAIResponse("OpenAI回复")))
 
         val config = configWithUrl(ModelType.OPENAI)
@@ -73,7 +74,7 @@ class AIClientTest {
 
     // AC-002: Claude格式请求构建与响应解析
     @Test
-    fun `AC-002 Claude request and response`() {
+    fun `AC-002 Claude request and response`() = runBlocking {
         mockServer.enqueue(MockResponse().setBody(TestDataFactory.claudeResponse("Claude回复")))
 
         val config = configWithUrl(ModelType.CLAUDE, "claude-3-haiku-20240307")
@@ -99,7 +100,7 @@ class AIClientTest {
 
     // AC-003: 智谱格式请求构建
     @Test
-    fun `AC-003 Zhipu request format`() {
+    fun `AC-003 Zhipu request format`() = runBlocking {
         mockServer.enqueue(MockResponse().setBody(TestDataFactory.openAIResponse("智谱回复")))
 
         val config = configWithUrl(ModelType.ZHIPU, "glm-4")
@@ -116,7 +117,7 @@ class AIClientTest {
 
     // AC-004: 通义千问格式请求构建
     @Test
-    fun `AC-004 Tongyi request format`() {
+    fun `AC-004 Tongyi request format`() = runBlocking {
         mockServer.enqueue(MockResponse().setBody(TestDataFactory.openAIResponse("通义回复")))
 
         val config = configWithUrl(ModelType.TONGYI, "qwen-turbo")
@@ -133,7 +134,7 @@ class AIClientTest {
 
     // AC-006: NVIDIA API请求构建
     @Test
-    fun `AC-006 NVIDIA API request`() {
+    fun `AC-006 NVIDIA API request`() = runBlocking {
         val nvidiaConfig = TestDataFactory.aiModelConfig(
             modelType = ModelType.OPENAI,
             model = "llama-3.1-8b-instruct",
@@ -154,7 +155,7 @@ class AIClientTest {
 
     // AC-011: testConnection验证API密钥为空
     @Test
-    fun `AC-011 testConnection empty API key`() {
+    fun `AC-011 testConnection empty API key`() = runBlocking {
         val config = TestDataFactory.aiModelConfig(
             apiKey = "",
             apiEndpoint = "https://api.example.com"
@@ -166,7 +167,7 @@ class AIClientTest {
 
     // AC-012: testConnection验证API地址为空
     @Test
-    fun `AC-012 testConnection empty endpoint`() {
+    fun `AC-012 testConnection empty endpoint`() = runBlocking {
         val config = TestDataFactory.aiModelConfig(
             apiKey = "sk-test",
             apiEndpoint = ""
@@ -178,7 +179,7 @@ class AIClientTest {
 
     // AC-013: testConnection验证模型名称为空
     @Test
-    fun `AC-013 testConnection empty model name`() {
+    fun `AC-013 testConnection empty model name`() = runBlocking {
         val config = TestDataFactory.aiModelConfig(
             apiKey = "sk-test",
             apiEndpoint = "https://api.example.com",
@@ -191,7 +192,7 @@ class AIClientTest {
 
     // AC-014: testConnection成功但返回空内容
     @Test
-    fun `AC-014 testConnection empty response`() {
+    fun `AC-014 testConnection empty response`() = runBlocking {
         mockServer.enqueue(MockResponse().setBody(TestDataFactory.openAIResponse("")))
 
         val config = configWithUrl(ModelType.OPENAI)
@@ -203,7 +204,7 @@ class AIClientTest {
 
     // AC-015: makeRawRequest构建完整URL
     @Test
-    fun `AC-015 makeRawRequest builds full URL`() {
+    fun `AC-015 makeRawRequest builds full URL`() = runBlocking {
         mockServer.enqueue(MockResponse().setBody("""{"data":[]}"""))
 
         val config = TestDataFactory.aiModelConfig(
@@ -217,7 +218,7 @@ class AIClientTest {
 
     // AC-016: makeRawRequest识别绝对URL
     @Test
-    fun `AC-016 makeRawRequest absolute URL`() {
+    fun `AC-016 makeRawRequest absolute URL`() = runBlocking {
         val embedServer = MockWebServer()
         embedServer.start()
         embedServer.enqueue(MockResponse().setBody("""{"data":[]}"""))
@@ -237,7 +238,7 @@ class AIClientTest {
 
     // AC-B01: 速率限制刚好60次/分钟
     @Test
-    fun `AC-B01 rate limit at 60 requests per minute`() {
+    fun `AC-B01 rate limit at 60 requests per minute`() = runBlocking {
         mockServer.enqueue(MockResponse().setBody(TestDataFactory.openAIResponse("回复")))
 
         val config = configWithUrl(ModelType.OPENAI)
@@ -252,7 +253,7 @@ class AIClientTest {
 
     // AC-B04: 模型名称为空时使用默认值
     @Test
-    fun `AC-B04 empty model uses default`() {
+    fun `AC-B04 empty model uses default`() = runBlocking {
         mockServer.enqueue(MockResponse().setBody(TestDataFactory.openAIResponse("默认模型回复")))
 
         val config = TestDataFactory.aiModelConfig(
@@ -271,7 +272,7 @@ class AIClientTest {
 
     // AC-B06: 友好错误信息-UnknownHost
     @Test
-    fun `AC-B06 friendly error for unknown host`() {
+    fun `AC-B06 friendly error for unknown host`() = runBlocking {
         val config = TestDataFactory.aiModelConfig(
             apiEndpoint = "https://non-existent-domain-xyz123.com/v1/chat/completions"
         )
@@ -283,7 +284,7 @@ class AIClientTest {
 
     // AC-B08: 友好错误信息-401
     @Test
-    fun `AC-B08 friendly error for 401`() {
+    fun `AC-B08 friendly error for 401`() = runBlocking {
         mockServer.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"Unauthorized"}"""))
 
         val config = configWithUrl(ModelType.OPENAI)
@@ -295,7 +296,7 @@ class AIClientTest {
 
     // AC-B09: 友好错误信息-404
     @Test
-    fun `AC-B09 friendly error for 404`() {
+    fun `AC-B09 friendly error for 404`() = runBlocking {
         mockServer.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":"Not Found"}"""))
 
         val config = configWithUrl(ModelType.OPENAI)
@@ -307,7 +308,7 @@ class AIClientTest {
 
     // AC-B10: 友好错误信息-429
     @Test
-    fun `AC-B10 friendly error for 429`() {
+    fun `AC-B10 friendly error for 429`() = runBlocking {
         mockServer.enqueue(MockResponse().setResponseCode(429).setBody("""{"error":"Too Many Requests"}"""))
 
         val config = configWithUrl(ModelType.OPENAI)
@@ -319,7 +320,7 @@ class AIClientTest {
 
     // AC-B11: 友好错误信息-500
     @Test
-    fun `AC-B11 friendly error for 500`() {
+    fun `AC-B11 friendly error for 500`() = runBlocking {
         mockServer.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"Internal Server Error"}"""))
 
         val config = configWithUrl(ModelType.OPENAI)
@@ -331,7 +332,7 @@ class AIClientTest {
 
     // AC-B15: content为String时直接返回
     @Test
-    fun `AC-B15 content as string returned directly`() {
+    fun `AC-B15 content as string returned directly`() = runBlocking {
         val responseBody = """
             {
                 "id": "test",
@@ -354,7 +355,7 @@ class AIClientTest {
 
     // AC-E01: 网络不可达
     @Test
-    fun `AC-E01 network unreachable`() {
+    fun `AC-E01 network unreachable`() = runBlocking {
         mockServer.shutdown()
         val config = configWithUrl(ModelType.OPENAI)
 
@@ -367,7 +368,7 @@ class AIClientTest {
 
     // AC-E04: API返回非200状态码
     @Test
-    fun `AC-E04 non-200 status code`() {
+    fun `AC-E04 non-200 status code`() = runBlocking {
         mockServer.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":"Bad Request"}"""))
 
         val config = configWithUrl(ModelType.OPENAI)
@@ -381,7 +382,7 @@ class AIClientTest {
 
     // AC-E06: JSON解析完全失败
     @Test
-    fun `AC-E06 JSON parse complete failure`() {
+    fun `AC-E06 JSON parse complete failure`() = runBlocking {
         mockServer.enqueue(MockResponse().setBody("这不是JSON"))
 
         val config = configWithUrl(ModelType.CUSTOM)

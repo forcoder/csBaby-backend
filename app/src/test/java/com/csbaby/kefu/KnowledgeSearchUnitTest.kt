@@ -13,6 +13,7 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito.*
+import org.mockito.MockitoAnnotations
 
 /**
  * Unit tests for knowledge search functionality without Android dependencies
@@ -23,6 +24,7 @@ class KnowledgeSearchUnitTest {
 
     @Before
     fun setup() {
+        MockitoAnnotations.openMocks(this)
         context = ApplicationProvider.getApplicationContext()
     }
 

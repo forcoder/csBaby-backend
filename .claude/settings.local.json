@@ -1,7 +1,6 @@
 {
   "permissions": {
     "allow": [
-<<<<<<< Updated upstream
       "Bash(gh *)",
       "Bash(./gradlew clean *)",
       "Bash(./gradlew *)",
@@ -19,25 +18,6 @@
       "Bash(git clone *)",
       "Bash(grep -E \"\\\\.\\(kt|java\\)$\")",
       "Bash(xargs wc *)"
-=======
-      "Bash(gh *)",
-      "Bash(./gradlew clean *)",
-      "Bash(./gradlew *)",
-      "Bash(git add *)",
-      "Bash(git commit *)",
-      "Bash(git push *)",
-      "Bash(git pull *)",
-      "Bash(git stash *)",
-      "Bash(echo sdk.dir=C\\\\:\\\\\\\\Users\\\\\\\\13880\\\\\\\\AppData\\\\\\\\Local\\\\\\\\Android\\\\\\\\Sdk *)",
-      "Bash(where android *)",
-      "Bash(export ANDROID_HOME=/d/Android/SDK)",
-      "Bash(curl *)",
-      "WebFetch(domain:shz.al)",
-      "WebSearch",
-      "Bash(git clone *)",
-      "Bash(grep -E \"\\\\.\\(kt|java\\)$\")",
-      "Bash(xargs wc *)"
->>>>>>> Stashed changes
     ]
   }
 }

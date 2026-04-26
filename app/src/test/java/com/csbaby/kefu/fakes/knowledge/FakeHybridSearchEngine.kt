@@ -4,7 +4,7 @@ import com.csbaby.kefu.domain.model.KeywordRule
 import com.csbaby.kefu.infrastructure.search.HybridSearchEngine
 import com.csbaby.kefu.infrastructure.search.SearchType
 
-class FakeHybridSearchEngine : HybridSearchEngine {
+class FakeHybridSearchEngine {
 
     var searchCallCount = 0
     var initializeCallCount = 0
@@ -25,15 +25,19 @@ class FakeHybridSearchEngine : HybridSearchEngine {
         shouldThrowException = false
     }
 
-    override suspend fun initialize() {
+    suspend fun initialize(): Boolean {
         initializeCallCount++
+        return true
     }
 
-    override suspend fun search(
+    suspend fun search(
         query: String,
         context: com.csbaby.kefu.domain.model.ReplyContext?,
-        mode: HybridSearchEngine.SearchMode
-    ): List<HybridSearchResult> {
+        mode: HybridSearchEngine.SearchMode,
+        keywordWeight: Float = 0.6f,
+        semanticWeight: Float = 0.4f,
+        maxResults: Int = 10
+    ): List<HybridSearchEngine.HybridSearchResult> {
         searchCallCount++
         lastQuery = query
         lastContext = context
@@ -50,7 +54,7 @@ class FakeHybridSearchEngine : HybridSearchEngine {
         )
 
         return listOf(
-            HybridSearchResult(
+            HybridSearchEngine.HybridSearchResult(
                 rule = mockRule,
                 keywordScore = 0.8f,
                 semanticScore = 0.6f,

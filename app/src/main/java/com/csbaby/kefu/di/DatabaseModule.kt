@@ -7,6 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.csbaby.kefu.data.local.KefuDatabase
 import com.csbaby.kefu.data.local.PreferencesManager
 import com.csbaby.kefu.data.local.dao.*
+import com.csbaby.kefu.data.local.migration.Migration5to6
 
 import dagger.Module
 import dagger.Provides
@@ -27,7 +28,8 @@ object DatabaseModule {
             KefuDatabase::class.java,
             KefuDatabase.DATABASE_NAME
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_4_6, Migration5to6())
+            .fallbackToDestructiveMigration()
             .build()
     }
 
@@ -190,9 +192,9 @@ object DatabaseModule {
                 """
                 CREATE TABLE IF NOT EXISTS optimization_metrics (
                     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                    featureKey TEXT NOT NULL,
-                    variantId INTEGER NOT NULL,
-                    date TEXT NOT NULL,
+                    featureKey TEXT NOT NULL DEFAULT '',
+                    variantId INTEGER NOT NULL DEFAULT 0,
+                    date TEXT NOT NULL DEFAULT '',
                     totalGenerated INTEGER NOT NULL DEFAULT 0,
                     totalAccepted INTEGER NOT NULL DEFAULT 0,
                     totalModified INTEGER NOT NULL DEFAULT 0,
@@ -243,6 +245,110 @@ object DatabaseModule {
             database.execSQL(
                 "ALTER TABLE reply_history ADD COLUMN variantId INTEGER"
             )
+        }
+    }
+
+    private val MIGRATION_4_6 = object : Migration(4, 6) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // === Combined MIGRATION_4_5 + Migration5to6 ===
+
+            // Create llm_features table
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS llm_features (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    featureKey TEXT NOT NULL UNIQUE,
+                    displayName TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    isEnabled INTEGER NOT NULL DEFAULT 1,
+                    defaultVariantId INTEGER,
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+
+            // Create feature_variants table
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS feature_variants (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    featureId INTEGER NOT NULL,
+                    variantName TEXT NOT NULL,
+                    variantType TEXT NOT NULL,
+                    systemPrompt TEXT NOT NULL DEFAULT '',
+                    userPromptTemplate TEXT NOT NULL DEFAULT '',
+                    modelId INTEGER,
+                    temperature REAL,
+                    maxTokens INTEGER,
+                    strategyConfig TEXT NOT NULL DEFAULT '{}',
+                    isActive INTEGER NOT NULL DEFAULT 0,
+                    trafficPercentage INTEGER NOT NULL DEFAULT 0,
+                    createdAt INTEGER NOT NULL,
+                    FOREIGN KEY (featureId) REFERENCES llm_features (id) ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+
+            // Create optimization_metrics table
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS optimization_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    featureKey TEXT NOT NULL DEFAULT '',
+                    variantId INTEGER NOT NULL DEFAULT 0,
+                    date TEXT NOT NULL DEFAULT '',
+                    totalGenerated INTEGER NOT NULL DEFAULT 0,
+                    totalAccepted INTEGER NOT NULL DEFAULT 0,
+                    totalModified INTEGER NOT NULL DEFAULT 0,
+                    totalRejected INTEGER NOT NULL DEFAULT 0,
+                    avgConfidence REAL NOT NULL DEFAULT 0.0,
+                    avgResponseTimeMs INTEGER NOT NULL DEFAULT 0,
+                    accuracyScore REAL NOT NULL DEFAULT 0.0,
+                    UNIQUE(featureKey, variantId, date)
+                )
+                """.trimIndent()
+            )
+
+            // Create optimization_events table
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS optimization_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    featureKey TEXT NOT NULL,
+                    eventType TEXT NOT NULL,
+                    oldConfig TEXT NOT NULL DEFAULT '',
+                    newConfig TEXT NOT NULL DEFAULT '',
+                    reason TEXT NOT NULL,
+                    triggeredBy TEXT NOT NULL,
+                    createdAt INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+
+            // Create reply_feedback table
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS reply_feedback (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    replyHistoryId INTEGER NOT NULL,
+                    variantId INTEGER,
+                    userAction TEXT NOT NULL,
+                    modifiedPart TEXT,
+                    userRating INTEGER,
+                    feedbackText TEXT,
+                    createdAt INTEGER NOT NULL,
+                    FOREIGN KEY (replyHistoryId) REFERENCES reply_history (id) ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+
+            // Add new columns to reply_history
+            database.execSQL("ALTER TABLE reply_history ADD COLUMN featureKey TEXT")
+            database.execSQL("ALTER TABLE reply_history ADD COLUMN variantId INTEGER")
+
+            // Create index on feature_variants.featureId
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_feature_variants_featureId ON feature_variants(featureId)")
         }
     }
 }

@@ -48,4 +48,21 @@ abstract class RepositoryModule {
         impl: ReplyHistoryRepositoryImpl
     ): ReplyHistoryRepository
 
-    }
+    @Binds
+    @Singleton
+    abstract fun bindLLMFeatureRepository(
+        impl: LLMFeatureRepositoryImpl
+    ): LLMFeatureRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindOptimizationRepository(
+        impl: OptimizationRepositoryImpl
+    ): OptimizationRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindReplyFeedbackRepository(
+        impl: ReplyFeedbackRepositoryImpl
+    ): ReplyFeedbackRepository
+}

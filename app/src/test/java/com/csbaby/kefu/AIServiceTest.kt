@@ -7,23 +7,49 @@ import com.csbaby.kefu.fakes.ai.FakeAIClient
 import com.csbaby.kefu.fakes.ai.FakeAIModelRepository
 import com.csbaby.kefu.factory.TestDataFactory
 import com.csbaby.kefu.infrastructure.ai.AIService
+import com.csbaby.kefu.infrastructure.simple.RoutingResult
+import com.csbaby.kefu.infrastructure.simple.SimpleTaskRouter
+import com.csbaby.kefu.infrastructure.simple.TaskType
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 
+class FakeSimpleTaskRouter : SimpleTaskRouter {
+    companion object {
+        fun create(): SimpleTaskRouter {
+            return SimpleTaskRouter()
+        }
+    }
+
+    override fun selectBestModel(
+        taskType: TaskType,
+        availableModels: List<AIModelConfig>
+    ): RoutingResult {
+        val model = availableModels.firstOrNull() ?: return RoutingResult.NoSuitableModel("no model")
+        return RoutingResult.SingleChoice(
+            com.csbaby.kefu.infrastructure.simple.ModelScore(model, 1.0f, "fake")
+        )
+    }
+}
+
 class AIServiceTest {
 
     private lateinit var fakeAIClient: FakeAIClient
     private lateinit var fakeRepository: FakeAIModelRepository
+    private lateinit var fakeSimpleTaskRouter: FakeSimpleTaskRouter
     private lateinit var aiService: AIService
 
     @Before
     fun setup() {
         fakeAIClient = FakeAIClient()
         fakeRepository = FakeAIModelRepository()
-        aiService = AIService(fakeAIClient, fakeRepository)
+        fakeSimpleTaskRouter = FakeSimpleTaskRouter()
+        aiService = AIService(fakeAIClient, fakeRepository, fakeSimpleTaskRouter)
     }
 
     // ==================== ✅ 正常功能测试 ====================
@@ -370,9 +396,12 @@ class AIServiceTest {
         assertTrue("Should parse", result.isSuccess)
         val analysis = result.getOrNull()
         assertNotNull(analysis)
-        assertThat(analysis!!.formality).isIn(0f..1f)
-        assertThat(analysis.enthusiasm).isIn(0f..1f)
-        assertThat(analysis.professionalism).isIn(0f..1f)
+        assertThat(analysis!!.formality).isAtLeast(0f)
+        assertThat(analysis.formality).isAtMost(1f)
+        assertThat(analysis.enthusiasm).isAtLeast(0f)
+        assertThat(analysis.enthusiasm).isAtMost(1f)
+        assertThat(analysis.professionalism).isAtLeast(0f)
+        assertThat(analysis.professionalism).isAtMost(1f)
     }
 
     // ==================== ❌ 异常情况测试 ====================
@@ -440,12 +469,14 @@ class AIServiceTest {
         fakeAIClient.generateResult = Result.success("回复")
 
         // Simulate concurrent access
-        val jobs = (1..20).map {
-            kotlinx.coroutines.launch {
-                aiService.generateCompletion("消息$it")
+        coroutineScope {
+            val jobs = (1..20).map {
+                launch {
+                    aiService.generateCompletion("消息$it")
+                }
             }
+            jobs.joinAll()
         }
-        jobs.forEach { it.join() }
 
         // Should complete without crash
         assertTrue("Concurrent operations should complete", true)

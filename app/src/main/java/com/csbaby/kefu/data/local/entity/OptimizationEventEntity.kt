@@ -1,5 +1,6 @@
 package com.csbaby.kefu.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -15,7 +16,9 @@ data class OptimizationEventEntity(
     val id: Long = 0,
     val featureKey: String,
     val eventType: String, // AUTO_OPTIMIZE / MANUAL_TUNE / A_B_TEST
+    @ColumnInfo(defaultValue = "''")
     val oldConfig: String = "",
+    @ColumnInfo(defaultValue = "''")
     val newConfig: String = "",
     val reason: String,
     val triggeredBy: String, // SYSTEM / USER

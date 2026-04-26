@@ -75,6 +75,19 @@ class FakeKeywordRuleRepository : KeywordRuleRepository {
                  it.category.contains(keyword, ignoreCase = true))
         }
 
+    override fun getRuleCountFlow(): Flow<Int> =
+        _rules.map { list -> list.size }
+
+    override suspend fun getScenariosForRule(ruleId: Long): List<Long> =
+        _rules.value.find { it.id == ruleId }?.applicableScenarios ?: emptyList()
+
+    override suspend fun updateRuleScenarios(ruleId: Long, scenarioIds: List<Long>) {
+        _rules.value = _rules.value.map { rule ->
+            if (rule.id == ruleId) rule.copy(applicableScenarios = scenarioIds)
+            else rule
+        }
+    }
+
     // Helper methods
 
     fun setRules(rules: List<KeywordRule>) {

@@ -2,6 +2,8 @@ package com.csbaby.kefu.infrastructure.routing
 
 import com.csbaby.kefu.data.local.*
 import com.csbaby.kefu.domain.model.*
+import com.csbaby.kefu.infrastructure.simple.RoutingResult
+import com.csbaby.kefu.infrastructure.simple.TaskType
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Before
@@ -14,7 +16,11 @@ class SmartRouterEngineTest {
 
     @Before
     fun setup() {
-        routerEngine = SmartRouterEngine()
+        // SmartRouterEngine 需要 modelType 和 modelName 参数
+        routerEngine = SmartRouterEngine(
+            modelType = com.csbaby.kefu.domain.model.ModelType.CUSTOM,
+            modelName = "Test Router Engine"
+        )
 
         mockCapability = ModelCapability(
             modelId = "test-model",
@@ -119,5 +125,48 @@ class SmartRouterEngineTest {
 
         assertTrue(result is RoutingResult.NoSuitableModel)
         assertTrue(result.reason.contains("没有适合"))
+    }
+}
+
+// 测试用的数据类定义
+data class TaskContext(
+    val taskType: TaskType,
+    val inputLength: Int = 0,
+    val requiresFastResponse: Boolean = false
+)
+
+data class ModelCapability(
+    val modelId: String,
+    val vendorId: String,
+    val maxTokens: Int,
+    val supportsStreaming: Boolean,
+    val capabilities: Set<ModelFeature>,
+    val performanceScores: Map<TaskType, Float>,
+    val costPerToken: Double,
+    val avgResponseTime: Int
+)
+
+enum class ModelFeature {
+    CODING,           // 代码能力
+    HIGH_ACCURACY,    // 高准确性
+    FAST_RESPONSE,    // 快速响应
+    LONG_CONTEXT,     // 长上下文支持
+    MULTIMODAL,       // 多模态支持
+    REASONING         // 推理能力
+}
+
+object ModelCapabilitiesRegistry {
+    private val capabilities = mutableMapOf<String, ModelCapability>()
+
+    fun registerModelCapability(capability: ModelCapability) {
+        capabilities[capability.modelId] = capability
+    }
+
+    fun getModelCapability(modelId: String): ModelCapability? {
+        return capabilities[modelId]
+    }
+
+    fun getAllCapabilities(): List<ModelCapability> {
+        return capabilities.values.toList()
     }
 }

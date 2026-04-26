@@ -41,12 +41,12 @@ class FakeAIModelRepository : AIModelRepository {
         lastSetDefaultModelId = null
     }
 
-    override fun getDefaultModel(): AIModelConfig? {
+    override suspend fun getDefaultModel(): AIModelConfig? {
         getDefaultModelException?.let { throw it }
         return _models.value.find { it.id == defaultModelId && it.isEnabled }
     }
 
-    override fun getModelById(id: Long): AIModelConfig? {
+    override suspend fun getModelById(id: Long): AIModelConfig? {
         getModelByIdException?.let { throw it }
         return _models.value.find { it.id == id }
     }
@@ -79,10 +79,25 @@ class FakeAIModelRepository : AIModelRepository {
         }
     }
 
-    override suspend fun setDefaultModel(modelId: Long) {
+    override suspend fun setDefaultModel(id: Long) {
         setDefaultModelCallCount++
-        lastSetDefaultModelId = modelId
-        defaultModelId = modelId
+        lastSetDefaultModelId = id
+        defaultModelId = id
+    }
+
+    override suspend fun insertModel(model: AIModelConfig): Long {
+        val newId = (if (_models.value.isEmpty()) 1L else _models.value.maxOf { it.id } + 1)
+        val newModel = model.copy(id = newId)
+        _models.value = _models.value + newModel
+        return newId
+    }
+
+    override suspend fun updateModel(model: AIModelConfig) {
+        _models.value = _models.value.map { if (it.id == model.id) model else it }
+    }
+
+    override suspend fun deleteModel(id: Long) {
+        _models.value = _models.value.filter { it.id != id }
     }
 
     // Helper methods

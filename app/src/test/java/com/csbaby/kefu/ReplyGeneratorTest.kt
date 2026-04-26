@@ -7,8 +7,13 @@ import com.csbaby.kefu.domain.model.ReplySource
 import com.csbaby.kefu.factory.TestDataFactory
 import com.csbaby.kefu.infrastructure.reply.ReplyGenerator
 import com.csbaby.kefu.infrastructure.knowledge.KeywordMatcher
+import com.csbaby.kefu.infrastructure.llm.LLMFeatureManager
+import com.csbaby.kefu.infrastructure.llm.OptimizationEngine
+import com.csbaby.kefu.infrastructure.llm.AutoRuleGenerator
 import com.csbaby.kefu.fakes.knowledge.FakeKeywordRuleRepository
+import com.csbaby.kefu.data.local.PreferencesManager
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -25,6 +30,9 @@ class ReplyGeneratorTest {
     @Mock private lateinit var mockReplyHistoryRepository: com.csbaby.kefu.domain.repository.ReplyHistoryRepository
     @Mock private lateinit var mockUserStyleRepository: com.csbaby.kefu.domain.repository.UserStyleRepository
     @Mock private lateinit var mockPreferencesManager: com.csbaby.kefu.data.local.PreferencesManager
+    @Mock private lateinit var mockLLMFeatureManager: LLMFeatureManager
+    @Mock private lateinit var mockOptimizationEngine: OptimizationEngine
+    @Mock private lateinit var mockAutoRuleGenerator: AutoRuleGenerator
 
     private lateinit var replyGenerator: ReplyGenerator
     private val testMessage = "请问价格是多少"
@@ -36,7 +44,7 @@ class ReplyGeneratorTest {
 
         // Mock preferences
         `when`(mockPreferencesManager.userPreferencesFlow).thenReturn(flowOf(
-            com.csbaby.kefu.data.local.UserPreferences(
+            PreferencesManager.UserPreferences(
                 monitoringEnabled = true,
                 selectedApps = setOf("com.whatsapp"),
                 styleLearningEnabled = true
@@ -49,7 +57,10 @@ class ReplyGeneratorTest {
             mockStyleLearningEngine,
             mockReplyHistoryRepository,
             mockUserStyleRepository,
-            mockPreferencesManager
+            mockPreferencesManager,
+            mockLLMFeatureManager,
+            mockOptimizationEngine,
+            mockAutoRuleGenerator
         )
     }
 
@@ -63,6 +74,8 @@ class ReplyGeneratorTest {
             .thenReturn(com.csbaby.kefu.infrastructure.knowledge.KeywordMatcher.MatchedResult(
                 rule = matchedRule,
                 matchedText = "价格",
+                matchStart = 2,
+                matchEnd = 3,
                 confidence = 0.8f
             ))
         `when`(mockKnowledgeBaseManager.generateReplyFromRule(any()))
@@ -82,7 +95,7 @@ class ReplyGeneratorTest {
         `when`(mockKnowledgeBaseManager.findBestMatch(testMessage, testContext))
             .thenReturn(null)
         `when`(mockAIService.generateCompletion(any(), any(), any(), any()))
-            .thenReturn(com.google.common.util.concurrent.Result.success("AI回复"))
+            .thenReturn(Result.success("AI回复"))
 
         val result = replyGenerator.generateReply(testMessage, testContext)
 
@@ -96,7 +109,7 @@ class ReplyGeneratorTest {
         `when`(mockKnowledgeBaseManager.findBestMatch(testMessage, testContext))
             .thenReturn(null)
         `when`(mockAIService.generateCompletion(any(), any(), any(), any()))
-            .thenReturn(com.google.common.util.concurrent.Result.success("AI回复"))
+            .thenReturn(Result.success("AI回复"))
         `when`(mockUserStyleRepository.getProfileSync(testContext.userId))
             .thenReturn(TestDataFactory.userStyleProfile())
 
@@ -112,7 +125,7 @@ class ReplyGeneratorTest {
         `when`(mockKnowledgeBaseManager.findBestMatch(testMessage, testContext))
             .thenReturn(null)
         `when`(mockAIService.generateCompletion(any(), any(), any(), any()))
-            .thenReturn(com.google.common.util.concurrent.Result.failure(Exception("AI错误")))
+            .thenReturn(Result.failure(Exception("AI错误")))
 
         val result = replyGenerator.generateReply(testMessage, testContext)
 
@@ -126,11 +139,11 @@ class ReplyGeneratorTest {
         `when`(mockKnowledgeBaseManager.findBestMatch(testMessage, testContext))
             .thenReturn(null)
         `when`(mockAIService.generateCompletion(any(), any(), any(), any()))
-            .thenReturn(com.google.common.util.concurrent.Result.success("原始回复"))
+            .thenReturn(Result.success("原始回复"))
         `when`(mockUserStyleRepository.getProfileSync(testContext.userId))
             .thenReturn(TestDataFactory.userStyleProfile())
         `when`(mockStyleLearningEngine.applyStyle("原始回复", testContext.userId))
-            .thenReturn(com.google.common.util.concurrent.Result.success("风格化回复"))
+            .thenReturn(Result.success("风格化回复"))
 
         val result = replyGenerator.generateReply(testMessage, testContext)
 
@@ -142,15 +155,16 @@ class ReplyGeneratorTest {
     @Test
     fun `RG-006 style learning disabled does not adjust`() = runTest {
         `when`(mockPreferencesManager.userPreferencesFlow).thenReturn(flowOf(
-            com.csbaby.kefu.data.local.UserPreferences(
+            PreferencesManager.UserPreferences(
                 monitoringEnabled = true,
+                selectedApps = setOf("com.whatsapp"),
                 styleLearningEnabled = false
             )
         ))
         `when`(mockKnowledgeBaseManager.findBestMatch(testMessage, testContext))
             .thenReturn(null)
         `when`(mockAIService.generateCompletion(any(), any(), any(), any()))
-            .thenReturn(com.google.common.util.concurrent.Result.success("原始回复"))
+            .thenReturn(Result.success("原始回复"))
 
         val result = replyGenerator.generateReply(testMessage, testContext)
 
@@ -182,10 +196,16 @@ class ReplyGeneratorTest {
         val ruleMatches = listOf(
             com.csbaby.kefu.infrastructure.knowledge.KeywordMatcher.MatchedResult(
                 rule = TestDataFactory.keywordRule(id = 1L),
+                matchedText = "价格",
+                matchStart = 0,
+                matchEnd = 1,
                 confidence = 0.8f
             ),
             com.csbaby.kefu.infrastructure.knowledge.KeywordMatcher.MatchedResult(
                 rule = TestDataFactory.keywordRule(id = 2L),
+                matchedText = "费用",
+                matchStart = 0,
+                matchEnd = 1,
                 confidence = 0.7f
             )
         )
@@ -194,7 +214,7 @@ class ReplyGeneratorTest {
         `when`(mockKnowledgeBaseManager.generateReplyFromRule(any()))
             .thenReturn("规则回复")
         `when`(mockAIService.generateCompletion(any(), any(), any(), any()))
-            .thenReturn(com.google.common.util.concurrent.Result.success("AI建议"))
+            .thenReturn(Result.success("AI建议"))
 
         val suggestions = replyGenerator.generateSuggestions(testMessage, testContext, 3)
 
@@ -227,6 +247,8 @@ class ReplyGeneratorTest {
             .thenReturn(com.csbaby.kefu.infrastructure.knowledge.KeywordMatcher.MatchedResult(
                 rule = matchedRule,
                 matchedText = "价格",
+                matchStart = 2,
+                matchEnd = 3,
                 confidence = 0.3f // < 0.5 threshold
             ))
         `when`(mockKnowledgeBaseManager.generateReplyFromRule(any()))
@@ -243,7 +265,7 @@ class ReplyGeneratorTest {
     fun `RG-B03 empty scenarioId`() = runTest {
         val contextWithNullScenario = TestDataFactory.replyContext(scenarioId = null)
         `when`(mockAIService.generateCompletion(any(), any(), any(), any()))
-            .thenReturn(com.google.common.util.concurrent.Result.success("回复"))
+            .thenReturn(Result.success("回复"))
 
         val result = replyGenerator.generateReply("你好", contextWithNullScenario)
 
@@ -274,7 +296,7 @@ class ReplyGeneratorTest {
         `when`(mockKnowledgeBaseManager.findBestMatch(testMessage, testContext))
             .thenReturn(null)
         `when`(mockAIService.generateCompletion(any(), any(), any(), any()))
-            .thenReturn(com.google.common.util.concurrent.Result.failure(RuntimeException("Network error")))
+            .thenReturn(Result.failure(RuntimeException("Network error")))
 
         val result = replyGenerator.generateReply(testMessage, testContext)
 
@@ -284,7 +306,7 @@ class ReplyGeneratorTest {
     // RG-E02: 知识库匹配异常
     @Test
     fun `RG-E02 knowledge base match exception`() = runTest {
-        doThrow(RuntimeException("Database error")).whenever(mockKnowledgeBaseManager)
+        doThrow(RuntimeException("Database error")).`when`(mockKnowledgeBaseManager)
             .findBestMatch(testMessage, testContext)
 
         val result = replyGenerator.generateReply(testMessage, testContext)
@@ -299,11 +321,11 @@ class ReplyGeneratorTest {
         `when`(mockKnowledgeBaseManager.findBestMatch(testMessage, testContext))
             .thenReturn(null)
         `when`(mockAIService.generateCompletion(any(), any(), any(), any()))
-            .thenReturn(com.google.common.util.concurrent.Result.success("原始回复"))
+            .thenReturn(Result.success("原始回复"))
         `when`(mockUserStyleRepository.getProfileSync(testContext.userId))
             .thenReturn(TestDataFactory.userStyleProfile())
         `when`(mockStyleLearningEngine.applyStyle("原始回复", testContext.userId))
-            .thenReturn(com.google.common.util.concurrent.Result.failure(Exception("Style error")))
+            .thenReturn(Result.failure(Exception("Style error")))
 
         val result = replyGenerator.generateReply(testMessage, testContext)
 

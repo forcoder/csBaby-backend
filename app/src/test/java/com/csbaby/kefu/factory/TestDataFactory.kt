@@ -259,13 +259,15 @@ object TestDataFactory {
         source: ReplySource = ReplySource.RULE_MATCH,
         confidence: Float = 0.8f,
         ruleId: Long? = null,
-        modelId: Long? = null
+        modelId: Long? = null,
+        variantId: Long? = null
     ) = ReplyResult(
         reply = reply,
         source = source,
         confidence = confidence,
         ruleId = ruleId,
-        modelId = modelId
+        modelId = modelId,
+        variantId = variantId
     )
 
     // ========== ReplyHistory ==========
@@ -280,7 +282,9 @@ object TestDataFactory {
         modelUsedId: Long? = null,
         styleApplied: Boolean = false,
         sendTime: Long = System.currentTimeMillis(),
-        modified: Boolean = false
+        modified: Boolean = false,
+        featureKey: String? = null,
+        variantId: Long? = null
     ) = ReplyHistory(
         id = id,
         sourceApp = sourceApp,
@@ -291,7 +295,9 @@ object TestDataFactory {
         modelUsedId = modelUsedId,
         styleApplied = styleApplied,
         sendTime = sendTime,
-        modified = modified
+        modified = modified,
+        featureKey = featureKey,
+        variantId = variantId
     )
 
     // ========== MonitoredMessage ==========
@@ -320,26 +326,34 @@ object TestDataFactory {
         versionCode: Int = 100,
         versionName: String = "1.2.0",
         downloadUrl: String = "https://example.com/app-v1.2.0.apk",
+        fileSize: Long = 0L,
         md5: String = "abc123def456",
         releaseNotes: String = "修复了一些问题",
-        isForce: Boolean = false,
-        minVersionCode: Int = 0,
-        uploader: String = "admin",
-        downloadCount: Int = 0,
-        signature: String? = null,
-        objectKey: String? = null
+        releaseDate: String = "2024-01-01",
+        isForceUpdate: Boolean = false,
+        minRequiredVersion: Int = 0,
+        objectKey: String? = null,
+        uploader: String? = "admin",
+        uploadTime: String? = null,
+        channel: String? = "default",
+        downloadCount: Long = 0L,
+        signature: String? = null
     ) = com.csbaby.kefu.data.model.OtaUpdate(
         versionCode = versionCode,
         versionName = versionName,
         downloadUrl = downloadUrl,
+        fileSize = fileSize,
         md5 = md5,
         releaseNotes = releaseNotes,
-        isForce = isForce,
-        minVersionCode = minVersionCode,
+        releaseDate = releaseDate,
+        isForceUpdate = isForceUpdate,
+        minRequiredVersion = minRequiredVersion,
+        objectKey = objectKey,
         uploader = uploader,
+        uploadTime = uploadTime,
+        channel = channel,
         downloadCount = downloadCount,
-        signature = signature,
-        objectKey = objectKey
+        signature = signature
     )
 
     // ========== AI Response JSON ==========

@@ -21,6 +21,8 @@ class ReplyOrchestratorTest {
     @Mock private lateinit var mockKnowledgeBaseManager: com.csbaby.kefu.infrastructure.knowledge.KnowledgeBaseManager
     @Mock private lateinit var mockBlacklistRepository: com.csbaby.kefu.domain.repository.MessageBlacklistRepository
     @Mock private lateinit var mockFloatingWindowService: com.csbaby.kefu.infrastructure.window.FloatingWindowService
+    @Mock private lateinit var mockLlmFeatureManager: com.csbaby.kefu.infrastructure.llm.LLMFeatureManager
+    @Mock private lateinit var mockOptimizationEngine: com.csbaby.kefu.infrastructure.llm.OptimizationEngine
 
     private lateinit var orchestrator: com.csbaby.kefu.infrastructure.reply.ReplyOrchestrator
 
@@ -62,7 +64,8 @@ class ReplyOrchestratorTest {
 
         orchestrator = com.csbaby.kefu.infrastructure.reply.ReplyOrchestrator(
             mockContext, mockReplyGenerator, mockMessageMonitor,
-            mockPreferencesManager, mockKnowledgeBaseManager, mockBlacklistRepository
+            mockPreferencesManager, mockKnowledgeBaseManager, mockBlacklistRepository,
+            mockLlmFeatureManager, mockOptimizationEngine
         )
     }
 
