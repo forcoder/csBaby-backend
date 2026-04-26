@@ -174,8 +174,8 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 
     // Hilt testing
-    androidTestImplementation("com.google.dagger:hilt-android-testing")
-    kaptAndroidTest("com.google.dagger:hilt-android-compiler")
+    androidTestImplementation("com.google.dagger:hilt-android-testing:2.50")
+    kaptAndroidTest("com.google.dagger:hilt-android-compiler:2.50")
 
     // Truth assertions
     testImplementation("com.google.truth:truth:1.1.5")
