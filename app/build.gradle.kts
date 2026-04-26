@@ -127,12 +127,12 @@ dependencies {
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
-    // Hilt WorkManager (compatible with Hilt 3.0)
+    // Hilt WorkManager (compatible with Hilt 2.50)
     implementation("androidx.hilt:hilt-work:1.2.0")
 
     // Hilt dependency injection
-    implementation("com.google.dagger:hilt-android:3.0.0")
-    ksp("com.google.dagger:hilt-android-compiler:3.0.0")
+    implementation("com.google.dagger:hilt-android:2.50")
+    kapt("com.google.dagger:hilt-android-compiler:2.50")
 
     // Retrofit for networking
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
@@ -175,7 +175,7 @@ dependencies {
 
     // Hilt testing
     androidTestImplementation("com.google.dagger:hilt-android-testing")
-    kspAndroidTest("com.google.dagger:hilt-android-compiler")
+    kaptAndroidTest("com.google.dagger:hilt-android-compiler")
 
     // Truth assertions
     testImplementation("com.google.truth:truth:1.1.5")

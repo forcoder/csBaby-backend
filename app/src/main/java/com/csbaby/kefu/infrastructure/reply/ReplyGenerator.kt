@@ -10,6 +10,9 @@ import com.csbaby.kefu.infrastructure.ai.AIService
 import com.csbaby.kefu.infrastructure.knowledge.KnowledgeBaseManager
 import com.csbaby.kefu.infrastructure.knowledge.KeywordMatcher
 import com.csbaby.kefu.infrastructure.style.StyleLearningEngine
+import com.csbaby.kefu.infrastructure.llm.LLMFeatureManager
+import com.csbaby.kefu.infrastructure.llm.OptimizationEngine
+import com.csbaby.kefu.infrastructure.llm.AutoRuleGenerator
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -173,14 +176,14 @@ class ReplyGenerator @Inject constructor(
         }
 
         // Build system prompt - use variant's prompt if available
-        val systemPrompt = if (!variant?.systemPrompt.isNullOrBlank()) {
+        val systemPrompt = if (variant != null && !variant.systemPrompt.isNullOrBlank()) {
             variant.systemPrompt
         } else {
             buildSystemPrompt(context, styleProfile)
         }
 
         // Build user prompt - use variant's template if available
-        val userPrompt = if (!variant?.userPromptTemplate.isNullOrBlank()) {
+        val userPrompt = if (variant != null && !variant.userPromptTemplate.isNullOrBlank()) {
             variant.userPromptTemplate
                 .replace("{message}", message)
                 .replace("{appPackage}", context.appPackage)

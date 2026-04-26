@@ -3,7 +3,13 @@ package com.csbaby.kefu.infrastructure.llm
 import javax.inject.Inject
 import javax.inject.Singleton
 
-@Singleton
-class OptimizationEngine @Inject constructor() {
-    // Minimal implementation for compilation
+@javax.inject.Singleton()
+class OptimizationEngine @javax.inject.Inject() constructor() {
+
+    /**
+     * Run optimization cycle.
+     */
+    fun runOptimizationCycle(featureKey: String) {
+        println("Running optimization cycle for $featureKey")
+    }
 }
