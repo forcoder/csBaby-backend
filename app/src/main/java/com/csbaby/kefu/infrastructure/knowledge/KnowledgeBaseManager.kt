@@ -124,9 +124,26 @@ class KnowledgeBaseManager @Inject constructor(
 
     /**
      * Search rules by keyword with limit.
+     * Uses both SQL LIKE (fast prefix/substring match) and KeywordMatcher fuzzy matching
+     * (handles Chinese character reordering, e.g. "取消订单" ↔ "订单被取消").
      */
-    suspend fun searchRulesByKeyword(keyword: String, limit: Int = 10): List<KeywordRule> =
-        keywordRuleRepository.searchByKeyword(keyword).take(limit)
+    suspend fun searchRulesByKeyword(keyword: String, limit: Int = 10): List<KeywordRule> {
+        // SQL LIKE search (exact substring match)
+        val sqlResults = keywordRuleRepository.searchByKeyword(keyword)
+        val sqlIds = sqlResults.map { it.id }.toSet()
+
+        // Fuzzy match via KeywordMatcher (catches reordered Chinese characters)
+        val fuzzyMatches = try {
+            keywordMatcher.findMatches(keyword)
+                .filter { it.rule.id !in sqlIds }  // avoid duplicates
+                .map { it.rule }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fuzzy match failed, falling back to SQL-only", e)
+            emptyList()
+        }
+
+        return (sqlResults + fuzzyMatches).take(limit)
+    }
 
     /**
      * Get rule count.

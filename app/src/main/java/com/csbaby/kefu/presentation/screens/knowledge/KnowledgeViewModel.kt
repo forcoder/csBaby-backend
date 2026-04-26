@@ -13,6 +13,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -63,6 +64,8 @@ class KnowledgeViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
 
+            // Collect rules Flow — Room emits immediately on subscription,
+            // so the list is always up-to-date even after page recreation.
             knowledgeBaseManager.getAllRules().collect { rules ->
                 allRules = rules
                 _uiState.update {
@@ -73,13 +76,31 @@ class KnowledgeViewModel @Inject constructor(
                     )
                 }
             }
-
         }
 
         viewModelScope.launch {
             knowledgeBaseManager.getAllCategories().collect { categories ->
                 _uiState.update { it.copy(categories = categories) }
             }
+        }
+    }
+
+    /**
+     * Reload rules from database. Call this after import/clear/delete
+     * to ensure the UI reflects the latest data immediately.
+     */
+    private fun refreshRules() {
+        viewModelScope.launch {
+            val rules = knowledgeBaseManager.getAllRules().first()
+            allRules = rules
+            _uiState.update {
+                it.copy(
+                    rules = rules,
+                    totalRuleCount = rules.size
+                )
+            }
+            // Rebuild matcher so new rules take effect immediately
+            knowledgeBaseManager.initializeMatcher()
         }
     }
 
@@ -107,8 +128,8 @@ class KnowledgeViewModel @Inject constructor(
             } else {
                 knowledgeBaseManager.updateRule(rule)
             }
-            // 重建 Trie 树，使新规则立即生效
-            knowledgeBaseManager.initializeMatcher()
+            // 重建 Trie 树，使新规则立即生效并刷新数据
+            refreshRules()
         }
     }
 
@@ -164,9 +185,9 @@ class KnowledgeViewModel @Inject constructor(
                 }
             }
 
-            // 导入成功后，重建 Trie 树使新规则立即生效
+            // 导入成功后，重建 Trie 树使新规则立即生效并刷新数据
             if (result.successCount > 0) {
-                knowledgeBaseManager.initializeMatcher()
+                refreshRules()
             }
 
             _uiState.update {
@@ -195,8 +216,8 @@ class KnowledgeViewModel @Inject constructor(
             _uiState.update { it.copy(isClearing = true, noticeMessage = null) }
             val noticeMessage = runCatching {
                 val removedCount = knowledgeBaseManager.clearAllRules()
-                // 清空后重建空的 Trie 树
-                knowledgeBaseManager.initializeMatcher()
+                // 清空后重建空的 Trie 树并刷新数据
+                refreshRules()
                 if (removedCount > 0) {
                     "已清空知识库，共删除 ${removedCount} 条规则"
                 } else {
@@ -223,16 +244,16 @@ class KnowledgeViewModel @Inject constructor(
     fun deleteRule(id: Long) {
         viewModelScope.launch {
             knowledgeBaseManager.deleteRule(id)
-            // 重建 Trie 树，移除已删除规则
-            knowledgeBaseManager.initializeMatcher()
+            // 重建 Trie 树，移除已删除规则并刷新数据
+            refreshRules()
         }
     }
 
     fun toggleRule(id: Long, enabled: Boolean) {
         viewModelScope.launch {
             knowledgeBaseManager.toggleRule(id, enabled)
-            // 重建 Trie 树，更新规则启用状态
-            knowledgeBaseManager.initializeMatcher()
+            // 重建 Trie 树，更新规则启用状态并刷新数据
+            refreshRules()
         }
     }
 

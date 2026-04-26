@@ -719,11 +719,17 @@ class FloatingWindowService : Service() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        
+
+        // Debounce timer for real-time search
+        var searchRunnable: Runnable? = null
+        val searchHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        val SEARCH_DELAY_MS = 300L
+
         knowledgeSearchEditText = EditText(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginEnd = dp(8)
-            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
             textSize = 13f
             setTextColor(Color.WHITE)
             setHintTextColor(Color.parseColor("#94A3B8"))
@@ -736,28 +742,20 @@ class FloatingWindowService : Service() {
             inputType = InputType.TYPE_CLASS_TEXT
             isSingleLine = true
             background = createMessageCardBackground()
-            
+
             // 启用文本选择功能
             isLongClickable = true
             isFocusable = true
             isFocusableInTouchMode = true
-            
+
             // 启用上下文菜单
-            setOnCreateContextMenuListener {
-                menu, v, menuInfo ->
+            setOnCreateContextMenuListener { menu, v, menuInfo ->
                 menu.add(0, 1, 0, "全选")
                 menu.add(0, 2, 1, "复制")
                 menu.add(0, 3, 2, "粘贴")
                 menu.add(0, 4, 3, "剪切")
-                
-                // 为菜单项设置点击监听器
-                menu.findItem(1)?.setOnMenuItemClickListener {
-                    // 全选
-                    selectAll()
-                    true
-                }
+                menu.findItem(1)?.setOnMenuItemClickListener { selectAll(); true }
                 menu.findItem(2)?.setOnMenuItemClickListener {
-                    // 复制
                     val selectedText = text.substring(selectionStart, selectionEnd)
                     if (selectedText.isNotEmpty()) {
                         val clipboardManager = context.getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
@@ -767,7 +765,6 @@ class FloatingWindowService : Service() {
                     true
                 }
                 menu.findItem(3)?.setOnMenuItemClickListener {
-                    // 粘贴
                     val clipboardManager = context.getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
                     val clipData = clipboardManager.primaryClip
                     if (clipData != null && clipData.itemCount > 0) {
@@ -780,7 +777,6 @@ class FloatingWindowService : Service() {
                     true
                 }
                 menu.findItem(4)?.setOnMenuItemClickListener {
-                    // 剪切
                     val selectedText = text.substring(selectionStart, selectionEnd)
                     if (selectedText.isNotEmpty()) {
                         val clipboardManager = context.getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
@@ -791,27 +787,34 @@ class FloatingWindowService : Service() {
                     true
                 }
             }
-            
+
             // 长按事件处理
             setOnLongClickListener {
-                // 长按全选文本并显示上下文菜单
                 selectAll()
                 showContextMenu()
                 true
             }
+
+            // Real-time search with debounce — input triggers search immediately (no button needed)
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    searchRunnable?.let { searchHandler.removeCallbacks(it) }
+                    val query = s?.toString()?.trim() ?: ""
+                    if (query.isBlank()) {
+                        // Clear results when input is empty
+                        knowledgeResultsRecyclerContainer?.removeAllViews()
+                        return
+                    }
+                    searchRunnable = Runnable { performKnowledgeSearch() }.also {
+                        searchHandler.postDelayed(it, SEARCH_DELAY_MS)
+                    }
+                }
+            })
         }
-        
-        val searchButton = createBottomActionButton(
-            text = "搜索",
-            background = createSolidButtonBackground("#1E293B", "#334155"),
-            textColor = "#E2E8F0",
-            weight = 0.5f
-        ) {
-            performKnowledgeSearch()
-        }
-        
+
         searchContainer.addView(knowledgeSearchEditText)
-        searchContainer.addView(searchButton)
 
         // 创建可滚动的结果容器
         val scrollView = ScrollView(this).apply {
@@ -1633,7 +1636,8 @@ class FloatingWindowService : Service() {
     private fun performKnowledgeSearch() {
         val query = knowledgeSearchEditText?.text?.toString()?.trim() ?: return
         if (query.isBlank()) {
-            Toast.makeText(this, "请输入搜索关键词", Toast.LENGTH_SHORT).show()
+            // Clear results silently when query is empty (real-time search mode)
+            knowledgeResultsRecyclerContainer?.removeAllViews()
             return
         }
 
