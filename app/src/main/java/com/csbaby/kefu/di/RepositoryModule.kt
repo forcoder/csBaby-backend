@@ -47,4 +47,5 @@ abstract class RepositoryModule {
     abstract fun bindReplyHistoryRepository(
         impl: ReplyHistoryRepositoryImpl
     ): ReplyHistoryRepository
-}
+
+    }

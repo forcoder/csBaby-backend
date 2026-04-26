@@ -15,5 +15,7 @@ data class ReplyHistoryEntity(
     val modelUsedId: Long?,
     val styleApplied: Boolean = false,
     val sendTime: Long = System.currentTimeMillis(),
-    val modified: Boolean = false
+    val modified: Boolean = false,
+    val featureKey: String? = null,
+    val variantId: Long? = null
 )

@@ -54,6 +54,11 @@ class PreferencesManager @Inject constructor(
         val SEARCH_MODE = stringPreferencesKey("search_mode") // KEYWORD, SEMANTIC, HYBRID
         // Theme settings
         val THEME_MODE = stringPreferencesKey("theme_mode") // light, dark, system
+        // LLM optimization settings
+        val AUTO_OPTIMIZE_ENABLED = booleanPreferencesKey("auto_optimize_enabled")
+        val OPTIMIZATION_INTERVAL_HOURS = intPreferencesKey("optimization_interval_hours")
+        val AUTO_PROMOTE_ENABLED = booleanPreferencesKey("auto_promote_enabled")
+        val LAST_OPTIMIZATION_TIME = longPreferencesKey("last_optimization_time")
     }
 
     // Data class for user preferences
@@ -74,7 +79,12 @@ class PreferencesManager @Inject constructor(
         val semanticSearchEnabled: Boolean = true,
         val searchMode: String = "HYBRID", // KEYWORD, SEMANTIC, HYBRID
         // Theme settings
-        val themeMode: String = "system" // light, dark, system
+        val themeMode: String = "system", // light, dark, system
+        // LLM optimization settings
+        val autoOptimizeEnabled: Boolean = false,
+        val optimizationIntervalHours: Int = 24,
+        val autoPromoteEnabled: Boolean = false,
+        val lastOptimizationTime: Long = 0L
     )
 
     val userPreferencesFlow: Flow<UserPreferences> = dataStore.data
@@ -214,6 +224,31 @@ class PreferencesManager @Inject constructor(
     suspend fun updateThemeMode(mode: String) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.THEME_MODE] = mode
+        }
+    }
+
+    // LLM optimization settings
+    suspend fun updateAutoOptimizeEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.AUTO_OPTIMIZE_ENABLED] = enabled
+        }
+    }
+
+    suspend fun updateOptimizationIntervalHours(hours: Int) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.OPTIMIZATION_INTERVAL_HOURS] = hours
+        }
+    }
+
+    suspend fun updateAutoPromoteEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.AUTO_PROMOTE_ENABLED] = enabled
+        }
+    }
+
+    suspend fun updateLastOptimizationTime(time: Long) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LAST_OPTIMIZATION_TIME] = time
         }
     }
 }

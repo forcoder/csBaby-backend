@@ -67,6 +67,9 @@ android {
         jvmTarget = "1.8"
     }
     // 测试模块不需要 kapt（使用 Fake/Mock 替代 Hilt/Room 注入）
+    ksp {
+        arg("dagger.fastInit", "ENABLED")
+    }
     kapt {
         correctErrorTypes = true
     }
@@ -90,9 +93,13 @@ android {
     }
 }
 
-// Add Room schema directory configuration
+// Add Room and Hilt schema directory configuration
 room {
     schemaDirectory("$projectDir/schemas")
+}
+
+hilt {
+    enableAggregatingTask = true
 }
 
 
@@ -113,19 +120,19 @@ dependencies {
     // Room database
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
+    kapt("androidx.room:room-compiler:2.6.1")
 
-    implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
+    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
-    // Hilt WorkManager
-    implementation("androidx.hilt:hilt-work:1.1.0")
+    // Hilt WorkManager (compatible with Hilt 3.0)
+    implementation("androidx.hilt:hilt-work:1.2.0")
 
     // Hilt dependency injection
-    implementation("com.google.dagger:hilt-android:2.50")
-    kapt("com.google.dagger:hilt-android-compiler:2.50")
+    implementation("com.google.dagger:hilt-android:3.0.0")
+    ksp("com.google.dagger:hilt-android-compiler:3.0.0")
 
     // Retrofit for networking
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
@@ -167,8 +174,8 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 
     // Hilt testing
-    androidTestImplementation("com.google.dagger:hilt-android-testing:2.50")
-    kaptAndroidTest("com.google.dagger:hilt-android-compiler:2.50")
+    androidTestImplementation("com.google.dagger:hilt-android-testing")
+    kspAndroidTest("com.google.dagger:hilt-android-compiler")
 
     // Truth assertions
     testImplementation("com.google.truth:truth:1.1.5")

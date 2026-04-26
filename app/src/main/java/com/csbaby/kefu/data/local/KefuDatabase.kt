@@ -14,10 +14,14 @@ import com.csbaby.kefu.data.local.entity.*
         AIModelConfigEntity::class,
         UserStyleProfileEntity::class,
         ReplyHistoryEntity::class,
-        MessageBlacklistEntity::class
+        MessageBlacklistEntity::class,
+        LLMFeatureEntity::class,
+        FeatureVariantEntity::class,
+        OptimizationMetricsEntity::class,
+        OptimizationEventEntity::class,
+        ReplyFeedbackEntity::class
     ],
-    version = 4,
-
+    version = 5,
     exportSchema = false
 )
 abstract class KefuDatabase : RoomDatabase() {
@@ -28,6 +32,11 @@ abstract class KefuDatabase : RoomDatabase() {
     abstract fun userStyleProfileDao(): UserStyleProfileDao
     abstract fun replyHistoryDao(): ReplyHistoryDao
     abstract fun messageBlacklistDao(): MessageBlacklistDao
+    abstract fun llmFeatureDao(): LLMFeatureDao
+    abstract fun featureVariantDao(): FeatureVariantDao
+    abstract fun optimizationMetricsDao(): OptimizationMetricsDao
+    abstract fun optimizationEventDao(): OptimizationEventDao
+    abstract fun replyFeedbackDao(): ReplyFeedbackDao
 
     companion object {
         const val DATABASE_NAME = "kefu_database"

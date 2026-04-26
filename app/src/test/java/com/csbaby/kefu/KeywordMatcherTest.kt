@@ -606,7 +606,7 @@ class KeywordMatcherTest {
     @Test
     fun `KM-E05 special regex metacharacters`() {
         matcher.initialize(listOf(
-            TestDataFactory.keywordRule(id = 1L, keyword = ".*+?^${}()|[]\\", matchType = MatchType.REGEX)
+            TestDataFactory.keywordRule(id = 1L, keyword = ".*+?^\${}()|[]\\", matchType = MatchType.REGEX)
         ))
         // Should not crash
         val result = matcher.findBestMatch("test")

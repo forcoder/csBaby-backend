@@ -32,4 +32,31 @@ enum class RuleTargetType {
     PROPERTY
 }
 
+// LLM Feature Variant Types
+enum class VariantType {
+    PROMPT,
+    MODEL,
+    STRATEGY
+}
+
+// Optimization Event Types
+enum class EventType {
+    AUTO_OPTIMIZE,
+    MANUAL_TUNE,
+    A_B_TEST
+}
+
+// Event Triggerer
+enum class EventTriggerer {
+    SYSTEM,
+    USER
+}
+
+// Feedback Actions
+enum class FeedbackAction {
+    ACCEPTED,
+    MODIFIED,
+    REJECTED
+}
+
 

@@ -94,5 +94,72 @@ data class ReplyResult(
     val source: ReplySource,
     val confidence: Float,
     val ruleId: Long? = null,
-    val modelId: Long? = null
+    val modelId: Long? = null,
+    val variantId: Long? = null
+)
+
+// LLM Feature Management
+data class LLMFeature(
+    val id: Long = 0,
+    val featureKey: String,
+    val displayName: String,
+    val description: String,
+    val isEnabled: Boolean = true,
+    val defaultVariantId: Long? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+data class FeatureVariant(
+    val id: Long = 0,
+    val featureId: Long,
+    val variantName: String,
+    val variantType: VariantType,
+    val systemPrompt: String = "",
+    val userPromptTemplate: String = "",
+    val modelId: Long? = null,
+    val temperature: Float? = null,
+    val maxTokens: Int? = null,
+    val strategyConfig: String = "{}",
+    val isActive: Boolean = false,
+    val trafficPercentage: Int = 0,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+// Optimization Metrics and Events
+data class OptimizationMetrics(
+    val id: Long = 0,
+    val featureKey: String,
+    val variantId: Long,
+    val date: String, // YYYY-MM-DD format
+    val totalGenerated: Int = 0,
+    val totalAccepted: Int = 0,
+    val totalModified: Int = 0,
+    val totalRejected: Int = 0,
+    val avgConfidence: Float = 0f,
+    val avgResponseTimeMs: Long = 0L,
+    val accuracyScore: Float = 0f
+)
+
+data class OptimizationEvent(
+    val id: Long = 0,
+    val featureKey: String,
+    val eventType: EventType,
+    val oldConfig: String = "",
+    val newConfig: String = "",
+    val reason: String,
+    val triggeredBy: EventTriggerer,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+// Reply Feedback
+data class ReplyFeedback(
+    val id: Long = 0,
+    val replyHistoryId: Long,
+    val variantId: Long? = null,
+    val userAction: FeedbackAction,
+    val modifiedPart: String? = null,
+    val userRating: Int? = null,
+    val feedbackText: String? = null,
+    val createdAt: Long = System.currentTimeMillis()
 )

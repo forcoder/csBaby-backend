@@ -30,7 +30,10 @@ class ReplyGenerator @Inject constructor(
     private val styleLearningEngine: StyleLearningEngine,
     private val replyHistoryRepository: ReplyHistoryRepository,
     private val userStyleRepository: UserStyleRepository,
-    private val preferencesManager: PreferencesManager
+    private val preferencesManager: PreferencesManager,
+    private val llmFeatureManager: LLMFeatureManager,
+    private val optimizationEngine: OptimizationEngine,
+    private val autoRuleGenerator: AutoRuleGenerator
 ) {
     companion object {
         private const val TAG = "ReplyGenerator"
@@ -53,17 +56,43 @@ class ReplyGenerator @Inject constructor(
             )
         }
 
+        // Step 0: Get active variant for A/B testing
+        val variantResult = llmFeatureManager.getActiveVariant("reply_generation")
+        val variant = variantResult.getOrNull()
+
         // Step 1: Try knowledge base matching first
         if (KNOWLEDGE_BASE_FIRST) {
             val ruleMatchResult = tryKnowledgeBaseMatch(message, context)
             if (ruleMatchResult != null) {
+                // Record metrics for rule match
+                variant?.let {
+                    llmFeatureManager.updateMetrics(
+                        featureKey = "reply_generation",
+                        variantId = it.id,
+                        accepted = false,
+                        modified = false,
+                        rejected = false,
+                        confidence = ruleMatchResult.confidence
+                    )
+                }
                 return ruleMatchResult
             }
         }
 
         // Step 2: Try AI generation
-        val aiResult = tryAIGeneration(message, context)
+        val aiResult = tryAIGeneration(message, context, variant)
         if (aiResult != null) {
+            // Record metrics for AI generation
+            variant?.let {
+                llmFeatureManager.updateMetrics(
+                    featureKey = "reply_generation",
+                    variantId = it.id,
+                    accepted = false,
+                    modified = false,
+                    rejected = false,
+                    confidence = aiResult.confidence
+                )
+            }
             return aiResult
         }
 
@@ -129,7 +158,8 @@ class ReplyGenerator @Inject constructor(
      */
     private suspend fun tryAIGeneration(
         message: String,
-        context: ReplyContext
+        context: ReplyContext,
+        variant: FeatureVariant?
     ): ReplyResult? {
         // Get user style profile for system prompt customization
         val styleProfile = userStyleRepository.getProfileSync(context.userId)
@@ -142,18 +172,33 @@ class ReplyGenerator @Inject constructor(
             )
         }
 
-        // Build system prompt
-        val systemPrompt = buildSystemPrompt(context, styleProfile)
+        // Build system prompt - use variant's prompt if available
+        val systemPrompt = if (!variant?.systemPrompt.isNullOrBlank()) {
+            variant.systemPrompt
+        } else {
+            buildSystemPrompt(context, styleProfile)
+        }
 
-        // Build user prompt
-        val userPrompt = buildUserPrompt(message, context)
+        // Build user prompt - use variant's template if available
+        val userPrompt = if (!variant?.userPromptTemplate.isNullOrBlank()) {
+            variant.userPromptTemplate
+                .replace("{message}", message)
+                .replace("{appPackage}", context.appPackage)
+                .replace("{scenario}", context.scenarioId?.let { "Scenario: $it" } ?: "")
+        } else {
+            buildUserPrompt(message, context)
+        }
+
+        // Use variant's parameters if available
+        val temperature = variant?.temperature ?: 0.7f
+        val maxTokens = variant?.maxTokens ?: 500
 
         // Generate reply
         val result = aiService.generateCompletion(
             prompt = userPrompt,
             systemPrompt = systemPrompt,
-            temperature = 0.7f,
-            maxTokens = 500
+            temperature = temperature,
+            maxTokens = maxTokens
         )
 
         return result.fold(
@@ -177,7 +222,8 @@ class ReplyGenerator @Inject constructor(
                     source = ReplySource.AI_GENERATED,
                     confidence = 0.8f,
                     ruleId = null,
-                    modelId = preferences.defaultModelId.takeIf { it > 0 }
+                    modelId = preferences.defaultModelId.takeIf { it > 0 },
+                    variantId = variant?.id
                 )
             },
             onFailure = { error ->
@@ -240,7 +286,7 @@ class ReplyGenerator @Inject constructor(
         // Check if user modified the reply
         val modified = generatedReply != finalReply
 
-        // Create history record
+        // Create history record with feature tracking
         val history = ReplyHistory(
             sourceApp = context.appPackage,
             originalMessage = originalMessage,
@@ -254,12 +300,50 @@ class ReplyGenerator @Inject constructor(
         )
 
         // Save to history
-        replyHistoryRepository.insertReply(history)
+        val replyHistoryId = replyHistoryRepository.insertReply(history)
+
+        // Record feedback based on user action
+        recordFeedback(
+            context = context,
+            result = result,
+            replyHistoryId = replyHistoryId,
+            userAction = if (modified) FeedbackAction.MODIFIED else FeedbackAction.ACCEPTED,
+            modifiedPart = if (modified) finalReply else null
+        )
 
         // Learn from the actual reply the user chose to send
         if (finalReply.isNotBlank()) {
             styleLearningEngine.learnFromReply(context.userId, history)
         }
+    }
+
+    /**
+     * Record user feedback for optimization metrics.
+     */
+    private suspend fun recordFeedback(
+        context: ReplyContext,
+        result: ReplyResult,
+        replyHistoryId: Long,
+        userAction: FeedbackAction,
+        modifiedPart: String? = null
+    ) {
+        llmFeatureManager.recordFeedback(
+            featureKey = "reply_generation",
+            variantId = result.variantId,
+            replyHistoryId = replyHistoryId,
+            userAction = userAction,
+            modifiedPart = modifiedPart
+        )
+
+        // Update optimization metrics
+        llmFeatureManager.updateMetrics(
+            featureKey = "reply_generation",
+            variantId = result.variantId ?: 0L,
+            accepted = userAction == FeedbackAction.ACCEPTED,
+            modified = userAction == FeedbackAction.MODIFIED,
+            rejected = userAction == FeedbackAction.REJECTED,
+            confidence = result.confidence
+        )
     }
 
 
@@ -291,7 +375,8 @@ class ReplyGenerator @Inject constructor(
 
         // If we need more suggestions, use AI
         if (suggestions.size < count) {
-            val aiResult = tryAIGeneration(message, context)
+            val variant = llmFeatureManager.getActiveVariant("reply_generation").getOrNull()
+            val aiResult = tryAIGeneration(message, context, variant)
             if (aiResult != null) {
                 suggestions.add(aiResult)
             }

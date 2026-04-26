@@ -11,12 +11,15 @@ import com.csbaby.kefu.infrastructure.knowledge.KnowledgeBaseManager
 import com.csbaby.kefu.infrastructure.notification.MessageMonitor
 import com.csbaby.kefu.infrastructure.search.HybridSearchEngine
 import com.csbaby.kefu.infrastructure.window.FloatingWindowService
+import com.csbaby.kefu.infrastructure.llm.LLMFeatureManager
+import com.csbaby.kefu.infrastructure.llm.OptimizationEngine
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -34,7 +37,9 @@ class ReplyOrchestrator @Inject constructor(
     private val messageMonitor: MessageMonitor,
     private val preferencesManager: PreferencesManager,
     private val knowledgeBaseManager: KnowledgeBaseManager,
-    private val blacklistRepository: MessageBlacklistRepository
+    private val blacklistRepository: MessageBlacklistRepository,
+    private val llmFeatureManager: LLMFeatureManager,
+    private val optimizationEngine: OptimizationEngine
 ) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -68,6 +73,16 @@ class ReplyOrchestrator @Inject constructor(
         }
 
         try {
+            // Initialize default LLM features
+            scope.launch {
+                try {
+                    Log.d(TAG, "ReplyOrchestrator: initializing default LLM features")
+                    llmFeatureManager.initializeDefaultFeatures()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to initialize default LLM features", e)
+                }
+            }
+
             // 始终确保 matcherJob 运行（初始化知识库匹配器）
             if (matcherJob?.isActive != true) {
                 matcherJob?.cancel()
@@ -95,6 +110,23 @@ class ReplyOrchestrator @Inject constructor(
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error collecting messages", e)
+                }
+            }
+
+            // Start periodic optimization task
+            scope.launch {
+                try {
+                    Log.d(TAG, "ReplyOrchestrator: starting periodic optimization task")
+                    while (true) {
+                        delay(OPTIMIZATION_CHECK_INTERVAL)
+                        try {
+                            optimizationEngine.runOptimizationCycle(FEATURE_REPLY_GENERATION)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Periodic optimization failed", e)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Optimization task failed", e)
                 }
             }
         } catch (e: Exception) {
@@ -285,12 +317,16 @@ class ReplyOrchestrator @Inject constructor(
             userId = preferences.currentUserId
         )
 
+        // Get current active variant for tracking
+        val variant = llmFeatureManager.getActiveVariant(FEATURE_REPLY_GENERATION).getOrNull()
+
         val result = ReplyResult(
             reply = generatedReply,
             source = source,
             confidence = confidence,
             ruleId = ruleId,
-            modelId = modelId
+            modelId = modelId,
+            variantId = variant?.id
         )
 
         replyGenerator.recordUserReply(
@@ -299,6 +335,17 @@ class ReplyOrchestrator @Inject constructor(
             finalReply = finalReply,
             context = context,
             result = result
+        )
+
+        // Update optimization metrics
+        val modified = generatedReply != finalReply
+        llmFeatureManager.updateMetrics(
+            featureKey = FEATURE_REPLY_GENERATION,
+            variantId = variant?.id ?: 0L,
+            accepted = !modified,
+            modified = modified,
+            rejected = false,
+            confidence = confidence
         )
     }
 
@@ -532,8 +579,9 @@ class ReplyOrchestrator @Inject constructor(
     }
 
     companion object {
-
         private const val TAG = "ReplyOrchestrator"
+        private const val FEATURE_REPLY_GENERATION = "reply_generation"
+        private const val OPTIMIZATION_CHECK_INTERVAL = 24L * 60L * 60L * 1000L // 1 day
     }
 }
 
