@@ -4,6 +4,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.dagger.hilt.android")
+    id("com.google.devtools.ksp")
     id("androidx.room") version "2.6.1"
     kotlin("kapt")
 }
@@ -65,12 +66,16 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+    // 测试模块不需要 kapt（使用 Fake/Mock 替代 Hilt/Room 注入）
+    kapt {
+        correctErrorTypes = true
+    }
     buildFeatures {
         compose = true
         buildConfig = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.7"
+        kotlinCompilerExtensionVersion = "1.5.14"
     }
     packaging {
         resources {
@@ -108,7 +113,7 @@ dependencies {
     // Room database
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
-    kapt("androidx.room:room-compiler:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
 
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
 

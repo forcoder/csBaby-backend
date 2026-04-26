@@ -515,3 +515,5 @@ class AIServiceTest {
 
         assertTrue("Should return failure for style adjustment", result.isFailure)
     }
+}
+
