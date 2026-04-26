@@ -2,8 +2,11 @@ package com.csbaby.kefu.data.local
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.csbaby.kefu.data.local.dao.*
 import com.csbaby.kefu.data.local.entity.*
+import com.csbaby.kefu.data.local.migration.Migration5to6
 
 @Database(
     entities = [
@@ -21,8 +24,9 @@ import com.csbaby.kefu.data.local.entity.*
         OptimizationEventEntity::class,
         ReplyFeedbackEntity::class
     ],
-    version = 5,
-    exportSchema = false
+    version = 6,
+    exportSchema = false,
+    migrations = [Migration5to6()]
 )
 abstract class KefuDatabase : RoomDatabase() {
     abstract fun appConfigDao(): AppConfigDao
