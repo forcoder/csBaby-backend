@@ -2,6 +2,8 @@ package com.csbaby.kefu.data.remote
 
 import com.csbaby.kefu.domain.model.AIModelConfig
 import com.csbaby.kefu.domain.model.ModelType
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -103,7 +105,7 @@ class AIClientImpl @Inject constructor(
         
         return try {
             val endpoint = config.apiEndpoint
-            
+
             val (requestBody, headers) = buildRequest(config, messages, temperature, maxTokens)
             val requestBuilder = Request.Builder()
                 .url(endpoint)
@@ -119,9 +121,11 @@ class AIClientImpl @Inject constructor(
             Timber.d("AI Request URL: $endpoint")
             Timber.d("AI Request Body: ${requestBody.toString().take(500)}")
             Timber.d("AI Request Headers: $headers")
-            
-            val client = getConfiguredClient()
-            val response = client.newCall(request).execute()
+
+            val response = withContext(Dispatchers.IO) {
+                val client = getConfiguredClient()
+                client.newCall(request).execute()
+            }
             val responseBody = response.body?.string() ?: return Result.failure(Exception("Empty response"))
 
             Timber.d("AI Response Status: ${response.code}")
@@ -137,8 +141,8 @@ class AIClientImpl @Inject constructor(
                 Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
-            Timber.e(e, "AI request failed with exception: ${e.message}")
-            Result.failure(Exception("请求失败: ${e.message}", e))
+            Timber.e(e, "AI request failed: ${e::class.java.simpleName}: ${e.message}")
+            Result.failure(Exception("请求失败: ${e::class.java.simpleName}: ${e.message}", e))
         }
     }
 
@@ -263,7 +267,6 @@ class AIClientImpl @Inject constructor(
             }
 
             val headers = getHeadersForModel(config)
-            val client = getConfiguredClient()
 
             val requestBuilder = Request.Builder()
                 .url(fullUrl)
@@ -275,7 +278,10 @@ class AIClientImpl @Inject constructor(
             }
 
             val request = requestBuilder.build()
-            val response = client.newCall(request).execute()
+            val response = withContext(Dispatchers.IO) {
+                val client = getConfiguredClient()
+                client.newCall(request).execute()
+            }
             val responseBody = response.body?.string() 
                 ?: return Result.failure(Exception("Empty response"))
 

@@ -6,6 +6,7 @@ plugins {
     id("com.google.dagger.hilt.android")
     id("androidx.room") version "2.6.1"
     kotlin("kapt")
+    id("com.google.devtools.ksp")
 }
 
 // Apply v1 signing config via Groovy (Kotlin DSL doesn't expose v1SigningEnabled)
@@ -97,8 +98,20 @@ room {
     schemaDirectory("$projectDir/schemas")
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 hilt {
     enableAggregatingTask = true
+}
+
+// Disable KAPT stub generation for unit tests — tests use Fakes/Mocks, no Hilt injection needed
+// This works around a pre-existing Kotlin 1.9.24 KAPT IR bug with enum symbols (PROPERTY, CONTACT, GROUP)
+afterEvaluate {
+    tasks.matching { it.name.contains("kaptGenerateStubs") && it.name.contains("UnitTest") }.configureEach {
+        enabled = false
+    }
 }
 
 
@@ -119,7 +132,7 @@ dependencies {
     // Room database
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
-    kapt("androidx.room:room-compiler:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
 
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 

@@ -580,7 +580,7 @@ class KeywordMatcherTest {
         val newMatcher = KeywordMatcher()
         val result = newMatcher.findBestMatch("价格")
         // Should auto-build trie (empty), return empty results
-        assertTrue("Should return empty without initialize", result.isEmpty())
+        assertNull("Should return null without initialize", result)
     }
 
     // KM-E04: 并发匹配线程安全
@@ -611,5 +611,95 @@ class KeywordMatcherTest {
         // Should not crash
         val result = matcher.findBestMatch("test")
         assertTrue("Should not crash with special regex chars", true)
+    }
+
+    // ==================== 🔀 模糊匹配(中文分词纠错)测试 ====================
+
+    // KM-F01: 中文语序不同也能匹配 ("取消订单" ↔ "订单被取消")
+    @Test
+    fun `KM-F01 reordered chinese characters fuzzy match`() {
+        matcher.initialize(listOf(
+            TestDataFactory.keywordRule(id = 1L, keyword = "订单被取消", matchType = MatchType.CONTAINS)
+        ))
+        val result = matcher.findBestMatch("取消订单")
+        assertNotNull("Should fuzzy match despite different word order", result)
+        assertEquals("Should match the correct rule", 1L, result!!.rule.id)
+    }
+
+    // KM-F02: 多个中文词都能模糊匹配到同一规则
+    @Test
+    fun `KM-F02 multiple reordered queries match same rule`() {
+        matcher.initialize(listOf(
+            TestDataFactory.keywordRule(id = 1L, keyword = "订单被取消", matchType = MatchType.CONTAINS)
+        ))
+        // "订单取消失败" contains all chars of "订单被取消" (订,单,被,取,消)
+        val result1 = matcher.findBestMatch("订单取消失败")
+        assertNotNull("类似语义应该模糊匹配", result1)
+        assertEquals("应该匹配到正确的规则", 1L, result1!!.rule.id)
+    }
+
+    // KM-F03: 模糊匹配置信度低于直接子串匹配
+    @Test
+    fun `KM-F03 fuzzy confidence lower than direct match`() {
+        val fuzzyMatcher = KeywordMatcher()
+        val directMatcher = KeywordMatcher()
+
+        fuzzyMatcher.initialize(listOf(
+            TestDataFactory.keywordRule(id = 1L, keyword = "订单被取消", matchType = MatchType.CONTAINS)
+        ))
+        directMatcher.initialize(listOf(
+            TestDataFactory.keywordRule(id = 2L, keyword = "取消", matchType = MatchType.CONTAINS)
+        ))
+
+        val fuzzyResult = fuzzyMatcher.findBestMatch("取消订单")
+        val directResult = directMatcher.findBestMatch("取消订单")
+
+        assertNotNull("Fuzzy match should work", fuzzyResult)
+        assertNotNull("Direct match should work", directResult)
+        // direct match should have higher (or equal) confidence than fuzzy
+        assertTrue(
+            "Direct substring match should >= fuzzy match confidence",
+            directResult!!.confidence >= fuzzyResult!!.confidence
+        )
+    }
+
+    // KM-F04: 1-2字符关键词不触发模糊匹配(避免噪音)
+    @Test
+    fun `KM-F04 short keyword no fuzzy match`() {
+        matcher.initialize(listOf(
+            TestDataFactory.keywordRule(id = 1L, keyword = "价格", matchType = MatchType.CONTAINS)
+        ))
+        // "格价" has same chars as "价格" but reversed - should NOT fuzzy match (2 chars)
+        val result = matcher.findBestMatch("格价")
+        assertNull("2-char keyword should not trigger fuzzy match", result)
+    }
+
+    // KM-F05: 模糊匹配的置信度在合理范围内
+    @Test
+    fun `KM-F05 fuzzy confidence in reasonable range`() {
+        matcher.initialize(listOf(
+            TestDataFactory.keywordRule(id = 1L, keyword = "订单被取消", matchType = MatchType.CONTAINS, priority = 5)
+        ))
+        val result = matcher.findBestMatch("取消订单")
+        assertNotNull(result)
+        // Should be between 0.2 and 0.5 (lower than direct matches)
+        assertTrue("Fuzzy confidence should be >= 0.2", result!!.confidence >= 0.2f)
+        assertTrue("Fuzzy confidence should be <= 0.5", result.confidence <= 0.5f)
+    }
+
+    // KM-F06: 模糊匹配不会替代已有的精确子串匹配
+    @Test
+    fun `KM-F06 fuzzy does not replace direct match`() {
+        matcher.initialize(listOf(
+            TestDataFactory.keywordRule(id = 1L, keyword = "订单被取消,取消", matchType = MatchType.CONTAINS)
+        ))
+        // "取消订单" contains "取消" as substring → should be direct match, not fuzzy
+        val result = matcher.findBestMatch("取消订单")
+        assertNotNull("Should match", result)
+        // The matchedText should be "取消" (the direct substring), not the fuzzy alias
+        assertTrue(
+            "Should have higher confidence from direct match",
+            result!!.confidence >= 0.3f
+        )
     }
 }

@@ -2,6 +2,7 @@ package com.csbaby.kefu.data.local
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.csbaby.kefu.data.local.dao.*
@@ -27,6 +28,7 @@ import com.csbaby.kefu.data.local.migration.Migration5to6
     version = 6,
     exportSchema = false
 )
+@TypeConverters(Converters::class)
 abstract class KefuDatabase : RoomDatabase() {
     abstract fun appConfigDao(): AppConfigDao
     abstract fun keywordRuleDao(): KeywordRuleDao

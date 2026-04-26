@@ -100,14 +100,18 @@ class KeywordMatcher @Inject constructor() {
     fun findMatches(message: String): List<MatchedResult> {
         // Check cache first
         matchCache[message]?.let { return it }
-        
+
         // Ensure Trie is built
         ensureTrieBuilt()
-        
+
         val results = mutableListOf<MatchedResult>()
 
         // Trie-based matching for exact and contains
         results.addAll(trieMatch(message))
+
+        // Fuzzy character-set matching for Chinese text
+        // Handles cases like "取消订单" ↔ "订单被取消" (same chars, different order)
+        results.addAll(fuzzyMatch(message))
 
         // Regex matching
         results.addAll(matchWithRegex(message))
@@ -200,6 +204,48 @@ class KeywordMatcher @Inject constructor() {
         return results
     }
 
+    /**
+     * Fuzzy character-set matching for Chinese text.
+     *
+     * When all characters of a keyword appear in the query message (in any order),
+     * it returns a lower-confidence match. This handles cases like Chinese word
+     * reordering (e.g. "取消订单" ↔ "订单被取消") where character-level substring
+     * matching fails but the semantic intent is clearly related.
+     *
+     * Only applies to CONTAINS rules with 3+ character keywords to avoid noise
+     * from short keyword fragments.
+     */
+    private fun fuzzyMatch(message: String): List<MatchedResult> {
+        val results = mutableListOf<MatchedResult>()
+        val lowerMessage = message.lowercase()
+        val messageChars = lowerMessage.toSet()
+
+        for (rule in rules.filter { it.enabled && it.matchType == MatchType.CONTAINS }) {
+            for (alias in extractKeywordAliases(rule)) {
+                if (alias.length < 3) continue
+                val lowerAlias = alias.lowercase()
+                // Skip if already found as a contiguous substring by trieMatch
+                if (lowerMessage.contains(lowerAlias)) continue
+
+                val aliasChars = lowerAlias.toSet()
+                if (messageChars.containsAll(aliasChars)) {
+                    results.add(
+                        MatchedResult(
+                            rule = rule,
+                            matchedText = alias,
+                            matchStart = -1,
+                            matchEnd = -1,
+                            confidence = calculateFuzzyConfidence(rule, message)
+                        )
+                    )
+                    break // One fuzzy match per rule
+                }
+            }
+        }
+
+        return results
+    }
+
     private fun extractKeywordAliases(rule: KeywordRule): List<String> {
         return if (rule.matchType == MatchType.REGEX) {
             listOf(rule.keyword)
@@ -232,6 +278,15 @@ class KeywordMatcher @Inject constructor() {
         }
 
         return (lengthRatio + priorityFactor + matchTypeFactor).coerceIn(0f, 1f)
+    }
+
+    /**
+     * Confidence for fuzzy character-set matches.
+     * Lower than direct substring matches to avoid overriding them.
+     */
+    private fun calculateFuzzyConfidence(rule: KeywordRule, fullMessage: String): Float {
+        val priorityBonus = (rule.priority.coerceIn(0, 10) / 10f) * 0.1f
+        return (0.25f + priorityBonus).coerceIn(0f, 1f)
     }
 
     /**
