@@ -345,7 +345,7 @@ class ReplyOrchestrator @Inject constructor(
             accepted = !modified,
             modified = modified,
             rejected = false,
-            confidence = confidence
+            confidence = confidence.toDouble()
         )
     }
 

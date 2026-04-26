@@ -4,7 +4,6 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.dagger.hilt.android")
-    id("com.google.devtools.ksp")
     id("androidx.room") version "2.6.1"
     kotlin("kapt")
 }
@@ -67,8 +66,8 @@ android {
         jvmTarget = "1.8"
     }
     // 测试模块不需要 kapt（使用 Fake/Mock 替代 Hilt/Room 注入）
-    ksp {
-        arg("dagger.fastInit", "ENABLED")
+    kapt {
+        correctErrorTypes = true
     }
     kapt {
         correctErrorTypes = true

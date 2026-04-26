@@ -3,6 +3,9 @@ package com.csbaby.kefu.infrastructure.reply
 import android.util.Log
 import com.csbaby.kefu.data.local.PreferencesManager
 import com.csbaby.kefu.domain.model.*
+import com.csbaby.kefu.infrastructure.llm.LLMFeatureManager
+import com.csbaby.kefu.infrastructure.llm.OptimizationEngine
+import com.csbaby.kefu.infrastructure.llm.AutoRuleGenerator
 
 import com.csbaby.kefu.domain.repository.ReplyHistoryRepository
 import com.csbaby.kefu.domain.repository.UserStyleRepository
@@ -75,7 +78,7 @@ class ReplyGenerator @Inject constructor(
                         accepted = false,
                         modified = false,
                         rejected = false,
-                        confidence = ruleMatchResult.confidence
+                        confidence = ruleMatchResult.confidence.toDouble()
                     )
                 }
                 return ruleMatchResult
@@ -93,7 +96,7 @@ class ReplyGenerator @Inject constructor(
                     accepted = false,
                     modified = false,
                     rejected = false,
-                    confidence = aiResult.confidence
+                    confidence = aiResult.confidence.toDouble()
                 )
             }
             return aiResult
@@ -332,7 +335,7 @@ class ReplyGenerator @Inject constructor(
     ) {
         llmFeatureManager.recordFeedback(
             featureKey = "reply_generation",
-            variantId = result.variantId,
+            variantId = result.variantId ?: 0L,
             replyHistoryId = replyHistoryId,
             userAction = userAction,
             modifiedPart = modifiedPart
@@ -345,7 +348,7 @@ class ReplyGenerator @Inject constructor(
             accepted = userAction == FeedbackAction.ACCEPTED,
             modified = userAction == FeedbackAction.MODIFIED,
             rejected = userAction == FeedbackAction.REJECTED,
-            confidence = result.confidence
+            confidence = result.confidence.toDouble()
         )
     }
 

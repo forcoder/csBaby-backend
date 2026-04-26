@@ -1,5 +1,6 @@
 package com.csbaby.kefu.infrastructure.llm
 
+import android.util.Log
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,7 +35,6 @@ class LLMFeatureManager @Inject constructor() {
                 systemPrompt = "System prompt for $variantName",
                 userPromptTemplate = "User template for $variantName"
             )
-
             Result.success(variant)
         } catch (e: Exception) {
             Result.failure(e)
@@ -50,37 +50,31 @@ class LLMFeatureManager @Inject constructor() {
         accepted: Boolean = false,
         modified: Boolean = false,
         rejected: Boolean = false,
-        confidence: Float = 1.0f
+        confidence: Double = 1.0
     ) {
         // Implementation for updating metrics
         println("Updated metrics: feature=$featureKey, variant=$variantId, accepted=$accepted, modified=$modified, rejected=$rejected")
     }
 
-/**
+    /**
+     * Initialize default LLM features.
+     */
+    fun initializeDefaultFeatures() {
+        Log.d("LLMFeatureManager", "Initializing default LLM features")
+        // Minimal implementation - features are created on-demand via getActiveVariant
+    }
+
+    /**
      * Record user feedback for optimization.
      */
     fun recordFeedback(
         featureKey: String,
-        variantId: Long?,
+        variantId: Any,
         replyHistoryId: Long,
         userAction: FeedbackAction,
         modifiedPart: String? = null
     ) {
-        // Convert variantId to Any for compatibility
-        val anyVariantId = variantId as? Any ?: 0L
-        // Convert userAction to string for compatibility with current implementation
-        val actionString = when (userAction) {
-            FeedbackAction.ACCEPTED -> "ACCEPTED"
-            FeedbackAction.MODIFIED -> "MODIFIED"
-            FeedbackAction.REJECTED -> "REJECTED"
-        }
-        println("Recorded feedback: feature=$featureKey, variant=$anyVariantId, action=$actionString")
-    }
-
-    /**
-     * Initialize default features.
-     */
-    fun initializeDefaultFeatures() {
-        println("Initializing default features")
+        // Implementation for recording feedback
+        println("Recorded feedback: feature=$featureKey, variant=$variantId, action=$userAction")
     }
 }
