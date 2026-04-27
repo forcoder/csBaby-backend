@@ -42,4 +42,7 @@ interface MessageBlacklistDao {
     
     @Query("SELECT EXISTS(SELECT 1 FROM message_blacklist WHERE value = :value AND isEnabled = 1)")
     suspend fun isBlacklisted(value: String): Boolean
+
+    @Query("SELECT * FROM message_blacklist ORDER BY createdAt DESC")
+    suspend fun getAllBlacklist(): List<MessageBlacklistEntity>
 }

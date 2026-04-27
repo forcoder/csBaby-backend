@@ -1,5 +1,6 @@
 package com.csbaby.kefu.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -10,6 +11,7 @@ data class LLMFeatureEntity(
     val featureKey: String,
     val displayName: String,
     val description: String,
+    @ColumnInfo(defaultValue = "1")
     val isEnabled: Boolean = true,
     val defaultVariantId: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),

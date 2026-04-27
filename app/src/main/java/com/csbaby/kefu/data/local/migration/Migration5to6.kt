@@ -12,10 +12,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 class Migration5to6 : Migration(5, 6) {
     override fun migrate(database: SupportSQLiteDatabase) {
         // Add featureKey column to reply_history table
-        database.execSQL("ALTER TABLE reply_history ADD COLUMN featureKey TEXT DEFAULT NULL")
+        database.execSQL("ALTER TABLE reply_history ADD COLUMN featureKey TEXT")
 
         // Add variantId column to reply_history table
-        database.execSQL("ALTER TABLE reply_history ADD COLUMN variantId INTEGER DEFAULT NULL")
+        database.execSQL("ALTER TABLE reply_history ADD COLUMN variantId INTEGER")
 
         // Create llm_features table if it doesn't exist (legacy v4 databases)
         database.execSQL("""

@@ -46,6 +46,8 @@ interface KeywordRuleDao {
     fun getRuleCountFlow(): Flow<Int>
 
     @Query("SELECT DISTINCT category FROM keyword_rules")
-
     fun getAllCategories(): Flow<List<String>>
+
+    @Query("SELECT * FROM keyword_rules ORDER BY priority DESC, createdAt DESC")
+    suspend fun getAllRulesList(): List<KeywordRuleEntity>
 }

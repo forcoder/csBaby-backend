@@ -109,7 +109,11 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
-    // 备份文件保存选择器
+    // Excel 模块选择状态（必须在 launcher 之前声明）
+    val excelExportModule = remember { mutableStateOf<String?>(null) }
+    val excelImportModule = remember { mutableStateOf<String?>(null) }
+
+    // 备份文件保存选择器 (ZIP)
     val backupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip")
     ) { uri ->
@@ -119,7 +123,7 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
         }
     }
 
-    // 备份文件恢复选择器
+    // ZIP 恢复选择器
     val restoreLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -129,8 +133,128 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
         }
     }
 
-    // 确认重启对话框
+    // Excel 单模块导出选择器
+    val excelExportModuleLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    ) { uri ->
+        val selectedModule = excelExportModule.value
+        if (uri != null && selectedModule != null) {
+            viewModel.setSnackbarHost(snackbarHostState)
+            viewModel.exportModuleToExcel(selectedModule, uri)
+        }
+        excelExportModule.value = null
+    }
+
+    // Excel 全部导出选择器
+    val excelExportAllLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.setSnackbarHost(snackbarHostState)
+            viewModel.exportAllModulesToExcel(uri)
+        }
+    }
+
+    // Excel 恢复选择器
+    val excelImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        val selectedModule = excelImportModule.value
+        if (uri != null && selectedModule != null) {
+            viewModel.setSnackbarHost(snackbarHostState)
+            viewModel.importModuleFromExcel(selectedModule, uri)
+        }
+        excelImportModule.value = null
+    }
+
+    // 状态变量
+    var showExcelExportDialog by remember { mutableStateOf(false) }
+    var showExcelImportDialog by remember { mutableStateOf(false) }
     var showRestartDialog by remember { mutableStateOf(false) }
+
+    // Excel 导出选择对话框
+    if (showExcelExportDialog) {
+        AlertDialog(
+            onDismissRequest = { showExcelExportDialog = false },
+            title = { Text("选择导出方式") },
+            text = {
+                Column {
+                    Text("选择要导出的方式：", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(
+                        onClick = {
+                            showExcelExportDialog = false
+                            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                            excelExportAllLauncher.launch("csbaby_all_modules_$timestamp.xlsx")
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.GridOn, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("导出所有功能（单个Excel文件）")
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "或选择单个功能模块：",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    viewModel.getAllModules().forEach { (module, name) ->
+                        TextButton(
+                            onClick = {
+                                showExcelExportDialog = false
+                                excelExportModule.value = module
+                                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                                excelExportModuleLauncher.launch("csbaby_${module}_$timestamp.xlsx")
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("导出 $name")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showExcelExportDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // Excel 恢复选择对话框
+    if (showExcelImportDialog) {
+        AlertDialog(
+            onDismissRequest = { showExcelImportDialog = false },
+            title = { Text("选择要恢复的功能") },
+            text = {
+                Column {
+                    Text("从 Excel 文件恢复指定功能的数据：", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    viewModel.getAllModules().forEach { (module, name) ->
+                        TextButton(
+                            onClick = {
+                                showExcelImportDialog = false
+                                excelImportModule.value = module
+                                excelImportLauncher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("恢复 $name")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showExcelImportDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // 确认重启对话框
     if (showRestartDialog) {
         AlertDialog(
             onDismissRequest = { showRestartDialog = false },
@@ -139,7 +263,6 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
             confirmButton = {
                 TextButton(onClick = {
                     showRestartDialog = false
-                    // 重启应用
                     val pm = context.packageManager
                     val intent = pm.getLaunchIntentForPackage(context.packageName)
                     intent?.addFlags(
@@ -147,7 +270,6 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
                         android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                     )
                     context.startActivity(intent)
-                    // 结束当前进程
                     Runtime.getRuntime().exit(0)
                 }) {
                     Text("重启")
@@ -217,7 +339,7 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = "备份知识库、大模型配置、聊天记录等数据。重装应用前请先备份，安装后恢复。",
+                text = "支持整体备份（ZIP）或按功能导出（Excel）。即使整体恢复失败，也可通过 Excel 单独恢复各功能数据。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -244,7 +366,7 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
                 }
             }
 
-            // 操作按钮
+            // 第一行：整体备份 + 整体恢复
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -261,9 +383,9 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
                         containerColor = MaterialTheme.colorScheme.primary
                     )
                 ) {
-                    Icon(Icons.Default.Backup, contentDescription = "备份数据")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("备份数据")
+                    Icon(Icons.Default.Backup, contentDescription = "整体备份")
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("整体备份", style = MaterialTheme.typography.labelMedium)
                 }
 
                 OutlinedButton(
@@ -273,9 +395,40 @@ fun DataBackupCard(viewModel: ProfileViewModel, uiState: ProfileUiState) {
                     modifier = Modifier.weight(1f),
                     enabled = uiState.backupStatus != BackupStatus.IN_PROGRESS
                 ) {
-                    Icon(Icons.Default.Restore, contentDescription = "恢复数据")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("恢复数据")
+                    Icon(Icons.Default.Restore, contentDescription = "整体恢复")
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("整体恢复", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 第二行：Excel 导出 + Excel 恢复
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Button(
+                    onClick = { showExcelExportDialog = true },
+                    modifier = Modifier.weight(1f),
+                    enabled = uiState.backupStatus != BackupStatus.IN_PROGRESS,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.tertiary
+                    )
+                ) {
+                    Icon(Icons.Default.GridOn, contentDescription = "Excel导出")
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Excel导出", style = MaterialTheme.typography.labelMedium)
+                }
+
+                OutlinedButton(
+                    onClick = { showExcelImportDialog = true },
+                    modifier = Modifier.weight(1f),
+                    enabled = uiState.backupStatus != BackupStatus.IN_PROGRESS
+                ) {
+                    Icon(Icons.Default.FileOpen, contentDescription = "Excel恢复")
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Excel恢复", style = MaterialTheme.typography.labelMedium)
                 }
             }
 

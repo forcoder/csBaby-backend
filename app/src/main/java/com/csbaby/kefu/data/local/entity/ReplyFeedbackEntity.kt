@@ -25,14 +25,10 @@ data class ReplyFeedbackEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val replyHistoryId: Long,
-    @ColumnInfo(defaultValue = "NULL")
     val variantId: Long? = null,
     val userAction: String, // ACCEPTED / MODIFIED / REJECTED
-    @ColumnInfo(defaultValue = "NULL")
     val modifiedPart: String? = null,
-    @ColumnInfo(defaultValue = "NULL")
     val userRating: Int? = null,
-    @ColumnInfo(defaultValue = "NULL")
     val feedbackText: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 )

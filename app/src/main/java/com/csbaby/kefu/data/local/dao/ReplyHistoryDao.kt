@@ -38,4 +38,7 @@ interface ReplyHistoryDao {
 
     @Query("SELECT * FROM reply_history WHERE styleApplied = 1 ORDER BY sendTime DESC LIMIT :limit")
     suspend fun getStyleAppliedReplies(limit: Int = 100): List<ReplyHistoryEntity>
+
+    @Query("SELECT * FROM reply_history ORDER BY sendTime DESC")
+    suspend fun getAllReplies(): List<ReplyHistoryEntity>
 }

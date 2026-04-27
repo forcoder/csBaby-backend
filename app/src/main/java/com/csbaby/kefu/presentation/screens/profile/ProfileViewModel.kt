@@ -638,6 +638,143 @@ class ProfileViewModel @Inject constructor(
 
     // ========== 数据备份与恢复功能 ==========
 
+    // ========== Excel 按功能模块导出/导入 ==========
+
+    /**
+     * 导出指定功能模块为 Excel
+     * @param module 功能模块标识
+     * @param uri 输出文件 URI
+     */
+    fun exportModuleToExcel(module: String, uri: Uri) {
+        viewModelScope.launch {
+            try {
+                _uiState.update {
+                    it.copy(
+                        backupStatus = BackupStatus.IN_PROGRESS,
+                        backupMessage = "正在导出 ${getModuleDisplayName(module)}...",
+                        isBackupOperation = true
+                    )
+                }
+                val result = backupManager.exportModuleToExcel(module, uri)
+                if (result.success) {
+                    _uiState.update {
+                        it.copy(backupStatus = BackupStatus.SUCCESS, backupMessage = result.message)
+                    }
+                    showSnackbar(result.message)
+                } else {
+                    _uiState.update {
+                        it.copy(backupStatus = BackupStatus.FAILED, backupMessage = result.message)
+                    }
+                    showSnackbar("导出失败: ${result.message}")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "导出模块 $module 异常")
+                _uiState.update {
+                    it.copy(backupStatus = BackupStatus.FAILED, backupMessage = "导出异常: ${e.message}")
+                }
+                showSnackbar("导出异常: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * 导出所有功能模块到单个 Excel 文件
+     * @param uri 输出文件 URI
+     */
+    fun exportAllModulesToExcel(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                _uiState.update {
+                    it.copy(
+                        backupStatus = BackupStatus.IN_PROGRESS,
+                        backupMessage = "正在导出所有功能模块...",
+                        isBackupOperation = true
+                    )
+                }
+                val result = backupManager.exportAllToExcel(uri)
+                if (result.success) {
+                    _uiState.update {
+                        it.copy(backupStatus = BackupStatus.SUCCESS, backupMessage = result.message)
+                    }
+                    showSnackbar(result.message)
+                } else {
+                    _uiState.update {
+                        it.copy(backupStatus = BackupStatus.FAILED, backupMessage = result.message)
+                    }
+                    showSnackbar("导出失败: ${result.message}")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "全部导出异常")
+                _uiState.update {
+                    it.copy(backupStatus = BackupStatus.FAILED, backupMessage = "导出异常: ${e.message}")
+                }
+                showSnackbar("导出异常: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * 从 Excel 文件恢复指定功能模块
+     * @param module 功能模块标识
+     * @param uri 输入文件 URI
+     */
+    fun importModuleFromExcel(module: String, uri: Uri) {
+        viewModelScope.launch {
+            try {
+                _uiState.update {
+                    it.copy(
+                        backupStatus = BackupStatus.IN_PROGRESS,
+                        backupMessage = "正在恢复 ${getModuleDisplayName(module)}...",
+                        isBackupOperation = false
+                    )
+                }
+                val result = backupManager.importModuleFromExcel(module, uri)
+                if (result.success) {
+                    _uiState.update {
+                        it.copy(backupStatus = BackupStatus.SUCCESS, backupMessage = result.message)
+                    }
+                    showSnackbar(result.message)
+                } else {
+                    _uiState.update {
+                        it.copy(backupStatus = BackupStatus.FAILED, backupMessage = result.message)
+                    }
+                    showSnackbar("恢复失败: ${result.message}")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "导入模块 $module 异常")
+                _uiState.update {
+                    it.copy(backupStatus = BackupStatus.FAILED, backupMessage = "恢复异常: ${e.message}")
+                }
+                showSnackbar("恢复异常: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * 获取功能模块的显示名称
+     */
+    fun getModuleDisplayName(module: String): String {
+        return when (module) {
+            BackupManager.MODULE_APP_CONFIG -> "应用配置"
+            BackupManager.MODULE_KEYWORD_RULES -> "关键词规则"
+            BackupManager.MODULE_SCENARIOS -> "场景配置"
+            BackupManager.MODULE_AI_MODELS -> "AI模型配置"
+            BackupManager.MODULE_STYLE_PROFILES -> "风格画像"
+            BackupManager.MODULE_REPLY_HISTORY -> "聊天记录"
+            BackupManager.MODULE_MESSAGE_BLACKLIST -> "消息黑名单"
+            else -> module
+        }
+    }
+
+    /**
+     * 获取所有功能模块列表
+     */
+    fun getAllModules(): List<Pair<String, String>> {
+        return BackupManager.ALL_MODULES.map { module ->
+            module to getModuleDisplayName(module)
+        }
+    }
+
     /**
      * 执行数据备份
      * @param uri 用户选择的保存位置

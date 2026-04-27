@@ -35,4 +35,7 @@ interface AppConfigDao {
 
     @Query("DELETE FROM app_configs WHERE packageName = :packageName")
     suspend fun deleteByPackage(packageName: String)
+
+    @Query("SELECT * FROM app_configs ORDER BY lastUsed DESC")
+    suspend fun getAllAppsList(): List<AppConfigEntity>
 }

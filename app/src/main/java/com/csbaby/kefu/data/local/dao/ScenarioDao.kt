@@ -40,5 +40,8 @@ interface ScenarioDao {
 
     @Query("DELETE FROM rule_scenario_relation")
     suspend fun deleteAllRelations()
+
+    @Query("SELECT * FROM scenarios ORDER BY createdAt DESC")
+    suspend fun getAllScenariosList(): List<ScenarioEntity>
 }
 

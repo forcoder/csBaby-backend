@@ -41,4 +41,7 @@ interface AIModelConfigDao {
 
     @Query("UPDATE ai_model_configs SET monthlyCost = monthlyCost + :cost WHERE id = :id")
     suspend fun addCost(id: Long, cost: Double)
+
+    @Query("SELECT * FROM ai_model_configs ORDER BY isDefault DESC, lastUsed DESC")
+    suspend fun getAllModelsList(): List<AIModelConfigEntity>
 }

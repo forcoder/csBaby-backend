@@ -35,4 +35,7 @@ interface UserStyleProfileDao {
 
     @Delete
     suspend fun deleteProfile(profile: UserStyleProfileEntity)
+
+    @Query("SELECT * FROM user_style_profiles ORDER BY lastTrained DESC")
+    fun getAllProfiles(): Flow<List<UserStyleProfileEntity>>
 }
