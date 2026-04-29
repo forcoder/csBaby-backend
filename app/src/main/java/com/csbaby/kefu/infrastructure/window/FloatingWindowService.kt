@@ -1024,8 +1024,9 @@ class FloatingWindowService : Service() {
         val reply = getCurrentReplyText()
         if (reply.isBlank()) return
 
-        copyReplyToClipboard(reply)
-        Toast.makeText(this, "已复制回复内容", Toast.LENGTH_SHORT).show()
+        if (copyReplyToClipboard(reply)) {
+            Toast.makeText(this, "已复制", Toast.LENGTH_SHORT).show()
+        }
         setExpanded(false, animated = true)
     }
 
@@ -1064,9 +1065,15 @@ class FloatingWindowService : Service() {
     }
 
 
-    private fun copyReplyToClipboard(reply: String) {
-        val clipboardManager = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-        clipboardManager.setPrimaryClip(ClipData.newPlainText("suggested_reply", reply))
+    private fun copyReplyToClipboard(reply: String): Boolean {
+        if (reply.isBlank()) return false
+        return try {
+            val clipboardManager = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+            clipboardManager.setPrimaryClip(ClipData.newPlainText("suggested_reply", reply))
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     private fun recordSentReply(data: DisplayData, finalReply: String) {
@@ -1746,8 +1753,9 @@ class FloatingWindowService : Service() {
                 setPadding(dp(8), dp(4), dp(8), dp(4))
                 background = createSolidButtonBackground("#1E293B", "#334155")
                 setOnClickListener {
-                    copyReplyToClipboard(rule.replyTemplate)
-                    Toast.makeText(this@FloatingWindowService, "已复制回复内容", Toast.LENGTH_SHORT).show()
+                    if (copyReplyToClipboard(rule.replyTemplate)) {
+                        Toast.makeText(this@FloatingWindowService, "已复制", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
 
