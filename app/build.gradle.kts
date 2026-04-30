@@ -50,41 +50,13 @@ android {
 
 
     buildTypes {
-        debug {
-            isDebuggable = true
-            isMinifyEnabled = false
-            isShrinkResources = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android.txt"),
-                "proguard-rules.pro"
-            )
-        }
         release {
-            isDebuggable = false
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
             signingConfig = signingConfigs.getByName("release")
-
-            // 优化配置
-            ndk {
-                abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
-            }
-
-            // 资源优化
-            packagingOptions {
-                resources {
-                    pickFirsts += listOf(
-                        "META-INF/**",
-                        "**/*.properties",
-                        "**/*.version",
-                        "META-INF/services/**"
-                    )
-                }
-            }
         }
     }
     compileOptions {
@@ -95,6 +67,9 @@ android {
         jvmTarget = "1.8"
     }
     // 测试模块不需要 kapt（使用 Fake/Mock 替代 Hilt/Room 注入）
+    kapt {
+        correctErrorTypes = true
+    }
     kapt {
         correctErrorTypes = true
     }
@@ -118,9 +93,13 @@ android {
     }
 }
 
-// Add Room schema directory configuration
+// Add Room and Hilt schema directory configuration
 room {
     schemaDirectory("$projectDir/schemas")
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 hilt {

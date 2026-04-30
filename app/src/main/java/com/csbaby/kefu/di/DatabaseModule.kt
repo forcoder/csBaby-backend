@@ -28,30 +28,8 @@ object DatabaseModule {
             KefuDatabase::class.java,
             KefuDatabase.DATABASE_NAME
         )
-            .addMigrations(
-                MIGRATION_1_2,
-                MIGRATION_2_3,
-                MIGRATION_3_4,
-                MIGRATION_4_5,
-                MIGRATION_4_6,
-                Migration5to6(),
-                Migration6to7() // 添加新版本迁移
-            )
-            .addCallback(object : RoomDatabase.Callback() {
-                override fun onCreate(db: SupportSQLiteDatabase) {
-                    super.onCreate(db)
-                    // 数据库创建时初始化索引
-                    KefuDatabase.createIndexes(db)
-                }
-
-                override fun onOpen(db: SupportSQLiteDatabase) {
-                    super.onOpen(db)
-                    // 数据库打开时确保索引存在
-                    KefuDatabase.createIndexes(db)
-                }
-            })
-            .enableMultiInstanceInvalidation() // 支持多实例并发访问
-            .setJournalMode(RoomDatabase.JournalMode.WAL) // 使用WAL模式提高并发性能
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_4_6, Migration5to6())
+            .fallbackToDestructiveMigration()
             .build()
     }
 

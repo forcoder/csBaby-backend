@@ -27,7 +27,9 @@ object AppPerformanceMonitorProvider {
      * 创建新的性能监控器实例（用于测试）
      */
     internal fun createInstance(context: Context): AppPerformanceMonitor {
-        return AppPerformanceMonitorModule.provideAppPerformanceMonitor(context)
+        val analyticsTracker = AnalyticsTracker(context)
+        val crashReporter = CrashReporter(context)
+        return AppPerformanceMonitorModule.provideAppPerformanceMonitor(context, analyticsTracker, crashReporter)
     }
 
     /**

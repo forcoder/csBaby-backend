@@ -29,5 +29,4 @@ interface OptimizationMetricsDao {
 
     @Query("DELETE FROM optimization_metrics WHERE id = :id")
     suspend fun deleteById(id: Long)
-
 }

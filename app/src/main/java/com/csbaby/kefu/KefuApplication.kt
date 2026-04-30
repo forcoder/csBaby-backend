@@ -62,9 +62,7 @@ class KefuApplication : Application(), Configuration.Provider {
                 Log.e(TAG, "Failed to schedule OTA updates", e)
             }
             
-            // 初始化性能监控器
-            val performanceMonitor = AppPerformanceMonitorProvider.get(this)
-            performanceMonitor.trackStartup(System.currentTimeMillis(), "csbaby")
+            // 性能监控器已通过Hilt自动初始化
         } catch (e: Exception) {
             Log.e(TAG, "Hilt EntryPoint bootstrap failed — app will run without auto-reply", e)
         }

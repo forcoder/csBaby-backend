@@ -229,11 +229,12 @@ class AnalyticsTracker @Inject constructor(
                 }
             }
 
-            fun EventData.toJsonString(): String {
-                val propsStr = properties.entries.joinToString(",") { "${it.key}=${it.value}" }
-                return "$name|$propsStr|$timestamp|$sessionId|$userId"
-            }
         }
+    }
+
+    fun EventData.toJsonString(): String {
+        val propsStr = properties.entries.joinToString(",") { "${it.key}=${it.value}" }
+        return "$name|$propsStr|$timestamp|$sessionId|$userId"
     }
 
     companion object {

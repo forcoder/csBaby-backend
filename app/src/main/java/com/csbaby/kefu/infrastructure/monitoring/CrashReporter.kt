@@ -319,16 +319,17 @@ class CrashReporter @Inject constructor(
                 }
             }
 
-            fun ExceptionData.toJsonString(): String {
-                return """{
-                    |  "message": "$message",
-                    |  "stackTrace": "$stackTrace",
-                    |  "context": "$context",
-                    |  "timestamp": $timestamp,
-                    |  "deviceInfo": ${deviceInfo.toMap()}
-                    |}""".trimMargin().replace("\n", "").replace(" ", "")
-            }
         }
+    }
+
+    fun ExceptionData.toJsonString(): String {
+        return """{
+            |  "message": "$message",
+            |  "stackTrace": "$stackTrace",
+            |  "context": "$context",
+            |  "timestamp": $timestamp,
+            |  "deviceInfo": ${deviceInfo.toMap()}
+            |}""".trimMargin().replace("\n", "").replace(" ", "")
     }
 
     /**

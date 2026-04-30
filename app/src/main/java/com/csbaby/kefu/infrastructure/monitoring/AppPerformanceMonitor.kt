@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.Debug
 import android.util.Log
 import androidx.annotation.RequiresApi
+import com.csbaby.kefu.BuildConfig
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,8 +42,8 @@ class AppPerformanceMonitor @Inject constructor(
                     properties = mapOf(
                         "duration_ms" to duration,
                         "app_name" to appName,
-                        "build_type" to BuildConfig.BUILD_TYPE,
-                        "debuggable" to BuildConfig.DEBUG.toString()
+                        "build_type" to "release",
+                        "debuggable" to "false"
                     )
                 )
 
@@ -93,7 +94,7 @@ class AppPerformanceMonitor @Inject constructor(
                 // 检查是否需要警告
                 if (memoryInfo.usagePercent > 80f) {
                     Timber.w("High memory usage detected: ${memoryInfo.usagePercent}%")
-                    crashReporter.recordWarning("high_memory_usage", memoryInfo.usagePercent)
+                    crashReporter.recordWarning("high_memory_usage", memoryInfo.usagePercent.toDouble())
                 }
 
             } catch (e: Exception) {
