@@ -5,12 +5,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(
-    tableName = "optimization_metrics",
-    indices = [
-        Index(value = ["featureKey", "variantId", "date"], unique = true)
-    ]
-)
+@Entity(tableName = "optimization_metrics")
 data class OptimizationMetricsEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
