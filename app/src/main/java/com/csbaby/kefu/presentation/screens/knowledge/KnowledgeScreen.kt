@@ -564,7 +564,8 @@ fun RuleEditDialog(
                     onValueChange = { replyTemplate = it },
                     label = { Text(stringResource(R.string.reply_template)) },
                     modifier = Modifier.fillMaxWidth(),
-                    minLines = 3
+                    minLines = 3,
+                    maxLines = 8
                 )
 
                 OutlinedTextField(
@@ -625,7 +626,9 @@ fun RuleEditDialog(
                         placeholder = { Text("多个房源请用逗号分隔") },
                         supportingText = { Text("留空则表示全部房源") },
                         modifier = Modifier.fillMaxWidth(),
-                        minLines = 2
+                        minLines = 2,
+                        maxLines = 6,
+                        singleLine = false
                     )
                 }
 
