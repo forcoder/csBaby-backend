@@ -48,7 +48,7 @@ interface OptimizationMetricsDao {
         GROUP BY featureKey
         ORDER BY avgAccuracy DESC
     """)
-    suspend fun getFeaturePerformanceSummary(startDate: String, endDate: String): List<Map<String, Any>>
+    suspend fun getFeaturePerformanceSummary(startDate: String, endDate: String): List<FeaturePerformance>
 
     /**
      * 获取变体性能对比数据
@@ -67,7 +67,7 @@ interface OptimizationMetricsDao {
         featureKey: String,
         startDate: String,
         endDate: String
-    ): List<Map<String, Any>>
+    ): List<VariantPerformance>
 
     /**
      * 批量插入优化指标
