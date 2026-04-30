@@ -65,8 +65,14 @@ interface ReplyHistoryDao {
     /**
      * 获取统计数据
      */
-    @Query("SELECT COUNT(*) as total, SUM(CASE WHEN modified = 1 THEN 1 ELSE 0 END) as modified, SUM(CASE WHEN styleApplied = 1 THEN 1 ELSE 0 END) as styled FROM reply_history")
-    suspend fun getReplyStatistics(): Map<String, Int>
+    @Query("SELECT COUNT(*) as total FROM reply_history")
+    suspend fun getTotalReplyCount(): Int
+
+    @Query("SELECT COUNT(*) as modified FROM reply_history WHERE modified = 1")
+    suspend fun getModifiedCount(): Int
+
+    @Query("SELECT COUNT(*) as styled FROM reply_history WHERE styleApplied = 1")
+    suspend fun getStyledCount(): Int
 
     /**
      * 批量插入回复记录
