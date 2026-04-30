@@ -8,6 +8,7 @@ import com.csbaby.kefu.data.local.KefuDatabase
 import com.csbaby.kefu.data.local.PreferencesManager
 import com.csbaby.kefu.data.local.dao.*
 import com.csbaby.kefu.data.local.migration.Migration5to6
+import com.csbaby.kefu.data.local.migration.Migration6to7
 
 import dagger.Module
 import dagger.Provides
