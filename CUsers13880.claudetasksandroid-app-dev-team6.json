@@ -1,0 +1,10 @@
+{
+  "id": "6",
+  "subject": "优化性能和应用部署",
+  "description": "进行性能优化和发布：\n1. 分析应用性能指标\n2. 实现内存优化和泄漏检测\n3. 网络请求优化和缓存策略\n4. 启动时间和响应速度优化\n5. 实现CI/CD自动化流水线\n6. 配置构建变体和环境\n7. 实现代码混淆和资源压缩\n8. 添加APK签名和安全加固\n9. 配置应用商店发布流程\n10. 输出性能报告和生产部署方案",
+  "activeForm": "正在优化性能和应用部署",
+  "owner": "devops-engineer@android-app-dev-team",
+  "status": "pending",
+  "blocks": ["5"],
+  "blockedBy": []
+}

@@ -1,0 +1,10 @@
+{
+  "id": "5",
+  "subject": "构建自动化测试和质量保证",
+  "description": "建立完整的测试体系：\n1. 分析现有测试覆盖情况\n2. 制定测试策略和框架\n3. 实现单元测试覆盖核心业务逻辑\n4. 编写UI组件测试\n5. 集成测试关键用户流程\n6. 性能测试和监控\n7. 安全测试和漏洞扫描\n8. CI/CD流水线集成\n9. 代码质量检查（SonarQube等）\n10. 输出测试报告和QA规范",
+  "activeForm": "正在构建自动化测试和质量保证",
+  "owner": "qa-engineer@android-app-dev-team",
+  "status": "pending",
+  "blocks": ["2", "3", "4"],
+  "blockedBy": []
+}

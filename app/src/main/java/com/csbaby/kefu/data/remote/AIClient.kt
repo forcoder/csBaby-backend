@@ -53,43 +53,139 @@ class AIClientImpl @Inject constructor(
     private val okHttpClient: OkHttpClient
 ) : AIClient {
     
-    // Request throttling
-    private val requestCounters = ConcurrentHashMap<String, AtomicInteger>()
-    private val MAX_REQUESTS_PER_MINUTE = 60
-    private val REQUEST_WINDOW_MS = 60000L
-    private val requestTimestamps = ConcurrentHashMap<String, MutableList<Long>>()
-    
-    // Timeout settings
-    private val READ_TIMEOUT_SECONDS = 30L
-    private val CONNECT_TIMEOUT_SECONDS = 10L
+    // Enhanced request throttling with adaptive limits
+    private val requestCounters = ConcurrentHashMap<String, AdaptiveRateLimit>()
+    private val BASE_REQUEST_LIMITS = mapOf(
+        ModelType.CLAUDE to 50,     // Claude has lower rate limits
+        ModelType.OPENAI to 100,    // OpenAI GPT models
+        ModelType.ZHIPU to 40,      // Zhipu AI
+        ModelType.TONGYI to 40,     // Tongyi Qianwen
+        ModelType.CUSTOM to 80      // Custom models (user-configurable)
+    )
+
+    // Adaptive timeout settings
+    private val BASE_READ_TIMEOUT_SECONDS = 30L
+    private val BASE_CONNECT_TIMEOUT_SECONDS = 10L
+    private val NETWORK_SPEED_THRESHOLD_MS = 1000L // Below this is considered fast network
+
+    data class AdaptiveRateLimit(
+        var currentLimit: Int,
+        var lastAdjustmentTime: Long = System.currentTimeMillis(),
+        var failureCount: Int = 0,
+        var successCount: Int = 0
+    )
     
     /**
-     * Check if request is allowed based on rate limiting
+     * Enhanced rate limiting with adaptive controls and model-specific limits.
      */
-    private fun isRequestAllowed(apiKey: String): Boolean {
+    private fun isRequestAllowed(config: AIModelConfig): Boolean {
         val now = System.currentTimeMillis()
-        val timestamps = requestTimestamps.getOrPut(apiKey) { mutableListOf() }
-        
-        // Remove timestamps outside the window
-        timestamps.removeIf { now - it > REQUEST_WINDOW_MS }
-        
-        if (timestamps.size >= MAX_REQUESTS_PER_MINUTE) {
-            Timber.w("Rate limit reached for API key")
+        val rateLimit = requestCounters.getOrPut(config.apiKey) {
+            AdaptiveRateLimit(BASE_REQUEST_LIMITS[config.modelType] ?: 60)
+        }
+
+        // Update rate limit based on recent performance
+        updateAdaptiveRateLimit(rateLimit, config)
+
+        // Clean old timestamps
+        val windowStart = now - 60000L // 1 minute window
+        rateLimit.timestamps.removeAll { it < windowStart }
+
+        if (rateLimit.timestamps.size >= rateLimit.currentLimit) {
+            Timber.w("Rate limit exceeded for ${config.modelName} (${config.modelType})")
+
+            // Implement exponential backoff if consistently hitting limits
+            if (rateLimit.failureCount > 5) {
+                rateLimit.currentLimit = (rateLimit.currentLimit * 0.8).toInt().coerceAtLeast(10)
+                Timber.d("Reduced rate limit for ${config.modelName} due to failures")
+            }
+
             return false
         }
-        
-        timestamps.add(now)
+
+        rateLimit.timestamps.add(now)
         return true
+    }
+
+    private fun updateAdaptiveRateLimit(rateLimit: AdaptiveRateLimit, config: AIModelConfig) {
+        val now = System.currentTimeMillis()
+        val timeSinceLastAdjustment = now - rateLimit.lastAdjustmentTime
+
+        // Adjust every 5 minutes or after significant changes
+        if (timeSinceLastAdjustment > 300000 || Math.abs(rateLimit.successCount - rateLimit.failureCount) > 10) {
+            val successRate = if (rateLimit.successCount + rateLimit.failureCount > 0) {
+                rateLimit.successCount.toFloat() / (rateLimit.successCount + rateLimit.failureCount)
+            } else 0f
+
+            when {
+                successRate < 0.7f -> {
+                    // Reduce limit for poor performers
+                    rateLimit.currentLimit = (rateLimit.currentLimit * 0.9).toInt().coerceAtLeast(20)
+                }
+                successRate > 0.95f && rateLimit.currentLimit < 100 -> {
+                    // Increase limit for excellent performers
+                    rateLimit.currentLimit = (rateLimit.currentLimit * 1.1).toInt().coerceAtMost(150)
+                }
+            }
+
+            rateLimit.lastAdjustmentTime = now
+            rateLimit.successCount = 0
+            rateLimit.failureCount = 0
+        }
     }
     
     /**
-     * Get a client with appropriate timeouts
+     * Get a client with adaptive timeouts based on network conditions.
      */
-    private fun getConfiguredClient(): OkHttpClient {
+    private fun getConfiguredClient(config: AIModelConfig): OkHttpClient {
+        val readTimeout = calculateAdaptiveReadTimeout(config)
+        val connectTimeout = calculateAdaptiveConnectTimeout(config)
+
         return okHttpClient.newBuilder()
-            .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(readTimeout, TimeUnit.SECONDS)
+            .connectTimeout(connectTimeout, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true) // Enable automatic retry for connection issues
+            .addInterceptor { chain ->
+                val request = chain.request()
+                val startTime = System.nanoTime()
+
+                try {
+                    val response = chain.proceed(request)
+
+                    // Log response metrics
+                    val duration = System.nanoTime() - startTime
+                    Timber.d("API Request to ${config.modelName}: ${duration / 1_000_000}ms, Status: ${response.code}")
+
+                    // Add performance headers
+                    if (response.code == 429) { // Rate limited
+                        Timber.w("Rate limited by ${config.modelName}")
+                    }
+
+                    response
+                } catch (e: Exception) {
+                    val duration = System.nanoTime() - startTime
+                    Timber.e(e, "API Request failed after ${duration / 1_000_000}ms to ${config.modelName}")
+                    throw e
+                }
+            }
             .build()
+    }
+
+    private fun calculateAdaptiveReadTimeout(config: AIModelConfig): Long {
+        return when {
+            config.modelType == ModelType.CLAUDE -> BASE_READ_TIMEOUT_SECONDS * 2 // Claude can be slower
+            config.maxTokens > 16000 -> BASE_READ_TIMEOUT_SECONDS + 15 // Longer for large tokens
+            config.apiEndpoint.contains("nvidia.com") -> BASE_READ_TIMEOUT_SECONDS + 10 // NVIDIA models
+            else -> BASE_READ_TIMEOUT_SECONDS
+        }.coerceAtMost(120L) // Cap at 2 minutes
+    }
+
+    private fun calculateAdaptiveConnectTimeout(config: AIModelConfig): Long {
+        return when {
+            config.apiEndpoint.contains("china", ignoreCase = true) -> BASE_CONNECT_TIMEOUT_SECONDS + 5 // Chinese APIs might be slower
+            config.apiEndpoint.contains("aws", ignoreCase = true) -> BASE_CONNECT_TIMEOUT_SECONDS + 3 // AWS endpoints
+            else -> BASE_CONNECT_TIMEOUT_SECONDS
+        }.coerceAtLeast(5L) // Minimum 5 seconds
     }
 
     override suspend fun generateCompletion(
@@ -98,15 +194,23 @@ class AIClientImpl @Inject constructor(
         temperature: Float,
         maxTokens: Int
     ): Result<String> {
-        // Check rate limit
-        if (!isRequestAllowed(config.apiKey)) {
-            return Result.failure(Exception("Rate limit exceeded. Please try again later."))
+        // Enhanced validation and preparation
+        val validationResult = validateRequest(config, messages, maxTokens)
+        if (!validationResult.isSuccess) {
+            return validationResult
         }
-        
+
+        // Check rate limit with model-specific configuration
+        if (!isRequestAllowed(config)) {
+            return Result.failure(Exception("请求频率超限，请稍后再试"))
+        }
+
+        val startTime = System.currentTimeMillis()
+
         return try {
             val endpoint = config.apiEndpoint
-
             val (requestBody, headers) = buildRequest(config, messages, temperature, maxTokens)
+
             val requestBuilder = Request.Builder()
                 .url(endpoint)
                 .post(requestBody)
@@ -117,33 +221,142 @@ class AIClientImpl @Inject constructor(
                 requestBuilder.addHeader(key, value)
             }
 
+            // Add performance tracking header
+            requestBuilder.addHeader("X-Request-ID", generateRequestId())
+
             val request = requestBuilder.build()
-            Timber.d("AI Request URL: $endpoint")
-            Timber.d("AI Request Body: ${requestBody.toString().take(500)}")
-            Timber.d("AI Request Headers: $headers")
+            Timber.d("AI Request to ${config.modelName} (${config.modelType}): ${endpoint.take(100)}")
+            Timber.v("Request body preview: ${requestBody.toString().take(200)}")
 
             val response = withContext(Dispatchers.IO) {
-                val client = getConfiguredClient()
+                val client = getConfiguredClient(config)
                 client.newCall(request).execute()
             }
-            val responseBody = response.body?.string() ?: return Result.failure(Exception("Empty response"))
 
-            Timber.d("AI Response Status: ${response.code}")
-            Timber.d("AI Response Body: $responseBody")
+            val responseBody = response.body?.string() ?: return Result.failure(Exception("服务器返回空响应"))
+            val duration = System.currentTimeMillis() - startTime
+
+            Timber.d("AI Response from ${config.modelName}: ${response.code}, Duration: ${duration}ms")
 
             if (response.isSuccessful) {
                 val reply = parseResponse(responseBody, config.modelType)
-                Timber.d("AI Parsed Reply: $reply")
+                Timber.d("AI Parsed Reply from ${config.modelName}: ${reply.take(100)}")
+
+                // Update success metrics
+                updateRequestMetrics(config, true, duration)
+
                 Result.success(reply)
             } else {
-                val errorMsg = "API Error: ${response.code} - $responseBody"
+                val errorMsg = "API Error ${response.code}: $responseBody"
                 Timber.e(errorMsg)
-                Result.failure(Exception(errorMsg))
+
+                // Update failure metrics
+                updateRequestMetrics(config, false, duration)
+
+                // Handle specific HTTP errors
+                val friendlyError = handleApiError(response.code, responseBody, config.modelType)
+                Result.failure(Exception(friendlyError))
             }
         } catch (e: Exception) {
-            Timber.e(e, "AI request failed: ${e::class.java.simpleName}: ${e.message}")
-            Result.failure(Exception("请求失败: ${e::class.java.simpleName}: ${e.message}", e))
+            val duration = System.currentTimeMillis() - startTime
+            Timber.e(e, "AI request failed for ${config.modelName}: ${duration}ms")
+
+            // Update failure metrics
+            updateRequestMetrics(config, false, duration)
+
+            val userFriendlyError = friendlyErrorMessage(e.message ?: "未知错误")
+            Result.failure(Exception(userFriendlyError, e))
         }
+    }
+
+    private fun validateRequest(
+        config: AIModelConfig,
+        messages: List<Message>,
+        maxTokens: Int
+    ): Result<Unit> {
+        // Validate API key
+        if (config.apiKey.isBlank()) {
+            return Result.failure(Exception("API密钥不能为空"))
+        }
+
+        // Validate endpoint
+        if (config.apiEndpoint.isBlank()) {
+            return Result.failure(Exception("API地址不能为空"))
+        }
+
+        // Validate model name
+        if (config.model.isBlank()) {
+            return Result.failure(Exception("模型名称不能为空"))
+        }
+
+        // Validate messages
+        if (messages.isEmpty()) {
+            return Result.failure(Exception("消息列表不能为空"))
+        }
+
+        val userMessages = messages.filter { it.role == "user" || it.role == "assistant" }
+        if (userMessages.isEmpty()) {
+            return Result.failure(Exception("至少需要一个用户或助手消息"))
+        }
+
+        // Validate token limits
+        if (maxTokens <= 0 || maxTokens > 32768) {
+            return Result.failure(Exception("token数量超出有效范围 (1-32768)"))
+        }
+
+        // Validate message content
+        messages.forEach { message ->
+            if (message.content.trim().isEmpty()) {
+                return Result.failure(Exception("消息内容不能为空"))
+            }
+            if (message.content.length > 50000) {
+                return Result.failure(Exception("单条消息过长，请简化内容"))
+            }
+        }
+
+        return Result.success(Unit)
+    }
+
+    private fun handleApiError(
+        statusCode: Int,
+        responseBody: String,
+        modelType: ModelType
+    ): String {
+        return when (statusCode) {
+            400 -> "请求格式错误，请检查参数设置"
+            401 -> "API密钥无效，请检查密钥是否正确"
+            403 -> "API访问被拒绝，请检查密钥权限"
+            404 -> "API地址或模型不存在，请检查配置"
+            429 -> "请求频率超限，请稍后再试"
+            500 -> "API服务器内部错误，请稍后重试"
+            502 -> "API网关错误，请稍后重试"
+            503 -> "API服务暂时不可用，请稍后重试"
+            504 -> "API请求超时，请稍后重试"
+            else -> "API调用失败 ($statusCode): ${responseBody.take(100)}"
+        }
+    }
+
+    private fun updateRequestMetrics(config: AIModelConfig, success: Boolean, duration: Long) {
+        val now = System.currentTimeMillis()
+        val key = "${config.id}_${config.modelType.name}"
+
+        requestCounters.getOrPut(key) { AdaptiveRateLimit(BASE_REQUEST_LIMITS[config.modelType] ?: 60) }.let { rateLimit ->
+            synchronized(rateLimit) {
+                if (success) {
+                    rateLimit.successCount++
+                } else {
+                    rateLimit.failureCount++
+                }
+
+                // Clean old timestamps
+                val windowStart = now - 60000L
+                rateLimit.timestamps.removeAll { it < windowStart }
+            }
+        }
+    }
+
+    private fun generateRequestId(): String {
+        return "req_${System.currentTimeMillis()}_${(Math.random() * 1000).toInt()}"
     }
 
     override suspend fun testConnection(config: AIModelConfig): Result<Boolean> {

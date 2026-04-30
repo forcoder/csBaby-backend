@@ -1,0 +1,10 @@
+{
+  "id": "1",
+  "subject": "分析项目架构和现有代码库",
+  "description": "全面探索客服小秘应用的当前架构，包括：\n1. 项目目录结构和主要模块\n2. 技术栈分析（Kotlin、Compose、Room等）\n3. 现有功能模块评估\n4. 数据库模型和Repository模式\n5. AI服务集成现状\n6. 导航和主题系统\n7. 测试框架和CI/CD配置\n8. 性能瓶颈和优化点识别\n9. 安全性和权限管理\n10. 导出详细的技术评估报告",
+  "activeForm": "正在分析项目架构和现有代码库",
+  "owner": "architect-analyst@android-app-dev-team",
+  "status": "pending",
+  "blocks": [],
+  "blockedBy": []
+}

@@ -1,0 +1,35 @@
+{
+  "description": "负责安卓App设计、前端开发、测试、部署的专业团队",
+  "members": [
+    {
+      "name": "architect-analyst",
+      "agentId": "team-lead@android-app-dev-team",
+      "agentType": "planner"
+    },
+    {
+      "name": "ui-designer",
+      "agentId": "designer@android-app-dev-team", 
+      "agentType": "designer"
+    },
+    {
+      "name": "ai-expert",
+      "agentId": "ai-specialist@android-app-dev-team",
+      "agentType": "executor"
+    },
+    {
+      "name": "backend-engineer",
+      "agentId": "backend-dev@android-app-dev-team",
+      "agentType": "executor"
+    },
+    {
+      "name": "qa-engineer", 
+      "agentId": "test-engineer@android-app-dev-team",
+      "agentType": "test-engineer"
+    },
+    {
+      "name": "devops-engineer",
+      "agentId": "ops-engineer@android-app-dev-team", 
+      "agentType": "executor"
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
-import com.csbaby.kefu.infrastructure.monitoring.PerformanceMonitor
+import com.csbaby.kefu.infrastructure.monitoring.AppPerformanceMonitor
 import com.csbaby.kefu.infrastructure.ota.OtaScheduler
 import com.csbaby.kefu.infrastructure.reply.ReplyOrchestrator
 import dagger.hilt.android.HiltAndroidApp
@@ -62,15 +62,9 @@ class KefuApplication : Application(), Configuration.Provider {
                 Log.e(TAG, "Failed to schedule OTA updates", e)
             }
             
-            try {
-                val performanceMonitor = entryPoint.performanceMonitor()
-                performanceMonitor.startMonitoring()
-                Timber.d("Performance monitoring started")
-                Log.d(TAG, "Performance monitoring started OK")
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to start performance monitoring")
-                Log.e(TAG, "Failed to start performance monitoring", e)
-            }
+            // 初始化性能监控器
+            val performanceMonitor = AppPerformanceMonitorProvider.get(this)
+            performanceMonitor.trackStartup(System.currentTimeMillis(), "csbaby")
         } catch (e: Exception) {
             Log.e(TAG, "Hilt EntryPoint bootstrap failed — app will run without auto-reply", e)
         }
