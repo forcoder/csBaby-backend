@@ -4,11 +4,16 @@ import android.app.Application
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.csbaby.kefu.data.remote.backend.BackendSyncManager
 import com.csbaby.kefu.infrastructure.monitoring.AppPerformanceMonitor
 import com.csbaby.kefu.infrastructure.ota.OtaScheduler
 import com.csbaby.kefu.infrastructure.reply.ReplyOrchestrator
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -63,6 +68,21 @@ class KefuApplication : Application(), Configuration.Provider {
             }
             
             // 性能监控器已通过Hilt自动初始化
+
+            // 后端设备注册
+            try {
+                val syncManager = entryPoint.backendSyncManager()
+                CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                    val registered = syncManager.registerIfNeeded()
+                    if (registered) {
+                        Timber.i("Backend device registered successfully")
+                    } else {
+                        Timber.w("Backend device registration failed — will retry later")
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Backend sync initialization failed")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Hilt EntryPoint bootstrap failed — app will run without auto-reply", e)
         }

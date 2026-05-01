@@ -57,7 +57,6 @@ object EntityMapper {
         updatedAt = updatedAt
     )
 
-
     // Scenario mapping
     fun ScenarioEntity.toDomain() = Scenario(
         id = id,

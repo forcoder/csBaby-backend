@@ -1,5 +1,6 @@
 package com.csbaby.kefu
 
+import com.csbaby.kefu.data.remote.backend.BackendSyncManager
 import com.csbaby.kefu.infrastructure.monitoring.PerformanceMonitor
 import com.csbaby.kefu.infrastructure.ota.OtaScheduler
 import com.csbaby.kefu.infrastructure.reply.ReplyOrchestrator
@@ -18,4 +19,5 @@ interface AppEntryPoint {
     fun replyOrchestrator(): ReplyOrchestrator
     fun otaScheduler(): OtaScheduler
     fun performanceMonitor(): PerformanceMonitor
+    fun backendSyncManager(): BackendSyncManager
 }
