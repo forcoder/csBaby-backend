@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
@@ -516,6 +518,7 @@ fun RuleEditDialog(
         title = { Text(if (rule == null) stringResource(R.string.add_rule) else stringResource(R.string.edit_rule)) },
         text = {
             Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedTextField(
@@ -525,7 +528,6 @@ fun RuleEditDialog(
                     supportingText = { Text("多个关键词可用逗号分隔，命中任意一个都会触发这条规则") },
                     modifier = Modifier.fillMaxWidth()
                 )
-
 
                 var matchTypeExpanded by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(
@@ -563,9 +565,10 @@ fun RuleEditDialog(
                     value = replyTemplate,
                     onValueChange = { replyTemplate = it },
                     label = { Text(stringResource(R.string.reply_template)) },
+                    supportingText = { Text("支持变量：{customer_name}、{house_name}、{order_id} 等") },
                     modifier = Modifier.fillMaxWidth(),
-                    minLines = 3,
-                    maxLines = 8
+                    minLines = 2,
+                    maxLines = 5
                 )
 
                 OutlinedTextField(
