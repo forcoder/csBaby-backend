@@ -51,9 +51,6 @@ class Migration5to6 : Migration(5, 6) {
             )
         """.trimIndent())
 
-        // Create missing index on feature_variants.featureId
-        database.execSQL("CREATE INDEX IF NOT EXISTS index_feature_variants_featureId ON feature_variants(featureId)")
-
         // Create optimization_metrics table if it doesn't exist
         database.execSQL("""
             CREATE TABLE IF NOT EXISTS optimization_metrics (

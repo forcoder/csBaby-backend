@@ -2,15 +2,9 @@ package com.csbaby.kefu.data.local.entity
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
-import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(
-    tableName = "optimization_events",
-    indices = [
-        Index(value = ["featureKey"])
-    ]
-)
+@Entity(tableName = "optimization_events")
 data class OptimizationEventEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
