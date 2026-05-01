@@ -70,9 +70,6 @@ android {
     kapt {
         correctErrorTypes = true
     }
-    kapt {
-        correctErrorTypes = true
-    }
     buildFeatures {
         compose = true
         buildConfig = true

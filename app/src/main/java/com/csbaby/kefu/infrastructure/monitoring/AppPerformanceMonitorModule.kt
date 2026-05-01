@@ -30,7 +30,6 @@ object AppPerformanceMonitorModule {
     @Provides
     @Singleton
     fun provideAppPerformanceMonitor(
-        @ApplicationContext context: Context,
         analyticsTracker: AnalyticsTracker,
         crashReporter: CrashReporter
     ): AppPerformanceMonitor {

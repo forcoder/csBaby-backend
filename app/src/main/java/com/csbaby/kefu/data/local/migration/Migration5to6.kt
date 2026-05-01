@@ -21,7 +21,7 @@ class Migration5to6 : Migration(5, 6) {
         database.execSQL("""
             CREATE TABLE IF NOT EXISTS llm_features (
                 id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                featureKey TEXT NOT NULL UNIQUE,
+                featureKey TEXT NOT NULL,
                 displayName TEXT NOT NULL,
                 description TEXT NOT NULL,
                 isEnabled INTEGER NOT NULL DEFAULT 1,

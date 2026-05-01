@@ -29,7 +29,7 @@ object AppPerformanceMonitorProvider {
     internal fun createInstance(context: Context): AppPerformanceMonitor {
         val analyticsTracker = AnalyticsTracker(context)
         val crashReporter = CrashReporter(context)
-        return AppPerformanceMonitorModule.provideAppPerformanceMonitor(context, analyticsTracker, crashReporter)
+        return AppPerformanceMonitorModule.provideAppPerformanceMonitor(analyticsTracker, crashReporter)
     }
 
     /**
