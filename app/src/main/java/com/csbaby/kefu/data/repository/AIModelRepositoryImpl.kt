@@ -3,16 +3,19 @@ package com.csbaby.kefu.data.repository
 import com.csbaby.kefu.data.local.EntityMapper.toDomain
 import com.csbaby.kefu.data.local.EntityMapper.toEntity
 import com.csbaby.kefu.data.local.dao.AIModelConfigDao
+import com.csbaby.kefu.data.remote.backend.ModelBackendSync
 import com.csbaby.kefu.domain.model.AIModelConfig
 import com.csbaby.kefu.domain.repository.AIModelRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class AIModelRepositoryImpl @Inject constructor(
-    private val aiModelConfigDao: AIModelConfigDao
+    private val aiModelConfigDao: AIModelConfigDao,
+    private val modelBackendSync: ModelBackendSync
 ) : AIModelRepository {
 
     override fun getAllModels(): Flow<List<AIModelConfig>> {
@@ -39,7 +42,13 @@ class AIModelRepositoryImpl @Inject constructor(
         if (model.isDefault) {
             aiModelConfigDao.clearDefaultModel()
         }
-        return aiModelConfigDao.insertModel(model.toEntity())
+        val id = aiModelConfigDao.insertModel(model.toEntity())
+        try {
+            modelBackendSync.pushModel(model.copy(id = id))
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to sync new model to backend")
+        }
+        return id
     }
 
     override suspend fun updateModel(model: AIModelConfig) {
@@ -47,10 +56,20 @@ class AIModelRepositoryImpl @Inject constructor(
             aiModelConfigDao.clearDefaultModel()
         }
         aiModelConfigDao.updateModel(model.toEntity())
+        try {
+            modelBackendSync.pushModel(model)
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to sync updated model to backend")
+        }
     }
 
     override suspend fun deleteModel(id: Long) {
         aiModelConfigDao.deleteById(id)
+        try {
+            modelBackendSync.deleteModel(id)
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to sync model deletion to backend")
+        }
     }
 
     override suspend fun setDefaultModel(id: Long) {

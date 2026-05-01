@@ -1,12 +1,14 @@
 package com.csbaby.kefu.di
 
 import android.content.Context
+import com.csbaby.kefu.data.local.dao.AIModelConfigDao
 import com.csbaby.kefu.data.local.dao.KeywordRuleDao
 import com.csbaby.kefu.data.remote.AIClient
 import com.csbaby.kefu.data.remote.AIClientImpl
 import com.csbaby.kefu.data.remote.backend.BackendApi
 import com.csbaby.kefu.data.remote.backend.BackendClient
 import com.csbaby.kefu.data.remote.backend.BackendSyncManager
+import com.csbaby.kefu.data.remote.backend.ModelBackendSync
 import com.csbaby.kefu.data.remote.backend.RuleBackendSync
 import com.csbaby.kefu.data.remote.backend.TokenInterceptor
 import com.csbaby.kefu.infrastructure.error.ErrorHandler
@@ -133,6 +135,15 @@ object NetworkModule {
         keywordRuleDao: KeywordRuleDao
     ): RuleBackendSync {
         return RuleBackendSync(backendClient, keywordRuleDao)
+    }
+
+    @Provides
+    @Singleton
+    fun provideModelBackendSync(
+        backendClient: BackendClient,
+        aiModelConfigDao: AIModelConfigDao
+    ): ModelBackendSync {
+        return ModelBackendSync(backendClient, aiModelConfigDao)
     }
 
     @Provides

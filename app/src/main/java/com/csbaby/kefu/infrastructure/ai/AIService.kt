@@ -1,6 +1,8 @@
 package com.csbaby.kefu.infrastructure.ai
 
 import com.csbaby.kefu.data.remote.AIClient
+import com.csbaby.kefu.data.remote.backend.BackendClient
+import com.csbaby.kefu.data.remote.backend.GenerateResponse
 import com.csbaby.kefu.domain.model.AIModelConfig
 import com.csbaby.kefu.domain.model.ModelType
 import com.csbaby.kefu.domain.model.UserStyleProfile
@@ -17,10 +19,12 @@ import javax.inject.Singleton
 
 /**
  * AI Service for handling AI model interactions.
+ * 优先使用后端 API 进行生成，后端不可用时降级为直接调用 AI 客户端。
  */
 @Singleton
 class AIService @Inject constructor(
     private val aiClient: AIClient,
+    private val backendClient: BackendClient,
     private val aiModelRepository: AIModelRepository,
     private val simpleTaskRouter: SimpleTaskRouter
 ) {
@@ -174,6 +178,31 @@ class AIService @Inject constructor(
             return Result.success(it)
         }
 
+        // 优先尝试后端 API
+        val backendResult = try {
+            val style = mapOf(
+                "formality" to 0.5f,
+                "enthusiasm" to 0.5f
+            )
+            val context = mapOf(
+                "platform" to "",
+                "customer_name" to "",
+                "house_name" to ""
+            )
+            backendClient.generateReply(prompt, context, style)
+        } catch (e: Exception) {
+            Timber.w(e, "Backend AI generation failed, falling back to direct AI client")
+            null
+        }
+
+        if (backendResult?.isSuccess == true) {
+            val response = backendResult.getOrThrow()
+            cacheResponse(cacheKey, response.reply)
+            aiModelRepository.updateLastUsed(modelId)
+            return Result.success(response.reply)
+        }
+
+        // 降级：直接调用 AI 客户端
         val messages = buildMessages(prompt, systemPrompt)
         val result = withRetry {
             aiClient.generateCompletion(
@@ -186,10 +215,7 @@ class AIService @Inject constructor(
 
         // Update usage statistics on success
         result.onSuccess {
-            // Cache the response
             cacheResponse(cacheKey, it)
-            
-            // Estimate cost (simplified)
             val estimatedCost = estimateCost(prompt.length + it.length, model)
             aiModelRepository.addCost(modelId, estimatedCost)
             aiModelRepository.updateLastUsed(modelId)
