@@ -1,10 +1,10 @@
 services:
   - type: web
-    name: csBaby-api
+    name: csbaby-api
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    startCommand: gunicorn app:application --bind 0.0.0.0:$PORT --workers 1 --timeout 120
     envVars:
       - key: DATABASE_PATH
         value: /var/data/csBaby.db
@@ -14,5 +14,5 @@ services:
         value: "3.11"
     disk:
       - name: data
-      - mountPath: /var/data
-      - sizeGB: 1
+        mountPath: /var/data
+        sizeGB: 1

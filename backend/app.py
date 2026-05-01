@@ -1,5 +1,6 @@
 import web
 import json
+import os
 from config import HOST, PORT
 from database import init_db
 
@@ -41,14 +42,6 @@ class HealthCheck:
         return json.dumps({"status": "ok", "service": "csBaby-api"})
 
 
-def json_error_hook():
-    """统一 JSON 错误响应"""
-    error = web.ctx.get("_error")
-    if error:
-        web.header("Content-Type", "application/json")
-        return json.dumps({"error": str(error)})
-
-
 def cors_hook():
     """CORS 头"""
     web.header("Access-Control-Allow-Origin", "*")
@@ -66,10 +59,19 @@ def options_handler():
         return ""
 
 
-if __name__ == "__main__":
+def create_app():
+    """创建并配置 web.py 应用（WSGI 兼容）"""
     init_db()
     app = web.application(urls, globals())
     app.add_processor(web.loadhook(cors_hook))
     app.add_processor(web.loadhook(options_handler))
-    print(f"csBaby API server starting on {HOST}:{PORT}")
-    app.run()
+    return app
+
+
+# WSGI 应用对象（gunicorn / Render 使用）
+application = create_app()
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", PORT))
+    print(f"csBaby API server starting on {HOST}:{port}")
+    application.run()
