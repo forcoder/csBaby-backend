@@ -25,9 +25,9 @@ object NetworkModule {
 
     /**
      * 后端 API 基础 URL
-     * TODO: 部署到 Render 后替换为实际 URL
+     * Render 部署: https://csbaby-api2.onrender.com
      */
-    private const val BACKEND_BASE_URL = "https://csbaby-api.onrender.com/"
+    private const val BACKEND_BASE_URL = "https://csbaby-api2.onrender.com/"
 
     @Provides
     @Singleton
