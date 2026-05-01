@@ -17,7 +17,12 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
+import javax.inject.Qualifier
 import javax.inject.Singleton
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class BackendHttpClient
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -29,6 +34,7 @@ object NetworkModule {
      */
     private const val BACKEND_BASE_URL = "https://csbaby-api2.onrender.com/"
 
+    /** 默认 OkHttpClient，用于 AI 客户端和 Retrofit */
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
@@ -68,8 +74,10 @@ object NetworkModule {
         return TokenInterceptor(context)
     }
 
+    /** 后端专用 OkHttpClient，带 Token 认证 */
     @Provides
     @Singleton
+    @BackendHttpClient
     fun provideBackendOkHttpClient(
         tokenInterceptor: TokenInterceptor
     ): OkHttpClient {
@@ -88,7 +96,7 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideBackendApi(okHttpClient: OkHttpClient): BackendApi {
+    fun provideBackendApi(@BackendHttpClient okHttpClient: OkHttpClient): BackendApi {
         return Retrofit.Builder()
             .baseUrl(BACKEND_BASE_URL)
             .client(okHttpClient)
