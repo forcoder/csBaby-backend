@@ -3,7 +3,7 @@ import time
 import hashlib
 import hmac
 import base64
-import web
+from flask import request
 from passlib.hash import pbkdf2_sha256
 from config import JWT_SECRET, JWT_EXPIRE_DAYS
 
@@ -46,7 +46,7 @@ def verify_token(token):
 
 def extract_device_id():
     """从请求头中提取并验证 device_id."""
-    auth_header = web.ctx.env.get("HTTP_AUTHORIZATION", "")
+    auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         return None
     return verify_token(auth_header[7:])
@@ -84,14 +84,13 @@ def generate_user_token(device_id: str, tenant_id: str, is_admin: int = 0) -> st
 
 def extract_user_info():
     """从请求头提取 device_id, tenant_id, is_admin。返回 dict 或 None。"""
-    auth_header = web.ctx.env.get("HTTP_AUTHORIZATION", "")
+    auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         return None
     token = auth_header[7:]
     device_id = verify_token(token)
     if not device_id:
         return None
-    # 解析 payload 获取 tenant_id 和 is_admin
     try:
         parts = token.split(".")
         payload = parts[1]
