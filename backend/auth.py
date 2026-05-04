@@ -3,8 +3,8 @@ import time
 import hashlib
 import hmac
 import base64
-import bcrypt
 import web
+from passlib.hash import pbkdf2_sha256
 from config import JWT_SECRET, JWT_EXPIRE_DAYS
 
 
@@ -53,14 +53,14 @@ def extract_device_id():
 
 
 def hash_password(password: str) -> str:
-    """bcrypt 密码哈希"""
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    """PBKDF2-SHA256 密码哈希"""
+    return pbkdf2_sha256.hash(password)
 
 
 def verify_password(password: str, hash_str: str) -> bool:
-    """bcrypt 密码校验"""
+    """PBKDF2-SHA256 密码校验"""
     try:
-        return bcrypt.checkpw(password.encode("utf-8"), hash_str.encode("utf-8"))
+        return pbkdf2_sha256.verify(password, hash_str)
     except Exception:
         return False
 
