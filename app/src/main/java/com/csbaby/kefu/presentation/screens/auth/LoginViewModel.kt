@@ -1,5 +1,6 @@
 package com.csbaby.kefu.presentation.screens.auth
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.csbaby.kefu.data.local.AuthManager
@@ -39,38 +40,56 @@ class LoginViewModel @Inject constructor(
 
     fun login() {
         val state = _uiState.value
+        Log.d("LoginViewModel", "login() called: phone=${state.phoneNumber}, passwordEmpty=${state.password.isBlank()}")
         if (state.phoneNumber.isBlank()) {
+            Log.d("LoginViewModel", "login() aborted: phone blank")
             _uiState.update { it.copy(errorMessage = "请输入手机号") }
             return
         }
         if (state.password.isBlank()) {
+            Log.d("LoginViewModel", "login() aborted: password blank")
             _uiState.update { it.copy(errorMessage = "请输入密码") }
             return
         }
 
         viewModelScope.launch {
+            Log.d("LoginViewModel", "login() launching coroutine")
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
-            val result = backendClient.login(state.phoneNumber, state.password)
-            result.fold(
-                onSuccess = { response ->
-                    authManager.saveAuth(
-                        token = response.token,
-                        tenantId = response.tenantId,
-                        phoneNumber = response.phoneNumber,
-                        expiresInSeconds = response.expiresIn
-                    )
-                    _uiState.update { it.copy(isLoading = false, isLoggedIn = true) }
-                },
-                onFailure = { e ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = e.message ?: "登录失败，请检查手机号和密码"
+            try {
+                Log.d("LoginViewModel", "login() calling backendClient.login")
+                val result = backendClient.login(state.phoneNumber, state.password)
+                Log.d("LoginViewModel", "login() got result: isSuccess=${result.isSuccess}")
+                result.fold(
+                    onSuccess = { response ->
+                        Log.d("LoginViewModel", "Login success: token=${response.token.take(20)}..., tenantId=${response.tenantId}, phone=${response.phoneNumber}")
+                        authManager.saveAuth(
+                            token = response.token,
+                            tenantId = response.tenantId,
+                            phoneNumber = response.phoneNumber,
+                            expiresInSeconds = response.expiresIn
                         )
+                        _uiState.update { it.copy(isLoading = false, isLoggedIn = true) }
+                    },
+                    onFailure = { e ->
+                        Log.e("LoginViewModel", "Login failed: ${e.message}", e)
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                errorMessage = e.message ?: "登录失败，请检查手机号和密码"
+                            )
+                        }
                     }
+                )
+            } catch (e: Exception) {
+                Log.e("LoginViewModel", "Login exception: ${e.message}", e)
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "登录异常: ${e.message}"
+                    )
                 }
-            )
+            }
         }
     }
 }

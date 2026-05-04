@@ -37,15 +37,12 @@ class MainActivity : ComponentActivity() {
 
     private var pendingOverlayPermission = false
     private var pendingNotificationPermission = false
+    private var permissionsChecked = false
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) {
-            requestOverlayPermission()
-        } else {
-            requestOverlayPermission()
-        }
+        requestOverlayPermission()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,16 +65,20 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        checkPermissions()
+        if (!permissionsChecked) {
+            checkPermissions()
+            permissionsChecked = true
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        if (pendingOverlayPermission && Settings.canDrawOverlays(this)) {
+        if (pendingOverlayPermission) {
             pendingOverlayPermission = false
-            requestNotificationListenerPermissionIfNeeded()
-        } else if (pendingNotificationPermission &&
-                   NotificationListenerServiceImpl.isNotificationAccessEnabled(this)) {
+            if (Settings.canDrawOverlays(this)) {
+                requestNotificationListenerPermissionIfNeeded()
+            }
+        } else if (pendingNotificationPermission) {
             pendingNotificationPermission = false
         }
     }
@@ -92,10 +93,6 @@ class MainActivity : ComponentActivity() {
         }
 
         requestOverlayPermission()
-
-        if (Settings.canDrawOverlays(this)) {
-            requestNotificationListenerPermissionIfNeeded()
-        }
     }
 
     private fun requestOverlayPermission() {
@@ -106,20 +103,14 @@ class MainActivity : ComponentActivity() {
                 Uri.parse("package:$packageName")
             )
             startActivity(intent)
-        } else {
-            requestNotificationListenerPermissionIfNeeded()
         }
     }
 
     private fun requestNotificationListenerPermissionIfNeeded() {
         if (!NotificationListenerServiceImpl.isNotificationAccessEnabled(this)) {
             pendingNotificationPermission = true
-            requestNotificationListenerPermission()
+            val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+            startActivity(intent)
         }
-    }
-
-    private fun requestNotificationListenerPermission() {
-        val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-        startActivity(intent)
     }
 }

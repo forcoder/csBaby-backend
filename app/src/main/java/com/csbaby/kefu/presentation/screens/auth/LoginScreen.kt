@@ -1,5 +1,6 @@
 package com.csbaby.kefu.presentation.screens.auth
 
+import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -21,7 +22,9 @@ fun LoginScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     LaunchedEffect(uiState.isLoggedIn) {
+        Log.d("LoginScreen", "LaunchedEffect triggered: isLoggedIn=${uiState.isLoggedIn}")
         if (uiState.isLoggedIn) {
+            Log.d("LoginScreen", "Calling onLoginSuccess()")
             onLoginSuccess()
         }
     }

@@ -21,6 +21,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import android.util.Log
 import com.csbaby.kefu.R
 import com.csbaby.kefu.data.local.AuthManager
 import com.csbaby.kefu.presentation.screens.auth.LoginScreen
@@ -57,7 +58,9 @@ val bottomNavItems = listOf(
 @Composable
 fun RootNavigation(authManager: AuthManager) {
     val navController = rememberNavController()
-    val startDest = if (authManager.isLoggedIn) Screen.Home.route else "login"
+    val isLoggedIn = authManager.isLoggedIn
+    Log.d("RootNavigation", "isLoggedIn=$isLoggedIn")
+    val startDest = if (isLoggedIn) Screen.Home.route else "login"
 
     NavHost(
         navController = navController,

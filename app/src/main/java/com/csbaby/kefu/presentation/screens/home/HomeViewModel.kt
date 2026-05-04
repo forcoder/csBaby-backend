@@ -1,5 +1,6 @@
 package com.csbaby.kefu.presentation.screens.home
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.csbaby.kefu.data.local.PreferencesManager
@@ -46,33 +47,45 @@ class HomeViewModel @Inject constructor(
 
     private fun loadData() {
         viewModelScope.launch {
-            preferencesManager.userPreferencesFlow.collect { prefs ->
-                _uiState.update {
-                    it.copy(
-                        isMonitoringEnabled = prefs.monitoringEnabled,
-                        isFloatingIconEnabled = prefs.floatingIconEnabled,
-                        monitoredApps = buildMonitoredApps(prefs.selectedApps)
-                    )
+            try {
+                preferencesManager.userPreferencesFlow.collect { prefs ->
+                    _uiState.update {
+                        it.copy(
+                            isMonitoringEnabled = prefs.monitoringEnabled,
+                            isFloatingIconEnabled = prefs.floatingIconEnabled,
+                            monitoredApps = buildMonitoredApps(prefs.selectedApps)
+                        )
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "loadData preferences error: ${e.message}")
             }
         }
 
         viewModelScope.launch {
-            replyHistoryRepository.getRecentReplies(10).collect { replies ->
-                val startOfDay = getStartOfDay()
-                _uiState.update { state ->
-                    state.copy(
-                        recentReplies = replies,
-                        totalReplies = replyHistoryRepository.getTotalCount(),
-                        todayReplies = replyHistoryRepository.getTodayCount(startOfDay)
-                    )
+            try {
+                replyHistoryRepository.getRecentReplies(10).collect { replies ->
+                    val startOfDay = getStartOfDay()
+                    _uiState.update { state ->
+                        state.copy(
+                            recentReplies = replies,
+                            totalReplies = replyHistoryRepository.getTotalCount(),
+                            todayReplies = replyHistoryRepository.getTodayCount(startOfDay)
+                        )
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "loadData recentReplies error: ${e.message}")
             }
         }
 
         viewModelScope.launch {
-            keywordRuleRepository.getRuleCountFlow().collect { count ->
-                _uiState.update { it.copy(knowledgeBaseCount = count) }
+            try {
+                keywordRuleRepository.getRuleCountFlow().collect { count ->
+                    _uiState.update { it.copy(knowledgeBaseCount = count) }
+                }
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "loadData ruleCount error: ${e.message}")
             }
         }
     }
