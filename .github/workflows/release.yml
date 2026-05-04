@@ -1,11 +1,9 @@
-name: Release - 上传到 shz.al
+name: Release - 构建 & 发布
 
 on:
-  # 打 tag 时自动触发（如 v1.1.70）
   push:
     tags:
       - 'v*.*.*'
-  # 也可以手动触发
   workflow_dispatch:
     inputs:
       expire_days:
@@ -15,7 +13,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false   # Release 不允许并发取消
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -26,7 +24,7 @@ jobs:
   # ─────────────────────────────────────────
   build-release:
     name: Build Release APK
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 50
     outputs:
       version_name: ${{ steps.bump.outputs.new_name }}
@@ -49,7 +47,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: 缓存 Gradle
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
@@ -70,6 +68,9 @@ jobs:
           echo "$SIGNING_KEYSTORE_BASE64" | base64 -d > keystore/csbaby-release.p12
           echo "✅ 签名密钥已恢复"
           ls -la keystore/
+
+      - name: 创建 Room schema 目录
+        run: mkdir -p app/src/main/assets/schemas
 
       - name: 读取版本信息
         id: version
@@ -93,8 +94,8 @@ jobs:
           else
             NEW_NAME="$CUR_NAME"
           fi
-          sed -i '' "s/APP_VERSION_CODE=.*/APP_VERSION_CODE=$NEW_CODE/" gradle.properties
-          sed -i '' "s/APP_VERSION_NAME=.*/APP_VERSION_NAME=$NEW_NAME/" gradle.properties
+          sed -i "s/APP_VERSION_CODE=.*/APP_VERSION_CODE=$NEW_CODE/" gradle.properties
+          sed -i "s/APP_VERSION_NAME=.*/APP_VERSION_NAME=$NEW_NAME/" gradle.properties
           echo "new_code=$NEW_CODE" >> $GITHUB_OUTPUT
           echo "new_name=$NEW_NAME" >> $GITHUB_OUTPUT
           echo "🚀 版本升级: v$CUR_NAME → v$NEW_NAME"
@@ -129,23 +130,18 @@ jobs:
             exit 1
           fi
 
-          # 用 apksigner 验证签名并提取指纹
           APKSIGNER=$(find $ANDROID_HOME -name "apksigner" -type f | head -1)
           if [ -z "$APKSIGNER" ]; then
             echo "⚠️ 未找到 apksigner，跳过指纹验证"
           else
             echo "🔍 使用 apksigner 验证签名..."
             $APKSIGNER verify --verbose --print-certs "$SIGNED_APK"
-
-            # 提取 SHA-256 指纹
             FINGERPRINT=$($APKSIGNER verify --print-certs "$SIGNED_APK" 2>&1 | grep -A1 "certificate SHA-256 digest:" | tail -1 | tr -d ' ')
             echo "sha256=$FINGERPRINT" >> $GITHUB_OUTPUT
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "📋 APK 签名 SHA-256 指纹: $FINGERPRINT"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo ""
-            echo "⚠️ 安装时如果提示签名不一致，请确认此指纹与之前版本一致"
           fi
 
       - name: 重命名并记录 APK 路径
@@ -181,7 +177,7 @@ jobs:
   # ─────────────────────────────────────────
   upload-shzal:
     name: Deploy to shz.al
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: build-release
 
@@ -199,7 +195,6 @@ jobs:
           echo "apk-output 内容:"
           ls -la ./apk-output/
           echo ""
-          # 查找 APK 文件
           APK_FILE=$(find ./apk-output -name "*.apk" | head -1)
           if [ -z "$APK_FILE" ] || [ ! -f "$APK_FILE" ]; then
             echo "错误: 未找到 APK 文件!"
@@ -208,8 +203,7 @@ jobs:
           fi
           echo "找到 APK: $APK_FILE"
           echo "文件大小: $(wc -c < "$APK_FILE") bytes"
-          # macOS md5 输出格式: MD5 (file) = hash
-          MD5=$(md5 "$APK_FILE" | sed 's/.*= //')
+          MD5=$(md5sum "$APK_FILE" | cut -d' ' -f1)
           echo "MD5: $MD5"
           echo "path=$APK_FILE" >> $GITHUB_OUTPUT
           echo "md5=$MD5" >> $GITHUB_OUTPUT
@@ -239,19 +233,12 @@ jobs:
           EXPIRE="${{ inputs.expire_days || '7d' }}"
           echo "🔑 SHZAL_PASSWORD 已设置，长度为: ${#SHZAL_PASSWORD}"
 
-          # 先强制删除旧文件（如果存在）
           echo "🔄 尝试删除旧版本信息文件..."
           DELETE_RESP=$(curl -s -X DELETE "https://shz.al/~csBabyLog2:${SHZAL_PASSWORD}" || true)
           echo "删除响应: $DELETE_RESP"
 
-          # 等待删除完成
           sleep 3
 
-          # 检查是否成功删除（通过尝试获取现有内容）
-          EXISTING_CHECK=$(curl -s -w "%{http_code}" -o /dev/null "https://shz.al/~csBabyLog2")
-          echo "现有文件检查HTTP状态码: $EXISTING_CHECK"
-
-          # 上传新版本信息
           echo "📤 上传新版本信息..."
           RESP=$(curl -s -X POST \
             -F "n=csBabyLog2" \
@@ -262,10 +249,8 @@ jobs:
 
           echo "版本信息上传响应: $RESP"
 
-          # 检查响应类型并处理
           if echo "$RESP" | grep -q "Error"; then
             echo "❌ 上传失败: $RESP"
-            # 尝试使用替代方法：直接覆盖
             ALT_RESP=$(curl -s -X POST \
               --data-urlencode "n=csBabyLog2" \
               --data-urlencode "e=${EXPIRE}" \
@@ -284,43 +269,29 @@ jobs:
           EXPIRE="${{ inputs.expire_days || '7d' }}"
           echo "🔑 SHZAL_PASSWORD 已设置，长度为: ${#SHZAL_PASSWORD}"
 
-          # 先检查现有文件
           echo "🔍 检查现有APK文件..."
           EXISTING_CHECK=$(curl -s -w "%{http_code}" -o /dev/null "https://shz.al/~csBabyApk2")
           echo "现有文件检查HTTP状态码: $EXISTING_CHECK"
 
-          # 尝试删除旧文件（如果存在）
           echo "🔄 尝试删除旧APK文件..."
           DELETE_RESP=$(curl -s -X DELETE "https://shz.al/~csBabyApk2:${SHZAL_PASSWORD}" || true)
           echo "删除响应: $DELETE_RESP"
 
-          # 等待删除完成
           sleep 3
 
-          # 上传新 APK
           echo "📤 上传新APK..."
           RESP=$(curl -s -X POST \
             -F "n=csBabyApk2" \
             -F "e=${EXPIRE}" \
             -F "filename=${{ needs.build-release.outputs.apk_name }}" \
             -F "c=@${{ steps.apk.outputs.path }}" \
-            -F "s=${SHZAL_PASSWORD}" \
+            -F "s=${{ secrets.SHZAL_PASSWORD }}" \
             https://shz.al)
 
           echo "APK 上传响应: $RESP"
 
-          # 检查响应类型并处理
           if echo "$RESP" | grep -q "Error"; then
             echo "❌ APK上传失败: $RESP"
-            # 尝试使用替代方法：直接覆盖
-            ALT_RESP=$(curl -s -X POST \
-              -F "n=csBabyApk2" \
-              -F "e=${EXPIRE}" \
-              -F "filename=${{ needs.build-release.outputs.apk_name }}" \
-              -F "c=@${{ steps.apk.outputs.path }}" \
-              -F "s=${SHZAL_PASSWORD}" \
-              https://shz.al)
-            echo "备用方法响应: $ALT_RESP"
           else
             echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ APK 已上传:', d.get('url',''))" || echo "响应不是有效的JSON: $RESP"
           fi
@@ -338,11 +309,11 @@ jobs:
           echo "| APK 下载 | https://shz.al/~csBabyApk2 |" >> $GITHUB_STEP_SUMMARY
 
   # ─────────────────────────────────────────
-  # Job 3: 创建 GitHub Release（打 tag 时触发）
+  # Job 3: 创建 GitHub Release
   # ─────────────────────────────────────────
   create-github-release:
     name: Create GitHub Release
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: [ build-release, upload-shzal ]
     if: startsWith(github.ref, 'refs/tags/v')
@@ -368,8 +339,8 @@ jobs:
             - 📥 **直接下载（24小时有效）：** https://shz.al/~csBabyApk2
             - 📋 **版本信息：** https://shz.al/~csBabyLog2
 
-            ### 变更内容
-            > 请在此补充本版本的主要变更
+            ### 后端优先架构
+            本版本起采用后端优先架构：网络可用时数据优先使用后端 API，离线时自动缓存到本地，网络恢复后自动同步。
 
           files: ./apk-output/*.apk
           draft: false

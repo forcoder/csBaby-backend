@@ -11,12 +11,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ─────────────────────────────────────────
-  # Job 1: Lint & 静态代码检查
-  # ─────────────────────────────────────────
   lint:
     name: Lint & Code Quality
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
@@ -34,7 +31,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: 缓存 Gradle
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
@@ -43,7 +40,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: 创建 Room 数据库 schema 目录
+      - name: 创建 Room schema 目录
         run: mkdir -p app/src/main/assets/schemas
 
       - name: 运行 Lint 检查
@@ -63,12 +60,9 @@ jobs:
           path: app/build/reports/lint-results-debug.xml
           retention-days: 7
 
-  # ─────────────────────────────────────────
-  # Job 2: 单元测试
-  # ─────────────────────────────────────────
   unit-test:
     name: Unit Tests
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: lint
 
@@ -87,7 +81,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: 缓存 Gradle
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
@@ -113,7 +107,7 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
 
-      - name: 创建 Room 数据库 schema 目录
+      - name: 创建 Room schema 目录
         run: mkdir -p app/src/main/assets/schemas
 
       - name: 运行单元测试

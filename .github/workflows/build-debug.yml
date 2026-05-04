@@ -11,7 +11,6 @@ on:
         default: 'false'
         type: boolean
 
-# 添加写入权限以便推送版本号
 permissions:
   contents: write
 
@@ -22,7 +21,7 @@ concurrency:
 jobs:
   build-debug:
     name: Build Debug APK
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
@@ -40,7 +39,7 @@ jobs:
           cache: gradle
 
       - name: 缓存 Gradle 构建产物
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
@@ -50,16 +49,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      # 生成 Android debug keystore
       - name: 生成 Debug Keystore
         run: |
           mkdir -p ~/.android
-          echo "生成 debug.keystore..."
           keytool -genkeypair -v -keystore ~/.android/debug.keystore \
             -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass android -keypass android \
             -dname "CN=Android Debug,O=Android,C=US"
           ls -la ~/.android/
+
+      - name: 创建 Room schema 目录
+        run: mkdir -p app/src/main/assets/schemas
 
       - name: 读取当前版本
         id: version
@@ -70,7 +70,6 @@ jobs:
           echo "name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "📦 当前版本: v$VERSION_NAME ($VERSION_CODE)"
 
-      # 版本号递增：修改 gradle.properties 并提交
       - name: 递增版本号
         if: ${{ inputs.skip_version_increment != 'true' }}
         id: bump
@@ -85,17 +84,14 @@ jobs:
           else
             NEW_NAME="$CUR_NAME"
           fi
-          sed -i '' "s/APP_VERSION_CODE=.*/APP_VERSION_CODE=$NEW_CODE/" gradle.properties
-          sed -i '' "s/APP_VERSION_NAME=.*/APP_VERSION_NAME=$NEW_NAME/" gradle.properties
+          sed -i "s/APP_VERSION_CODE=.*/APP_VERSION_CODE=$NEW_CODE/" gradle.properties
+          sed -i "s/APP_VERSION_NAME=.*/APP_VERSION_NAME=$NEW_NAME/" gradle.properties
           echo "new_code=$NEW_CODE" >> $GITHUB_OUTPUT
           echo "new_name=$NEW_NAME" >> $GITHUB_OUTPUT
           echo "🚀 版本升级: v$CUR_NAME → v$NEW_NAME"
 
-      - name: Grant execute permission for gradlew
+      - name: 授权 gradlew 执行权限
         run: chmod +x ./gradlew
-
-      - name: Create Room schema directory
-        run: mkdir -p app/src/main/assets/schemas
 
       - name: 构建 Debug APK
         env:
@@ -112,7 +108,7 @@ jobs:
             -x testReleaseUnitTest \
             --stacktrace
 
-      - name: 读取最终版本（构建后）
+      - name: 读取最终版本
         id: final_version
         run: |
           VERSION_CODE=$(grep 'APP_VERSION_CODE' gradle.properties | cut -d'=' -f2)
@@ -145,13 +141,14 @@ jobs:
           git push
 
       - name: 输出构建摘要
+        if: always()
         run: |
-          echo "## 🎉 构建成功" >> $GITHUB_STEP_SUMMARY
+          echo "## 构建结果" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| 字段 | 值 |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
           echo "| 版本名 | v${{ steps.final_version.outputs.name }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 版本号 | ${{ steps.final_version.outputs.code }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| APK 文件 | ${{ env.APK_NAME }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 分支 | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 提交 | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 状态 | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
