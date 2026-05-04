@@ -24,6 +24,7 @@ import androidx.navigation.compose.rememberNavController
 import com.csbaby.kefu.R
 import com.csbaby.kefu.data.local.AuthManager
 import com.csbaby.kefu.presentation.screens.auth.LoginScreen
+import com.csbaby.kefu.presentation.screens.auth.RegisterScreen
 import com.csbaby.kefu.presentation.screens.blacklist.BlacklistScreen
 import com.csbaby.kefu.presentation.screens.history.HistoryScreen
 import com.csbaby.kefu.presentation.screens.home.HomeScreen
@@ -67,6 +68,24 @@ fun RootNavigation(authManager: AuthManager) {
                 onLoginSuccess = {
                     navController.navigate(Screen.Home.route) {
                         popUpTo("login") { inclusive = true }
+                    }
+                },
+                onNavigateToRegister = {
+                    navController.navigate("register")
+                }
+            )
+        }
+
+        composable("register") {
+            RegisterScreen(
+                onRegisterSuccess = {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo("register") { inclusive = true }
+                    }
+                },
+                onNavigateToLogin = {
+                    navController.navigate("login") {
+                        popUpTo("register") { inclusive = true }
                     }
                 }
             )

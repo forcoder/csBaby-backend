@@ -5,15 +5,16 @@ import com.google.gson.annotations.SerializedName
 // ========== 认证 ==========
 
 data class RegisterRequest(
-    val name: String = "",
-    val platform: String = "android",
-    val app_version: String = ""
+    val phone: String = "",
+    val password: String = ""
 )
 
 data class AuthResponse(
     @SerializedName("device_id") val deviceId: String = "",
     val token: String = "",
-    @SerializedName("expires_in") val expiresIn: Long = 0
+    @SerializedName("expires_in") val expiresIn: Long = 0,
+    @SerializedName("tenant_id") val tenantId: String = "",
+    @SerializedName("phone_number") val phoneNumber: String = ""
 )
 
 data class HeartbeatResponse(

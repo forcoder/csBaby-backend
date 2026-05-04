@@ -39,6 +39,29 @@ class BackendClient(
         }
     }
 
+    suspend fun registerUser(phone: String, password: String): Result<LoginResponse> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val response = api.register(RegisterRequest(phone = phone, password = password))
+                if (response.isSuccessful && response.body() != null) {
+                    val body = response.body()!!
+                    Result.success(LoginResponse(
+                        token = body.token,
+                        tenantId = body.tenantId,
+                        phoneNumber = body.phoneNumber,
+                        expiresIn = body.expiresIn
+                    ))
+                } else {
+                    Result.failure(Exception(parseError(response)))
+                }
+            } catch (e: IOException) {
+                Result.failure(Exception("网络连接失败，请检查网络"))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
     /**
      * 注册设备并保存凭证
      */
@@ -47,9 +70,8 @@ class BackendClient(
             try {
                 val response = api.register(
                     RegisterRequest(
-                        name = "Android Device",
-                        platform = "android",
-                        app_version = appVersion
+                        phone = "",
+                        password = ""
                     )
                 )
                 if (response.isSuccessful && response.body() != null) {
@@ -68,6 +90,21 @@ class BackendClient(
             } catch (e: Exception) {
                 Timber.e(e, "Backend register error")
                 Result.failure(e)
+            }
+        }
+    }
+
+    /**
+     * 服务端 token 撤销（登出）
+     */
+    suspend fun logout(): Result<Boolean> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val response = api.logout()
+                Result.success(response.isSuccessful)
+            } catch (e: Exception) {
+                Timber.e(e, "Logout request failed")
+                Result.success(false)
             }
         }
     }
@@ -190,9 +227,9 @@ class BackendClient(
             if (errorBody.isNotEmpty()) {
                 try {
                     val json = org.json.JSONObject(errorBody)
-                    json.optString("error", "未知错误 (${response.code()})")
+                    json.optString("error", "请求失败 (${response.code()})")
                 } catch (e: Exception) {
-                    "请求失败 (${response.code()}): $errorBody"
+                    "请求失败 (${response.code()})"
                 }
             } else {
                 "请求失败 (${response.code()})"
