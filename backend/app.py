@@ -771,7 +771,9 @@ def backup_restore():
 
 # ========== Entry Point ==========
 
+# gunicorn 启动时初始化数据库
+init_db()
+
 if __name__ == "__main__":
-    init_db()
     port = int(os.environ.get("PORT", PORT))
     app.run(host=HOST, port=port, debug=False)

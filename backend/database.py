@@ -124,16 +124,16 @@ def init_db():
     """)
 
     # 迁移：为 devices 表添加 user_id 列（如果不存在）
-    columns = db.execute("PRAGMA table_info(devices)").fetchall()
-    col_names = [col[1] for col in columns]
-    if "user_id" not in col_names:
-        db.execute("ALTER TABLE devices ADD COLUMN user_id INTEGER REFERENCES users(id)")
+    try:
+        columns = db.execute("PRAGMA table_info(devices)").fetchall()
+        col_names = [col[1] for col in columns]
+        if "user_id" not in col_names:
+            db.execute("ALTER TABLE devices ADD COLUMN user_id INTEGER REFERENCES users(id)")
+    except Exception:
+        pass  # 迁移失败不影响服务启动
 
     # 数据迁移：为已有 devices 创建对应的 user 记录
-    existing_migration = db.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
-    ).fetchone()
-    if existing_migration:
+    try:
         devices = db.execute("SELECT id FROM devices WHERE user_id IS NULL").fetchall()
         for dev in devices:
             dev_id = dev[0]
@@ -149,6 +149,8 @@ def init_db():
                 )
                 user_id = db.execute("SELECT id FROM users WHERE tenant_id = ?", (tenant_id,)).fetchone()[0]
                 db.execute("UPDATE devices SET user_id = ? WHERE id = ?", (user_id, dev_id))
+    except Exception:
+        pass  # 迁移失败不影响服务启动
 
     db.commit()
     db.close()

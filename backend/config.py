@@ -1,7 +1,7 @@
 import os
 
 # 数据库路径
-DATABASE_PATH = os.environ.get("DATABASE_PATH", "csBaby.db")
+DATABASE_PATH = os.environ.get("DATABASE_PATH", "/var/data/csBaby.db")
 
 # JWT 配置
 JWT_SECRET = os.environ.get("JWT_SECRET", "csbaby-secret-key-change-in-production")
