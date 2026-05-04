@@ -43,3 +43,12 @@ h2 { font-size: 18px; margin: 24px 0 12px; }
 .alert-error { background: #fce8e6; color: #ea4335; }
 .alert-success { background: #e6f4ea; color: #34a853; }
 .action-form { margin: 16px 0; }
+.form-group select { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background: white; }
+.form-group textarea { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; resize: vertical; }
+.form-group textarea:focus, .form-group select:focus { outline: none; border-color: #1a73e8; }
+.btn-sm { padding: 4px 12px; font-size: 12px; }
+.btn-warning { background: #fbbc04; color: #333; }
+.data-table { width: 100%; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border-collapse: collapse; margin-bottom: 24px; }
+.data-table th, .data-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; font-size: 13px; }
+.data-table th { background: #f8f9fa; font-weight: 600; color: #555; }
+.data-table tr:hover { background: #f8f9fa; }

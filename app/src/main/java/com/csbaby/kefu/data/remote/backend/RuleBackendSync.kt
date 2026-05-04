@@ -162,6 +162,27 @@ class RuleBackendSync(
             }
         }
 
+    /**
+     * 批量推送规则到后端（使用 /api/rules/batch 一次性提交）
+     * 用于导入完成后统一同步，避免逐条推送的超时累积
+     */
+    suspend fun batchPushToBackend(rules: List<RuleDto>): Result<Int> = withContext(Dispatchers.IO) {
+        try {
+            if (rules.isEmpty()) return@withContext Result.success(0)
+            val result = backendClient.batchImportRules(rules, "override")
+            result.fold(
+                onSuccess = { resp ->
+                    Timber.d("Batch pushed ${resp.imported} rules to backend")
+                    Result.success(resp.imported)
+                },
+                onFailure = { Result.failure(it) }
+            )
+        } catch (e: Exception) {
+            Timber.e(e, "Error batch pushing rules to backend")
+            Result.failure(e)
+        }
+    }
+
     private fun RuleDto.toKeywordRuleEntity() = KeywordRuleEntity(
         id = id,
         keyword = keyword,

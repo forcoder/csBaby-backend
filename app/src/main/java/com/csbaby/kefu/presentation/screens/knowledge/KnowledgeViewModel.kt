@@ -10,6 +10,7 @@ import com.csbaby.kefu.infrastructure.knowledge.KnowledgeBaseManager
 
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -134,68 +135,54 @@ class KnowledgeViewModel @Inject constructor(
     }
 
     fun importRules(uri: Uri, mode: ImportMode = ImportMode.APPEND) {
-        if (_uiState.value.isClearing) return
+        if (_uiState.value.isClearing || _uiState.value.isImporting) return
 
         viewModelScope.launch {
             _uiState.update { it.copy(isImporting = true, noticeMessage = null) }
 
-            // 如果是覆盖模式，先清空现有规则
-            if (mode == ImportMode.OVERRIDE) {
-                val cleared = runCatching {
-                    knowledgeBaseManager.clearAllRules()
-                }.getOrDefault(0)
-                Log.d(TAG, "Import override: cleared $cleared existing rules")
-            }
+            val result = try {
+                // 覆盖模式：先清空
+                if (mode == ImportMode.OVERRIDE) {
+                    val cleared = runCatching {
+                        knowledgeBaseManager.clearAllRules()
+                    }.getOrDefault(0)
+                    Log.d(TAG, "Import override: cleared $cleared existing rules")
+                }
 
-            val result = runCatching {
                 appContext.contentResolver.openInputStream(uri)?.use { inputStream ->
                     when (resolveImportFormat(uri)) {
                         ImportFormat.CSV -> knowledgeBaseManager.importFromCsv(inputStream)
                         ImportFormat.EXCEL_XLSX -> knowledgeBaseManager.importFromExcel(inputStream)
                         ImportFormat.EXCEL_XLS -> KnowledgeBaseManager.ImportResult(
-                            0,
-                            1,
-                            "暂不支持旧版 .xls，请另存为 .xlsx 后再导入"
+                            0, 1, "暂不支持旧版 .xls，请另存为 .xlsx 后再导入"
                         )
                         ImportFormat.JSON -> knowledgeBaseManager.importFromJson(inputStream)
                     }
                 } ?: KnowledgeBaseManager.ImportResult(0, 1, "无法打开所选文件")
-
-
-            }.getOrElse { exception ->
-                KnowledgeBaseManager.ImportResult(0, 1, exception.message ?: "导入失败")
+            } catch (e: CancellationException) {
+                Log.d(TAG, "Import cancelled")
+                _uiState.update { it.copy(isImporting = false) }
+                return@launch
+            } catch (e: Exception) {
+                Log.e(TAG, "Import error: ${e.message}", e)
+                KnowledgeBaseManager.ImportResult(0, 1, e.message ?: "导入失败")
             }
 
             val noticeMessage = when {
-                result.errorMessage != null && result.successCount == 0 -> {
-                    "导入失败：${result.errorMessage}"
-                }
-                result.successCount > 0 && result.errorCount > 0 -> {
-                    "导入完成：成功 ${result.successCount} 条，失败 ${result.errorCount} 条"
-                }
+                result.errorMessage != null && result.successCount == 0 -> "导入失败：${result.errorMessage}"
+                result.successCount > 0 && result.errorCount > 0 -> "导入完成：成功 ${result.successCount} 条，失败 ${result.errorCount} 条"
                 result.successCount > 0 -> {
-                    if (mode == ImportMode.OVERRIDE) {
-                        "已覆盖导入 ${result.successCount} 条规则"
-                    } else {
-                        "已成功导入 ${result.successCount} 条规则"
-                    }
+                    if (mode == ImportMode.OVERRIDE) "已覆盖导入 ${result.successCount} 条规则"
+                    else "已成功导入 ${result.successCount} 条规则"
                 }
-                else -> {
-                    result.errorMessage ?: "没有导入到任何规则"
-                }
+                else -> result.errorMessage ?: "没有导入到任何规则"
             }
 
-            // 导入成功后，重建 Trie 树使新规则立即生效并刷新数据
             if (result.successCount > 0) {
                 refreshRules()
             }
 
-            _uiState.update {
-                it.copy(
-                    isImporting = false,
-                    noticeMessage = noticeMessage
-                )
-            }
+            _uiState.update { it.copy(isImporting = false, noticeMessage = noticeMessage) }
         }
     }
 
@@ -214,24 +201,21 @@ class KnowledgeViewModel @Inject constructor(
             }
 
             _uiState.update { it.copy(isClearing = true, noticeMessage = null) }
-            val noticeMessage = runCatching {
-                val removedCount = knowledgeBaseManager.clearAllRules()
-                // 清空后重建空的 Trie 树并刷新数据
-                refreshRules()
-                if (removedCount > 0) {
-                    "已清空知识库，共删除 ${removedCount} 条规则"
-                } else {
-                    "知识库已经是空的"
-                }
-            }.getOrElse { exception ->
-                exception.message ?: "清空知识库失败"
-            }
 
-            _uiState.update {
-                it.copy(
-                    isClearing = false,
-                    noticeMessage = noticeMessage
-                )
+            try {
+                val removedCount = knowledgeBaseManager.clearAllRules()
+                refreshRules()
+                _uiState.update {
+                    it.copy(
+                        isClearing = false,
+                        noticeMessage = if (removedCount > 0) "已清空知识库，共删除 ${removedCount} 条规则" else "知识库已经是空的"
+                    )
+                }
+            } catch (e: CancellationException) {
+                _uiState.update { it.copy(isClearing = false) }
+            } catch (e: Exception) {
+                Log.e(TAG, "Clear rules error: ${e.message}", e)
+                _uiState.update { it.copy(isClearing = false, noticeMessage = e.message ?: "清空知识库失败") }
             }
         }
     }

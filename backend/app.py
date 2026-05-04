@@ -432,6 +432,116 @@ def admin_stats():
     })
 
 
+# ========== Admin Rules (知识库管理) ==========
+
+
+@app.route("/api/admin/tenants/<tenant_id>/rules", methods=["GET"])
+def admin_rules_list(tenant_id):
+    """管理员获取指定租户的知识库规则列表"""
+    info, err = require_admin()
+    if err:
+        return err
+
+    db = get_db_conn()
+    rows = db.execute(
+        "SELECT * FROM keyword_rules WHERE device_id = ? ORDER BY priority DESC, id DESC",
+        (tenant_id,),
+    ).fetchall()
+    return jsonify([dict_from_row(r) for r in rows])
+
+
+@app.route("/api/admin/tenants/<tenant_id>/rules", methods=["POST"])
+def admin_rules_create(tenant_id):
+    """管理员为指定租户创建知识库规则"""
+    info, err = require_admin()
+    if err:
+        return err
+
+    data = request.get_json(force=True)
+    db = get_db_conn()
+    db.execute(
+        """INSERT INTO keyword_rules
+           (device_id, keyword, match_type, reply_template, category, target_type, target_names, priority, enabled)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            tenant_id, data.get("keyword", ""), data.get("match_type", "CONTAINS"),
+            data.get("reply_template", ""), data.get("category", ""),
+            data.get("target_type", "ALL"), data.get("target_names", "[]"),
+            data.get("priority", 0), data.get("enabled", 1),
+        ),
+    )
+    db.commit()
+    return jsonify({"status": "ok", "id": db.execute("SELECT last_insert_rowid()").fetchone()[0]})
+
+
+@app.route("/api/admin/tenants/<tenant_id>/rules/<int:rule_id>", methods=["GET", "PUT", "DELETE"])
+def admin_rules_detail(tenant_id, rule_id):
+    """管理员获取/更新/删除指定租户的某条规则"""
+    info, err = require_admin()
+    if err:
+        return err
+
+    db = get_db_conn()
+
+    if request.method == "GET":
+        row = db.execute(
+            "SELECT * FROM keyword_rules WHERE id = ? AND device_id = ?", (rule_id, tenant_id)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(dict_from_row(row))
+
+    elif request.method == "PUT":
+        data = request.get_json(force=True)
+        db.execute(
+            """UPDATE keyword_rules SET keyword=?, match_type=?, reply_template=?,
+               category=?, target_type=?, target_names=?, priority=?, enabled=?
+               WHERE id=? AND device_id=?""",
+            (
+                data.get("keyword", ""), data.get("match_type", "CONTAINS"),
+                data.get("reply_template", ""), data.get("category", ""),
+                data.get("target_type", "ALL"), data.get("target_names", "[]"),
+                data.get("priority", 0), data.get("enabled", 1),
+                rule_id, tenant_id,
+            ),
+        )
+        db.commit()
+        return jsonify({"status": "ok"})
+
+    elif request.method == "DELETE":
+        db.execute("DELETE FROM keyword_rules WHERE id = ? AND device_id = ?", (rule_id, tenant_id))
+        db.commit()
+        return jsonify({"status": "ok"})
+
+
+@app.route("/api/admin/tenants/<tenant_id>/rules/batch", methods=["POST"])
+def admin_rules_batch(tenant_id):
+    """管理员批量导入规则（覆盖模式：先删除再插入）"""
+    info, err = require_admin()
+    if err:
+        return err
+
+    data = request.get_json(force=True)
+    rules = data.get("rules", [])
+    db = get_db_conn()
+
+    db.execute("DELETE FROM keyword_rules WHERE device_id = ?", (tenant_id,))
+    for rule in rules:
+        db.execute(
+            """INSERT INTO keyword_rules
+               (device_id, keyword, match_type, reply_template, category, target_type, target_names, priority, enabled)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                tenant_id, rule.get("keyword", ""), rule.get("match_type", "CONTAINS"),
+                rule.get("reply_template", ""), rule.get("category", ""),
+                rule.get("target_type", "ALL"), rule.get("target_names", "[]"),
+                rule.get("priority", 0), rule.get("enabled", 1),
+            ),
+        )
+    db.commit()
+    return jsonify({"status": "ok", "count": len(rules)})
+
+
 # ========== Rules ==========
 
 

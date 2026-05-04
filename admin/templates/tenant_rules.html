@@ -1,0 +1,163 @@
+{% extends "layout.html" %}
+{% block content %}
+<h1>知识库管理 — {{ tenant.phone }}</h1>
+<p style="color:#888;">租户 ID: {{ tenant.tenant_id }}</p>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<!-- 新增规则 -->
+<h2>新增规则</h2>
+<form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/rules/add" class="form-card">
+    <div class="form-group">
+        <label>关键词</label>
+        <input type="text" name="keyword" placeholder="如：入住、退房、价格" required>
+    </div>
+    <div class="form-group">
+        <label>匹配类型</label>
+        <select name="match_type">
+            <option value="CONTAINS">包含匹配</option>
+            <option value="EXACT">精确匹配</option>
+            <option value="REGEX">正则匹配</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label>回复模板</label>
+        <textarea name="reply_template" rows="3" placeholder="支持变量：{customer_name}、{house_name}" required></textarea>
+    </div>
+    <div class="form-group">
+        <label>分类</label>
+        <input type="text" name="category" placeholder="如：入住咨询、退房问题">
+    </div>
+    <div class="form-group">
+        <label>适用对象</label>
+        <select name="target_type">
+            <option value="ALL">全部</option>
+            <option value="PROPERTY">指定房源</option>
+            <option value="CONTACT">指定联系人</option>
+            <option value="GROUP">指定群组</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label>优先级</label>
+        <input type="number" name="priority" value="0" min="0" max="100">
+    </div>
+    <div class="form-group">
+        <label><input type="checkbox" name="enabled" checked> 启用</label>
+    </div>
+    <button type="submit" class="btn btn-primary">添加规则</button>
+</form>
+
+<!-- 批量导入 -->
+<h2>批量导入（JSON）</h2>
+<form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/rules/batch" class="form-card">
+    <div class="form-group">
+        <label>JSON 数据</label>
+        <textarea name="import_data" rows="6" placeholder='[{"keyword":"入住","reply_template":"您好，请问有什么可以帮您？","category":"入住咨询"}]'></textarea>
+        <small style="color:#888;">支持 JSON 数组或 {"rules": [...]} 格式。注意：批量导入将<strong>覆盖</strong>现有规则。</small>
+    </div>
+    <button type="submit" class="btn btn-warning" onclick="return confirm('批量导入将覆盖该租户的所有现有规则，确认继续？')">批量导入</button>
+</form>
+
+<!-- 规则列表 -->
+<h2>规则列表（共 {{ rules|length }} 条）</h2>
+{% if rules %}
+<table class="data-table">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>关键词</th>
+            <th>回复模板</th>
+            <th>分类</th>
+            <th>匹配类型</th>
+            <th>优先级</th>
+            <th>状态</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for rule in rules %}
+        <tr>
+            <td>{{ rule.id }}</td>
+            <td><strong>{{ rule.keyword }}</strong></td>
+            <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ rule.reply_template }}</td>
+            <td>{{ rule.category or '-' }}</td>
+            <td>{{ rule.match_type }}</td>
+            <td>{{ rule.priority }}</td>
+            <td>
+                {% if rule.enabled == 1 %}
+                <span class="badge badge-success">启用</span>
+                {% else %}
+                <span class="badge badge-danger">禁用</span>
+                {% endif %}
+            </td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="document.getElementById('edit-{{ rule.id }}').style.display='block'">编辑</button>
+                <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/rules/{{ rule.id }}/delete" style="display:inline;">
+                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('确定删除这条规则？')">删除</button>
+                </form>
+            </td>
+        </tr>
+        <!-- 编辑表单（默认隐藏） -->
+        <tr id="edit-{{ rule.id }}" style="display:none;">
+            <td colspan="8">
+                <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/rules/{{ rule.id }}/edit" class="form-card" style="background:#f8f9fa;">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                        <div class="form-group">
+                            <label>关键词</label>
+                            <input type="text" name="keyword" value="{{ rule.keyword }}" required>
+                        </div>
+                        <div class="form-group">
+                            <label>匹配类型</label>
+                            <select name="match_type">
+                                <option value="CONTAINS" {{ 'selected' if rule.match_type == 'CONTAINS' }}>包含匹配</option>
+                                <option value="EXACT" {{ 'selected' if rule.match_type == 'EXACT' }}>精确匹配</option>
+                                <option value="REGEX" {{ 'selected' if rule.match_type == 'REGEX' }}>正则匹配</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>回复模板</label>
+                        <textarea name="reply_template" rows="2" required>{{ rule.reply_template }}</textarea>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                        <div class="form-group">
+                            <label>分类</label>
+                            <input type="text" name="category" value="{{ rule.category or '' }}">
+                        </div>
+                        <div class="form-group">
+                            <label>适用对象</label>
+                            <select name="target_type">
+                                <option value="ALL" {{ 'selected' if rule.target_type == 'ALL' }}>全部</option>
+                                <option value="PROPERTY" {{ 'selected' if rule.target_type == 'PROPERTY' }}>指定房源</option>
+                                <option value="CONTACT" {{ 'selected' if rule.target_type == 'CONTACT' }}>指定联系人</option>
+                                <option value="GROUP" {{ 'selected' if rule.target_type == 'GROUP' }}>指定群组</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>优先级</label>
+                            <input type="number" name="priority" value="{{ rule.priority }}" min="0" max="100">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" name="enabled" {{ 'checked' if rule.enabled == 1 }}> 启用</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                    <button type="button" class="btn" onclick="document.getElementById('edit-{{ rule.id }}').style.display='none'">取消</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color:#888;padding:20px;text-align:center;">暂无规则，请新增或批量导入。</p>
+{% endif %}
+
+<a href="/admin/tenants/{{ tenant.tenant_id }}" class="btn">返回租户详情</a>
+{% endblock %}

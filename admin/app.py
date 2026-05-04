@@ -54,6 +54,15 @@ def api_delete(path, token):
     )
 
 
+def api_post_json(path, json_data, token):
+    return http_requests.post(
+        f"{API_BASE_URL}{path}",
+        json=json_data,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30
+    )
+
+
 @app.route("/admin/login", methods=["GET", "POST"])
 def login():
     if session.get("admin_phone"):
@@ -278,6 +287,123 @@ def default_model():
 
     return render_template("default_model.html", model=current_model,
                            admin_phone=session.get("admin_phone"), error=error, success=success)
+
+
+@app.route("/admin/tenants/<tenant_id>/rules")
+@login_required
+def admin_tenant_rules(tenant_id):
+    """租户知识库规则管理页面"""
+    token = session.get("admin_token", "")
+    tenant = _get_tenant(tenant_id, token)
+    rules = []
+    try:
+        resp = api_get(f"/api/admin/tenants/{tenant_id}/rules", token)
+        if resp.status_code == 200:
+            rules = resp.json()
+    except Exception:
+        pass
+    return render_template(
+        "tenant_rules.html",
+        tenant=tenant,
+        rules=rules,
+        admin_phone=session.get("admin_phone"),
+    )
+
+
+@app.route("/admin/tenants/<tenant_id>/rules/add", methods=["POST"])
+@login_required
+def admin_tenant_rule_add(tenant_id):
+    """管理员为租户新增规则"""
+    token = session.get("admin_token", "")
+    data = {
+        "keyword": request.form.get("keyword", "").strip(),
+        "match_type": request.form.get("match_type", "CONTAINS").strip(),
+        "reply_template": request.form.get("reply_template", "").strip(),
+        "category": request.form.get("category", "").strip(),
+        "target_type": request.form.get("target_type", "ALL").strip(),
+        "target_names": request.form.get("target_names", "[]").strip(),
+        "priority": int(request.form.get("priority", 0)),
+        "enabled": 1 if request.form.get("enabled") else 0,
+    }
+    try:
+        resp = api_post_json(f"/api/admin/tenants/{tenant_id}/rules", data, token)
+        if resp.status_code in (200, 201):
+            flash("规则添加成功", "success")
+        else:
+            flash(resp.json().get("error", "添加失败"), "error")
+    except Exception as e:
+        flash(f"网络错误: {e}", "error")
+    return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+
+
+@app.route("/admin/tenants/<tenant_id>/rules/<int:rule_id>/edit", methods=["POST"])
+@login_required
+def admin_tenant_rule_edit(tenant_id, rule_id):
+    """管理员编辑租户规则"""
+    token = session.get("admin_token", "")
+    data = {
+        "keyword": request.form.get("keyword", "").strip(),
+        "match_type": request.form.get("match_type", "CONTAINS").strip(),
+        "reply_template": request.form.get("reply_template", "").strip(),
+        "category": request.form.get("category", "").strip(),
+        "target_type": request.form.get("target_type", "ALL").strip(),
+        "target_names": request.form.get("target_names", "[]").strip(),
+        "priority": int(request.form.get("priority", 0)),
+        "enabled": 1 if request.form.get("enabled") else 0,
+    }
+    try:
+        resp = api_put(f"/api/admin/tenants/{tenant_id}/rules/{rule_id}", token, data)
+        if resp.status_code == 200:
+            flash("规则更新成功", "success")
+        else:
+            flash(resp.json().get("error", "更新失败"), "error")
+    except Exception as e:
+        flash(f"网络错误: {e}", "error")
+    return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+
+
+@app.route("/admin/tenants/<tenant_id>/rules/<int:rule_id>/delete", methods=["POST"])
+@login_required
+def admin_tenant_rule_delete(tenant_id, rule_id):
+    """管理员删除租户规则"""
+    token = session.get("admin_token", "")
+    try:
+        resp = api_delete(f"/api/admin/tenants/{tenant_id}/rules/{rule_id}", token)
+        if resp.status_code == 200:
+            flash("规则已删除", "success")
+        else:
+            flash(resp.json().get("error", "删除失败"), "error")
+    except Exception as e:
+        flash(f"网络错误: {e}", "error")
+    return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+
+
+@app.route("/admin/tenants/<tenant_id>/rules/batch", methods=["POST"])
+@login_required
+def admin_tenant_rules_batch(tenant_id):
+    """管理员批量导入规则（JSON 格式）"""
+    token = session.get("admin_token", "")
+    import_data = request.form.get("import_data", "").strip()
+    if not import_data:
+        flash("请输入 JSON 数据", "error")
+        return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+    try:
+        parsed = json.loads(import_data)
+        rules = parsed if isinstance(parsed, list) else parsed.get("rules", [])
+        if not rules:
+            flash("JSON 中没有可导入的规则", "error")
+            return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+        resp = api_post_json(f"/api/admin/tenants/{tenant_id}/rules/batch", {"rules": rules}, token)
+        if resp.status_code == 200:
+            count = resp.json().get("count", len(rules))
+            flash(f"成功导入 {count} 条规则", "success")
+        else:
+            flash(resp.json().get("error", "导入失败"), "error")
+    except json.JSONDecodeError:
+        flash("JSON 格式错误，请检查后重试", "error")
+    except Exception as e:
+        flash(f"网络错误: {e}", "error")
+    return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
 
 
 @app.route("/admin/profile", methods=["GET", "POST"])

@@ -6,6 +6,8 @@ import com.csbaby.kefu.domain.model.KeywordRule
 import com.csbaby.kefu.domain.model.MatchType
 import com.csbaby.kefu.domain.model.ReplyContext
 import com.csbaby.kefu.domain.model.RuleTargetType
+import com.csbaby.kefu.data.local.EntityMapper.toDomain
+import com.csbaby.kefu.data.local.EntityMapper.toEntity
 import com.csbaby.kefu.domain.repository.KeywordRuleRepository
 import com.csbaby.kefu.infrastructure.search.HybridSearchEngine
 import com.csbaby.kefu.infrastructure.search.SearchType
@@ -16,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.xmlpull.v1.XmlPullParser
 import java.io.BufferedInputStream
 import java.io.ByteArrayInputStream
@@ -34,7 +37,10 @@ import javax.inject.Singleton
 class KnowledgeBaseManager @Inject constructor(
     private val keywordRuleRepository: KeywordRuleRepository,
     private val keywordMatcher: KeywordMatcher,
-    private val hybridSearchEngine: HybridSearchEngine
+    private val hybridSearchEngine: HybridSearchEngine,
+    private val keywordRuleDao: com.csbaby.kefu.data.local.dao.KeywordRuleDao,
+    private val authManager: com.csbaby.kefu.data.local.AuthManager,
+    private val ruleBackendSync: com.csbaby.kefu.data.remote.backend.RuleBackendSync
 ) {
     companion object {
         private const val TAG = "KnowledgeBaseManager"
@@ -319,6 +325,7 @@ class KnowledgeBaseManager @Inject constructor(
 
     /**
      * Import rules from JSON format.
+     * 直接批量写入本地数据库，避免逐条调用 Repository 的后端同步导致超时累积。
      */
     suspend fun importFromJson(inputStream: InputStream): ImportResult {
         return withContext(Dispatchers.IO) {
@@ -329,25 +336,19 @@ class KnowledgeBaseManager @Inject constructor(
                     return@withContext ImportResult(0, 0, "JSON 中没有可导入的规则")
                 }
 
-                var successCount = 0
-                var errorCount = 0
-
-                parsedRules.forEach { rule ->
-                    try {
-                        keywordRuleRepository.insertRule(
-                            rule.copy(
-                                id = 0,
-                                createdAt = System.currentTimeMillis(),
-                                updatedAt = System.currentTimeMillis()
-                            )
-                        )
-                        successCount++
-                    } catch (e: Exception) {
-                        errorCount++
-                    }
+                val tenantId = authManager.getTenantId() ?: ""
+                val now = System.currentTimeMillis()
+                val entities = parsedRules.map { rule ->
+                    rule.copy(id = 0, createdAt = now, updatedAt = now).toEntity().copy(tenantId = tenantId)
                 }
 
-                ImportResult(successCount, errorCount)
+                // 批量写入本地数据库（单条 SQL INSERT，不触发逐条后端同步）
+                keywordRuleDao.insertRules(entities)
+
+                // 一次性批量同步到后端
+                syncRulesToBackend(parsedRules)
+
+                ImportResult(entities.size, 0)
             } catch (e: Exception) {
                 ImportResult(0, 1, e.message)
             }
@@ -356,6 +357,7 @@ class KnowledgeBaseManager @Inject constructor(
 
     /**
      * Import rules from CSV format.
+     * 直接批量写入本地数据库，避免逐条调用 Repository 的后端同步导致超时累积。
      */
     suspend fun importFromCsv(inputStream: InputStream): ImportResult {
         return withContext(Dispatchers.IO) {
@@ -443,38 +445,41 @@ class KnowledgeBaseManager @Inject constructor(
             ?.map(::normalizeCsvHeader)
             .orEmpty()
         val dataRows = if (headerKeys.isNotEmpty()) normalizedRows.drop(1) else normalizedRows
-        var successCount = 0
+
+        val parsedRules = mutableListOf<KeywordRule>()
         var errorCount = 0
 
         dataRows.forEach { parts ->
-            if (parts.all { it.isBlank() }) {
-                return@forEach
-            }
-
+            if (parts.all { it.isBlank() }) return@forEach
             try {
                 val rule = if (headerKeys.isNotEmpty()) {
                     parseCsvRule(parts, headerKeys, categoryColumnMeansProperty)
                 } else {
                     parseLegacyCsvRule(parts)
                 }
-
-
-                if (rule != null) {
-                    keywordRuleRepository.insertRule(rule)
-                    successCount++
-                } else {
-                    errorCount++
-                }
+                if (rule != null) parsedRules.add(rule)
+                else errorCount++
             } catch (e: Exception) {
                 errorCount++
             }
         }
 
-        return if (successCount == 0 && errorCount == 0) {
-            ImportResult(0, 0, emptyMessage)
-        } else {
-            ImportResult(successCount, errorCount)
+        if (parsedRules.isEmpty() && errorCount == 0) {
+            return ImportResult(0, 0, emptyMessage)
         }
+
+        // 批量写入本地数据库，避免逐条 insertRule 触发后端同步超时
+        val tenantId = authManager.getTenantId() ?: ""
+        val now = System.currentTimeMillis()
+        val entities = parsedRules.map { rule ->
+            rule.copy(id = 0, createdAt = now, updatedAt = now).toEntity().copy(tenantId = tenantId)
+        }
+        keywordRuleDao.insertRules(entities)
+
+        // 一次性批量同步到后端
+        syncRulesToBackend(parsedRules)
+
+        return ImportResult(entities.size, errorCount)
     }
 
 
@@ -1237,8 +1242,38 @@ class KnowledgeBaseManager @Inject constructor(
         return (0..lastColumnIndex).map { index -> this[index].orEmpty().trim() }
     }
 
-    data class ImportResult(
+    /**
+     * 批量同步规则到后端（一次性调用 /api/rules/batch）
+     * 导入完成后调用，避免逐条同步的超时累积问题
+     */
+    private suspend fun syncRulesToBackend(rules: List<KeywordRule>) {
+        if (rules.isEmpty()) return
+        try {
+            withContext(Dispatchers.IO) {
+                val tenantId = authManager.getTenantId() ?: return@withContext
+                val dtoList = rules.map { rule ->
+                    com.csbaby.kefu.data.remote.backend.RuleDto(
+                        keyword = rule.keyword,
+                        matchType = rule.matchType.name,
+                        replyTemplate = rule.replyTemplate,
+                        category = rule.category,
+                        targetType = rule.targetType.name,
+                        targetNames = com.google.gson.Gson().toJson(rule.targetNames),
+                        priority = rule.priority,
+                        enabled = if (rule.enabled) 1 else 0
+                    )
+                }
+                // 使用 30 秒超时进行批量同步
+                withTimeoutOrNull(30_000L) {
+                    ruleBackendSync.batchPushToBackend(dtoList)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Batch sync to backend failed: ${e.message}")
+        }
+    }
 
+    data class ImportResult(
         val successCount: Int,
         val errorCount: Int,
         val errorMessage: String? = null

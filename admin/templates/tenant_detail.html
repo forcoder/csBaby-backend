@@ -23,6 +23,10 @@
     <div class="stat-card"><div class="stat-value">{{ tenant.get('history_count', 0) }}</div><div class="stat-label">回复数</div></div>
     <div class="stat-card"><div class="stat-value">{{ tenant.get('feedback_count', 0) }}</div><div class="stat-label">反馈数</div></div>
 </div>
+
+<h2>知识库管理</h2>
+<p><a href="/admin/tenants/{{ tenant.tenant_id }}/rules" class="btn btn-primary">管理知识库规则（共 {{ tenant.get('rule_count', 0) }} 条）</a></p>
+
 <h2>操作</h2>
 <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}" class="action-form">
     <input type="hidden" name="action" value="toggle_status">
