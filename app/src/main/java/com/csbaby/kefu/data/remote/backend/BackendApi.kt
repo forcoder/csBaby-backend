@@ -20,6 +20,9 @@ interface BackendApi {
     @POST("api/auth/heartbeat")
     suspend fun heartbeat(): Response<HeartbeatResponse>
 
+    @POST("api/auth/logout")
+    suspend fun logout(): Response<DeleteResponse>
+
     // ========== 知识库规则 ==========
 
     @GET("api/rules")

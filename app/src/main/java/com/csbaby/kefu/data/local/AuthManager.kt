@@ -63,11 +63,12 @@ class AuthManager(context: Context) {
             .putLong(KEY_EXPIRES_AT, expiresAt)
             .apply()
 
-        Timber.d("Auth saved: phone=$phoneNumber, tenantId=$tenantId")
+        Timber.d("Auth saved: phone=****${phoneNumber.takeLast(4)}, tenantId=$tenantId")
     }
 
     /**
      * 清除所有认证信息（登出）
+     * 注意：调用方应先调用 BackendClient.logout() 撤销服务端 token
      */
     fun clearAuth() {
         prefs.edit().clear().apply()
