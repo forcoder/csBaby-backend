@@ -32,8 +32,11 @@ class BackupManager @Inject constructor(
     private val aiModelConfigDao: AIModelConfigDao,
     private val userStyleProfileDao: UserStyleProfileDao,
     private val replyHistoryDao: ReplyHistoryDao,
-    private val messageBlacklistDao: MessageBlacklistDao
+    private val messageBlacklistDao: MessageBlacklistDao,
+    private val authManager: AuthManager
 ) {
+    private val tenantId: String
+        get() = authManager.getTenantId() ?: ""
     companion object {
         private const val TAG = "BackupManager"
         private const val BACKUP_FILE_NAME = "kefu_backup.zip"
@@ -192,6 +195,13 @@ class BackupManager @Inject constructor(
                             }
 
                             val file = File(tempDir, entry.name)
+                            // 防止 Zip Slip 路径遍历攻击
+                            if (!file.canonicalPath.startsWith(tempDir.canonicalPath)) {
+                                Timber.w("Zip slip detected, skipping: ${entry.name}")
+                                zipIn.closeEntry()
+                                entry = zipIn.nextEntry
+                                continue
+                            }
                             file.parentFile?.mkdirs()
 
                             if (!entry.isDirectory) {
@@ -475,7 +485,7 @@ class BackupManager @Inject constructor(
     // ==================== 导出 Sheet 构建 ====================
 
     private suspend fun buildAppConfigSheet(): ExcelUtils.ExcelSheet {
-        val apps = appConfigDao.getAllAppsList()
+        val apps = appConfigDao.getAllAppsList(tenantId)
         val header = listOf("packageName", "appName", "iconUri", "isMonitored", "createdAt", "lastUsed")
         val rows = mutableListOf(header)
         apps.forEach { app ->
@@ -488,7 +498,7 @@ class BackupManager @Inject constructor(
     }
 
     private suspend fun buildKeywordRulesSheet(): ExcelUtils.ExcelSheet {
-        val rules = keywordRuleDao.getAllRulesList()
+        val rules = keywordRuleDao.getAllRulesList(tenantId)
         val header = listOf("id", "keyword", "matchType", "replyTemplate", "category",
             "targetType", "targetNamesJson", "priority", "enabled", "createdAt", "updatedAt")
         val rows = mutableListOf(header)
@@ -503,7 +513,7 @@ class BackupManager @Inject constructor(
     }
 
     private suspend fun buildScenariosSheets(): List<ExcelUtils.ExcelSheet> {
-        val scenarios = scenarioDao.getAllScenariosList()
+        val scenarios = scenarioDao.getAllScenariosList(tenantId)
         val scenarioHeader = listOf("id", "name", "type", "targetId", "description", "createdAt")
         val scenarioRows = mutableListOf(scenarioHeader)
         val relationRows = mutableListOf(listOf("ruleId", "scenarioId"))
@@ -527,7 +537,7 @@ class BackupManager @Inject constructor(
     }
 
     private suspend fun buildAIModelsSheet(): ExcelUtils.ExcelSheet {
-        val models = aiModelConfigDao.getAllModelsList()
+        val models = aiModelConfigDao.getAllModelsList(tenantId)
         val header = listOf("id", "modelType", "modelName", "model", "apiKey", "apiEndpoint",
             "temperature", "maxTokens", "isDefault", "isEnabled", "monthlyCost", "lastUsed", "createdAt")
         val rows = mutableListOf(header)
@@ -543,7 +553,7 @@ class BackupManager @Inject constructor(
     }
 
     private suspend fun buildStyleProfilesSheet(): ExcelUtils.ExcelSheet {
-        val profiles = userStyleProfileDao.getAllProfiles()
+        val profiles = userStyleProfileDao.getAllProfiles(tenantId)
         // Flow-based, collect the first emission
         var result: ExcelUtils.ExcelSheet? = null
         profiles.collect { list ->
@@ -571,7 +581,7 @@ class BackupManager @Inject constructor(
     }
 
     private suspend fun buildReplyHistorySheet(): ExcelUtils.ExcelSheet {
-        val replies = replyHistoryDao.getAllReplies()
+        val replies = replyHistoryDao.getAllReplies(tenantId)
         val header = listOf("id", "sourceApp", "originalMessage", "generatedReply", "finalReply",
             "ruleMatchedId", "modelUsedId", "styleApplied", "sendTime", "modified", "featureKey", "variantId")
         val rows = mutableListOf(header)
@@ -587,7 +597,7 @@ class BackupManager @Inject constructor(
     }
 
     private suspend fun buildMessageBlacklistSheet(): ExcelUtils.ExcelSheet {
-        val items = messageBlacklistDao.getAllBlacklist()
+        val items = messageBlacklistDao.getAllBlacklist(tenantId)
         val header = listOf("id", "type", "value", "description", "packageName", "createdAt", "isEnabled")
         val rows = mutableListOf(header)
         items.forEach { item ->

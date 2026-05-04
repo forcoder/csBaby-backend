@@ -1,5 +1,6 @@
 package com.csbaby.kefu.data.repository
 
+import com.csbaby.kefu.data.local.AuthManager
 import com.csbaby.kefu.data.local.EntityMapper.toDomain
 import com.csbaby.kefu.data.local.EntityMapper.toEntity
 import com.csbaby.kefu.data.local.dao.ReplyHistoryDao
@@ -24,23 +25,27 @@ import javax.inject.Singleton
 class ReplyHistoryRepositoryImpl @Inject constructor(
     private val replyHistoryDao: ReplyHistoryDao,
     private val historyBackendSync: HistoryBackendSync,
-    private val networkMonitor: NetworkMonitor
+    private val networkMonitor: NetworkMonitor,
+    private val authManager: AuthManager
 ) : ReplyHistoryRepository {
 
     override fun getRecentReplies(limit: Int): Flow<List<ReplyHistory>> {
-        return replyHistoryDao.getRecentReplies(limit).map { entities ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return replyHistoryDao.getRecentReplies(tenantId, limit).map { entities ->
             entities.map { it.toDomain() }
         }
     }
 
     override fun getRepliesByApp(appPackage: String, limit: Int): Flow<List<ReplyHistory>> {
-        return replyHistoryDao.getRepliesByApp(appPackage, limit).map { entities ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return replyHistoryDao.getRepliesByApp(appPackage, tenantId, limit).map { entities ->
             entities.map { it.toDomain() }
         }
     }
 
     override suspend fun getReplyById(id: Long): ReplyHistory? {
-        return replyHistoryDao.getReplyById(id)?.toDomain()
+        val tenantId = authManager.getTenantId() ?: ""
+        return replyHistoryDao.getReplyById(id, tenantId)?.toDomain()
     }
 
     override suspend fun insertReply(reply: ReplyHistory): Long {
@@ -65,21 +70,35 @@ class ReplyHistoryRepositoryImpl @Inject constructor(
     }
 
     override suspend fun updateFinalReply(id: Long, finalReply: String) {
-        replyHistoryDao.updateFinalReply(id, finalReply)
+        val tenantId = authManager.getTenantId() ?: ""
+        replyHistoryDao.updateFinalReply(id, tenantId, finalReply)
         // 历史更新不需要实时同步到后端，由 SyncWorker 批量处理
     }
 
     override suspend fun deleteReply(id: Long) {
-        replyHistoryDao.deleteById(id)
+        val tenantId = authManager.getTenantId() ?: ""
+        replyHistoryDao.deleteById(id, tenantId)
     }
 
     override suspend fun getStyleAppliedReplies(limit: Int): List<ReplyHistory> {
-        return replyHistoryDao.getStyleAppliedReplies(limit).map { it.toDomain() }
+        val tenantId = authManager.getTenantId() ?: ""
+        return replyHistoryDao.getStyleAppliedReplies(tenantId, limit).map { it.toDomain() }
     }
 
-    override suspend fun getTotalCount(): Int = replyHistoryDao.getTotalCount()
+    override suspend fun getTotalCount(): Int {
+        val tenantId = authManager.getTenantId() ?: ""
+        return replyHistoryDao.getTotalCount(tenantId)
+    }
 
-    override suspend fun getModifiedCount(): Int = replyHistoryDao.getModifiedCount()
+    override suspend fun getTodayCount(startOfDay: Long): Int {
+        val tenantId = authManager.getTenantId() ?: ""
+        return replyHistoryDao.getTodayCount(tenantId, startOfDay)
+    }
+
+    override suspend fun getModifiedCount(): Int {
+        val tenantId = authManager.getTenantId() ?: ""
+        return replyHistoryDao.getModifiedCount(tenantId)
+    }
 
     companion object {
         private const val BACKEND_TIMEOUT_MS = 10_000L

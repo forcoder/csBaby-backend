@@ -1,5 +1,6 @@
 package com.csbaby.kefu.data.repository
 
+import com.csbaby.kefu.data.local.AuthManager
 import com.csbaby.kefu.data.local.EntityMapper.toDomain
 import com.csbaby.kefu.data.local.EntityMapper.toEntity
 import com.csbaby.kefu.data.local.dao.KeywordRuleDao
@@ -31,13 +32,15 @@ class KeywordRuleRepositoryImpl @Inject constructor(
     private val keywordRuleDao: KeywordRuleDao,
     private val scenarioDao: ScenarioDao,
     private val ruleBackendSync: RuleBackendSync,
-    private val networkMonitor: NetworkMonitor
+    private val networkMonitor: NetworkMonitor,
+    private val authManager: AuthManager
 ) : KeywordRuleRepository {
 
     // ========== 查询操作：后端优先，本地降级 ==========
 
     override fun getAllRules(): Flow<List<KeywordRule>> {
-        return keywordRuleDao.getAllRules().map { entities ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return keywordRuleDao.getAllRules(tenantId).map { entities ->
             entities.map { entity ->
                 val scenarios = scenarioDao.getScenarioIdsForRule(entity.id)
                 entity.toDomain(scenarios)
@@ -46,7 +49,8 @@ class KeywordRuleRepositoryImpl @Inject constructor(
     }
 
     override fun getEnabledRules(): Flow<List<KeywordRule>> {
-        return keywordRuleDao.getEnabledRules().map { entities ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return keywordRuleDao.getEnabledRules(tenantId).map { entities ->
             entities.map { entity ->
                 val scenarios = scenarioDao.getScenarioIdsForRule(entity.id)
                 entity.toDomain(scenarios)
@@ -55,7 +59,8 @@ class KeywordRuleRepositoryImpl @Inject constructor(
     }
 
     override fun getRulesByCategory(category: String): Flow<List<KeywordRule>> {
-        return keywordRuleDao.getRulesByCategory(category).map { entities ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return keywordRuleDao.getRulesByCategory(category, tenantId).map { entities ->
             entities.map { entity ->
                 val scenarios = scenarioDao.getScenarioIdsForRule(entity.id)
                 entity.toDomain(scenarios)
@@ -63,7 +68,10 @@ class KeywordRuleRepositoryImpl @Inject constructor(
         }
     }
 
-    override fun getAllCategories(): Flow<List<String>> = keywordRuleDao.getAllCategories()
+    override fun getAllCategories(): Flow<List<String>> {
+        val tenantId = authManager.getTenantId() ?: ""
+        return keywordRuleDao.getAllCategories(tenantId)
+    }
 
     override suspend fun getRuleById(id: Long): KeywordRule? {
         // 后端优先：尝试从后端获取
@@ -79,7 +87,8 @@ class KeywordRuleRepositoryImpl @Inject constructor(
                 Timber.w(e, "getRuleById: backend fetch failed, using local")
             }
         }
-        return keywordRuleDao.getRuleById(id)?.let { entity ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return keywordRuleDao.getRuleById(id, tenantId)?.let { entity ->
             val scenarios = scenarioDao.getScenarioIdsForRule(entity.id)
             entity.toDomain(scenarios)
         }
@@ -96,7 +105,8 @@ class KeywordRuleRepositoryImpl @Inject constructor(
                 Timber.w(e, "searchByKeyword: backend sync failed, using local")
             }
         }
-        return keywordRuleDao.searchByKeyword(keyword).map { entity ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return keywordRuleDao.searchByKeyword(keyword, tenantId).map { entity ->
             val scenarios = scenarioDao.getScenarioIdsForRule(entity.id)
             entity.toDomain(scenarios)
         }
@@ -160,9 +170,10 @@ class KeywordRuleRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteRule(id: Long) {
+        val tenantId = authManager.getTenantId() ?: ""
         // 先删除本地
         scenarioDao.deleteRelationsForRule(id)
-        keywordRuleDao.deleteById(id)
+        keywordRuleDao.deleteById(id, tenantId)
 
         // 网络可用时同步到后端
         if (networkMonitor.isNetworkAvailable) {
@@ -180,15 +191,31 @@ class KeywordRuleRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteAllRules() {
+        // 网络可用时先同步删除后端规则，防止 pullFromBackend 重新拉回已删除的规则
+        if (networkMonitor.isNetworkAvailable) {
+            try {
+                withTimeoutOrNull(BACKEND_TIMEOUT_MS) {
+                    ruleBackendSync.deleteAllFromBackend()
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "deleteAllRules: backend delete failed, clearing local anyway")
+            }
+        }
+        val tenantId = authManager.getTenantId() ?: ""
         scenarioDao.deleteAllRelations()
-        keywordRuleDao.deleteAllRules()
-        // 后端批量同步由 SyncWorker 处理
-        Timber.d("deleteAllRules: local cleared")
+        keywordRuleDao.deleteAllRules(tenantId)
+        Timber.d("deleteAllRules: cleared (local)")
     }
 
-    override suspend fun getRuleCount(): Int = keywordRuleDao.getRuleCount()
+    override suspend fun getRuleCount(): Int {
+        val tenantId = authManager.getTenantId() ?: ""
+        return keywordRuleDao.getRuleCount(tenantId)
+    }
 
-    override fun getRuleCountFlow(): Flow<Int> = keywordRuleDao.getRuleCountFlow()
+    override fun getRuleCountFlow(): Flow<Int> {
+        val tenantId = authManager.getTenantId() ?: ""
+        return keywordRuleDao.getRuleCountFlow(tenantId)
+    }
 
     override suspend fun getScenariosForRule(ruleId: Long): List<Long> {
         return scenarioDao.getScenarioIdsForRule(ruleId)

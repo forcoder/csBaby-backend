@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey
 data class UserStyleProfileEntity(
     @PrimaryKey
     val userId: String,
+    val tenantId: String = "",
     val formalityLevel: Float = 0.5f,
     val enthusiasmLevel: Float = 0.5f,
     val professionalismLevel: Float = 0.5f,

@@ -16,6 +16,30 @@ class BackendClient(
     private val context: Context
 ) {
     /**
+     * 多租户登录：手机号 + 密码
+     */
+    suspend fun login(phone: String, password: String): Result<LoginResponse> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val response = api.login(LoginRequest(phone, password))
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else {
+                    val error = parseError(response)
+                    Timber.e("Login failed: $error")
+                    Result.failure(Exception(error))
+                }
+            } catch (e: IOException) {
+                Timber.e(e, "Login network error")
+                Result.failure(Exception("网络连接失败，请检查网络"))
+            } catch (e: Exception) {
+                Timber.e(e, "Login error")
+                Result.failure(e)
+            }
+        }
+    }
+
+    /**
      * 注册设备并保存凭证
      */
     suspend fun register(appVersion: String): Result<AuthResponse> {

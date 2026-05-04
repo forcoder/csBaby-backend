@@ -1,5 +1,6 @@
 package com.csbaby.kefu.data.repository
 
+import com.csbaby.kefu.data.local.AuthManager
 import com.csbaby.kefu.data.local.EntityMapper.toDomain
 import com.csbaby.kefu.data.local.EntityMapper.toEntity
 import com.csbaby.kefu.data.local.dao.UserStyleProfileDao
@@ -12,15 +13,18 @@ import javax.inject.Singleton
 
 @Singleton
 class UserStyleRepositoryImpl @Inject constructor(
-    private val userStyleProfileDao: UserStyleProfileDao
+    private val userStyleProfileDao: UserStyleProfileDao,
+    private val authManager: AuthManager
 ) : UserStyleRepository {
 
     override fun getProfile(userId: String): Flow<UserStyleProfile?> {
-        return userStyleProfileDao.getProfileByUserId(userId).map { it?.toDomain() }
+        val tenantId = authManager.getTenantId() ?: ""
+        return userStyleProfileDao.getProfileByUserId(userId, tenantId).map { it?.toDomain() }
     }
 
     override suspend fun getProfileSync(userId: String): UserStyleProfile? {
-        return userStyleProfileDao.getProfileByUserIdSync(userId)?.toDomain()
+        val tenantId = authManager.getTenantId() ?: ""
+        return userStyleProfileDao.getProfileByUserIdSync(userId, tenantId)?.toDomain()
     }
 
     override suspend fun saveProfile(profile: UserStyleProfile) {
@@ -32,22 +36,27 @@ class UserStyleRepositoryImpl @Inject constructor(
     }
 
     override suspend fun updateFormalityLevel(userId: String, formality: Float) {
-        userStyleProfileDao.updateFormalityLevel(userId, formality.coerceIn(0f, 1f))
+        val tenantId = authManager.getTenantId() ?: ""
+        userStyleProfileDao.updateFormalityLevel(userId, tenantId, formality.coerceIn(0f, 1f))
     }
 
     override suspend fun updateEnthusiasmLevel(userId: String, enthusiasm: Float) {
-        userStyleProfileDao.updateEnthusiasmLevel(userId, enthusiasm.coerceIn(0f, 1f))
+        val tenantId = authManager.getTenantId() ?: ""
+        userStyleProfileDao.updateEnthusiasmLevel(userId, tenantId, enthusiasm.coerceIn(0f, 1f))
     }
 
     override suspend fun updateProfessionalismLevel(userId: String, professionalism: Float) {
-        userStyleProfileDao.updateProfessionalismLevel(userId, professionalism.coerceIn(0f, 1f))
+        val tenantId = authManager.getTenantId() ?: ""
+        userStyleProfileDao.updateProfessionalismLevel(userId, tenantId, professionalism.coerceIn(0f, 1f))
     }
 
     override suspend fun incrementLearningSamples(userId: String) {
-        userStyleProfileDao.incrementLearningSamples(userId, System.currentTimeMillis())
+        val tenantId = authManager.getTenantId() ?: ""
+        userStyleProfileDao.incrementLearningSamples(userId, tenantId, System.currentTimeMillis())
     }
 
     override suspend fun updateAccuracyScore(userId: String, score: Float) {
-        userStyleProfileDao.updateAccuracyScore(userId, score.coerceIn(0f, 1f))
+        val tenantId = authManager.getTenantId() ?: ""
+        userStyleProfileDao.updateAccuracyScore(userId, tenantId, score.coerceIn(0f, 1f))
     }
 }

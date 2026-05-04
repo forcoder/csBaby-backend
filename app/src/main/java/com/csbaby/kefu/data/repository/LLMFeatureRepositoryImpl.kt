@@ -1,5 +1,6 @@
 package com.csbaby.kefu.data.repository
 
+import com.csbaby.kefu.data.local.AuthManager
 import com.csbaby.kefu.data.local.EntityMapper.toDomain
 import com.csbaby.kefu.data.local.EntityMapper.toEntity
 import com.csbaby.kefu.data.local.dao.FeatureVariantDao
@@ -15,28 +16,33 @@ import javax.inject.Singleton
 @Singleton
 class LLMFeatureRepositoryImpl @Inject constructor(
     private val llmFeatureDao: LLMFeatureDao,
-    private val featureVariantDao: FeatureVariantDao
+    private val featureVariantDao: FeatureVariantDao,
+    private val authManager: AuthManager
 ) : LLMFeatureRepository {
 
     // Feature methods
     override fun getAllFeatures(): Flow<List<LLMFeature>> {
-        return llmFeatureDao.getAll().map { entities ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return llmFeatureDao.getAll(tenantId).map { entities ->
             entities.map { it.toDomain() }
         }
     }
 
     override fun getEnabledFeatures(): Flow<List<LLMFeature>> {
-        return llmFeatureDao.getEnabled().map { entities ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return llmFeatureDao.getEnabled(tenantId).map { entities ->
             entities.map { it.toDomain() }
         }
     }
 
     override suspend fun getFeatureByFeatureKey(featureKey: String): LLMFeature? {
-        return llmFeatureDao.getByFeatureKey(featureKey)?.toDomain()
+        val tenantId = authManager.getTenantId() ?: ""
+        return llmFeatureDao.getByFeatureKey(featureKey, tenantId)?.toDomain()
     }
 
     override suspend fun getFeatureById(id: Long): LLMFeature? {
-        return llmFeatureDao.getById(id)?.toDomain()
+        val tenantId = authManager.getTenantId() ?: ""
+        return llmFeatureDao.getById(id, tenantId)?.toDomain()
     }
 
     override suspend fun insertFeature(feature: LLMFeature): Long {
@@ -48,30 +54,36 @@ class LLMFeatureRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteFeature(id: Long) {
-        llmFeatureDao.deleteById(id)
+        val tenantId = authManager.getTenantId() ?: ""
+        llmFeatureDao.deleteById(id, tenantId)
     }
 
     override suspend fun setFeatureEnabled(featureKey: String, enabled: Boolean) {
-        llmFeatureDao.setEnabled(featureKey, enabled)
+        val tenantId = authManager.getTenantId() ?: ""
+        llmFeatureDao.setEnabled(featureKey, tenantId, enabled)
     }
 
     override suspend fun updateDefaultVariant(featureKey: String, variantId: Long) {
-        llmFeatureDao.updateDefaultVariant(featureKey, variantId)
+        val tenantId = authManager.getTenantId() ?: ""
+        llmFeatureDao.updateDefaultVariant(featureKey, tenantId, variantId)
     }
 
     // Variant methods
     override fun getVariantsByFeatureId(featureId: Long): Flow<List<FeatureVariant>> {
-        return featureVariantDao.getByFeatureId(featureId).map { entities ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return featureVariantDao.getByFeatureId(featureId, tenantId).map { entities ->
             entities.map { it.toDomain() }
         }
     }
 
     override suspend fun getVariantById(id: Long): FeatureVariant? {
-        return featureVariantDao.getById(id)?.toDomain()
+        val tenantId = authManager.getTenantId() ?: ""
+        return featureVariantDao.getById(id, tenantId)?.toDomain()
     }
 
     override suspend fun getActiveVariants(featureId: Long): List<FeatureVariant> {
-        return featureVariantDao.getActiveVariants(featureId).map { it.toDomain() }
+        val tenantId = authManager.getTenantId() ?: ""
+        return featureVariantDao.getActiveVariants(featureId, tenantId).map { it.toDomain() }
     }
 
     override suspend fun insertVariant(variant: FeatureVariant): Long {
@@ -83,18 +95,22 @@ class LLMFeatureRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteVariant(id: Long) {
-        featureVariantDao.deleteById(id)
+        val tenantId = authManager.getTenantId() ?: ""
+        featureVariantDao.deleteById(id, tenantId)
     }
 
     override suspend fun deactivateAllVariants(featureId: Long) {
-        featureVariantDao.deactivateAllByFeatureId(featureId)
+        val tenantId = authManager.getTenantId() ?: ""
+        featureVariantDao.deactivateAllByFeatureId(featureId, tenantId)
     }
 
     override suspend fun setVariantActive(id: Long, isActive: Boolean) {
-        featureVariantDao.setActive(id, isActive)
+        val tenantId = authManager.getTenantId() ?: ""
+        featureVariantDao.setActive(id, tenantId, isActive)
     }
 
     override suspend fun setVariantTrafficPercentage(id: Long, percentage: Int) {
-        featureVariantDao.setTrafficPercentage(id, percentage)
+        val tenantId = authManager.getTenantId() ?: ""
+        featureVariantDao.setTrafficPercentage(id, tenantId, percentage)
     }
 }

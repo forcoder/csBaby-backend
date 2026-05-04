@@ -1,5 +1,6 @@
 package com.csbaby.kefu.data.remote.backend
 
+import com.csbaby.kefu.data.local.AuthManager
 import com.csbaby.kefu.data.local.dao.AIModelConfigDao
 import com.csbaby.kefu.data.local.entity.AIModelConfigEntity
 import com.csbaby.kefu.domain.model.AIModelConfig
@@ -12,20 +13,22 @@ import timber.log.Timber
  */
 class ModelBackendSync(
     private val backendClient: BackendClient,
-    private val aiModelConfigDao: AIModelConfigDao
+    private val aiModelConfigDao: AIModelConfigDao,
+    private val authManager: AuthManager
 ) {
     suspend fun pullFromBackend(): Result<Int> = withContext(Dispatchers.IO) {
         try {
+            val tenantId = authManager.getTenantId() ?: ""
             val result = backendClient.getModels()
             result.fold(
                 onSuccess = { modelDtos ->
                     // 保存现有的 monthlyCost 和 lastUsed
-                    val existingModels = aiModelConfigDao.getAllModelsList()
+                    val existingModels = aiModelConfigDao.getAllModelsList(tenantId)
                     val costMap = existingModels.associate { it.id to it.monthlyCost }
                     val lastUsedMap = existingModels.associate { it.id to it.lastUsed }
 
                     val entities = modelDtos.map { dto ->
-                        val entity = dto.toEntity()
+                        val entity = dto.toEntity().copy(tenantId = tenantId)
                         // 保留本地累计数据
                         entity.copy(
                             monthlyCost = costMap[entity.id] ?: 0.0,
@@ -33,7 +36,7 @@ class ModelBackendSync(
                         )
                     }
                     // 清除并重新插入
-                    existingModels.forEach { aiModelConfigDao.deleteById(it.id) }
+                    existingModels.forEach { aiModelConfigDao.deleteById(it.id, tenantId) }
                     entities.forEach { aiModelConfigDao.insertModel(it) }
                     Timber.d("Pulled ${entities.size} models from backend")
                     Result.success(entities.size)

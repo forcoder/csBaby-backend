@@ -1,5 +1,6 @@
 package com.csbaby.kefu.data.repository
 
+import com.csbaby.kefu.data.local.AuthManager
 import com.csbaby.kefu.data.local.EntityMapper.toDomain
 import com.csbaby.kefu.data.local.EntityMapper.toEntity
 import com.csbaby.kefu.data.local.dao.ScenarioDao
@@ -12,17 +13,20 @@ import javax.inject.Singleton
 
 @Singleton
 class ScenarioRepositoryImpl @Inject constructor(
-    private val scenarioDao: ScenarioDao
+    private val scenarioDao: ScenarioDao,
+    private val authManager: AuthManager
 ) : ScenarioRepository {
 
     override fun getAllScenarios(): Flow<List<Scenario>> {
-        return scenarioDao.getAllScenarios().map { entities ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return scenarioDao.getAllScenarios(tenantId).map { entities ->
             entities.map { it.toDomain() }
         }
     }
 
     override suspend fun getScenarioById(id: Long): Scenario? {
-        return scenarioDao.getScenarioById(id)?.toDomain()
+        val tenantId = authManager.getTenantId() ?: ""
+        return scenarioDao.getScenarioById(id, tenantId)?.toDomain()
     }
 
     override suspend fun insertScenario(scenario: Scenario): Long {
@@ -34,6 +38,7 @@ class ScenarioRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteScenario(id: Long) {
-        scenarioDao.deleteScenario(scenarioDao.getScenarioById(id)!!)
+        val tenantId = authManager.getTenantId() ?: ""
+        scenarioDao.deleteScenario(scenarioDao.getScenarioById(id, tenantId)!!)
     }
 }

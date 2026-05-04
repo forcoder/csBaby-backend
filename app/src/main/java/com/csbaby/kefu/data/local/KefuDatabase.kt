@@ -25,7 +25,7 @@ import com.csbaby.kefu.data.local.migration.Migration5to6
         OptimizationEventEntity::class,
         ReplyFeedbackEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

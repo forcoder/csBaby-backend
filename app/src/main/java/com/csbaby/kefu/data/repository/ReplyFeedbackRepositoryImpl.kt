@@ -1,5 +1,6 @@
 package com.csbaby.kefu.data.repository
 
+import com.csbaby.kefu.data.local.AuthManager
 import com.csbaby.kefu.data.local.EntityMapper.toDomain
 import com.csbaby.kefu.data.local.EntityMapper.toEntity
 import com.csbaby.kefu.data.local.dao.ReplyFeedbackDao
@@ -13,21 +14,25 @@ import javax.inject.Singleton
 
 @Singleton
 class ReplyFeedbackRepositoryImpl @Inject constructor(
-    private val replyFeedbackDao: ReplyFeedbackDao
+    private val replyFeedbackDao: ReplyFeedbackDao,
+    private val authManager: AuthManager
 ) : ReplyFeedbackRepository {
 
     override suspend fun getFeedbackByReplyHistoryId(replyHistoryId: Long): ReplyFeedback? {
-        return replyFeedbackDao.getByReplyHistoryId(replyHistoryId)?.toDomain()
+        val tenantId = authManager.getTenantId() ?: ""
+        return replyFeedbackDao.getByReplyHistoryId(replyHistoryId, tenantId)?.toDomain()
     }
 
     override fun getFeedbacksByVariantId(variantId: Long): Flow<List<ReplyFeedback>> {
-        return replyFeedbackDao.getByVariantId(variantId).map { entities ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return replyFeedbackDao.getByVariantId(variantId, tenantId).map { entities ->
             entities.map { it.toDomain() }
         }
     }
 
     override suspend fun getFeedbacksInDateRange(startDate: Long, endDate: Long): List<ReplyFeedback> {
-        return replyFeedbackDao.getFeedbacksInDateRange(startDate, endDate).map { it.toDomain() }
+        val tenantId = authManager.getTenantId() ?: ""
+        return replyFeedbackDao.getFeedbacksInDateRange(startDate, endDate, tenantId).map { it.toDomain() }
     }
 
     override suspend fun insertFeedback(feedback: ReplyFeedback): Long {
@@ -39,6 +44,7 @@ class ReplyFeedbackRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getCountByAction(variantId: Long, action: FeedbackAction): Int {
-        return replyFeedbackDao.getCountByAction(variantId, action.name)
+        val tenantId = authManager.getTenantId() ?: ""
+        return replyFeedbackDao.getCountByAction(variantId, action.name, tenantId)
     }
 }

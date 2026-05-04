@@ -20,6 +20,20 @@ data class HeartbeatResponse(
     val status: String = ""
 )
 
+// ========== 多租户认证 ==========
+
+data class LoginRequest(
+    val phone: String = "",
+    val password: String = ""
+)
+
+data class LoginResponse(
+    val token: String = "",
+    @SerializedName("tenant_id") val tenantId: String = "",
+    @SerializedName("phone_number") val phoneNumber: String = "",
+    @SerializedName("expires_in") val expiresIn: Long = 0
+)
+
 // ========== 知识库规则 ==========
 
 data class RuleDto(

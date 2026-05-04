@@ -11,7 +11,8 @@ import androidx.room.PrimaryKey
 data class MessageBlacklistEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
-    
+    val tenantId: String = "",
+
     // 黑名单类型：KEYWORD（关键词）、SENDER（发送者）、CONTENT（内容）
     val type: String,
     

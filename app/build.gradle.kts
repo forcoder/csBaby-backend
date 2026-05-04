@@ -4,8 +4,8 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.dagger.hilt.android")
-    id("androidx.room") version "2.6.1"
     kotlin("kapt")
+    id("androidx.room") version "2.6.1"
     id("com.google.devtools.ksp")
 }
 

@@ -1,5 +1,6 @@
 package com.csbaby.kefu.data.repository
 
+import com.csbaby.kefu.data.local.AuthManager
 import com.csbaby.kefu.data.local.EntityMapper.toDomain
 import com.csbaby.kefu.data.local.EntityMapper.toEntity
 import com.csbaby.kefu.data.local.dao.OptimizationEventDao
@@ -15,26 +16,31 @@ import javax.inject.Singleton
 @Singleton
 class OptimizationRepositoryImpl @Inject constructor(
     private val optimizationMetricsDao: OptimizationMetricsDao,
-    private val optimizationEventDao: OptimizationEventDao
+    private val optimizationEventDao: OptimizationEventDao,
+    private val authManager: AuthManager
 ) : OptimizationRepository {
 
     // Metrics methods
     override fun getMetricsByFeatureKey(featureKey: String): Flow<List<OptimizationMetrics>> {
-        return optimizationMetricsDao.getByFeatureKey(featureKey).map { entities ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return optimizationMetricsDao.getByFeatureKey(featureKey, tenantId).map { entities ->
             entities.map { it.toDomain() }
         }
     }
 
     override suspend fun getMetricsByFeatureKeyAndDate(featureKey: String, date: String): OptimizationMetrics? {
-        return optimizationMetricsDao.getByFeatureKeyAndDate(featureKey, date)?.toDomain()
+        val tenantId = authManager.getTenantId() ?: ""
+        return optimizationMetricsDao.getByFeatureKeyAndDate(featureKey, date, tenantId)?.toDomain()
     }
 
     override suspend fun getMetricsByVariantAndDateRange(variantId: Long, startDate: String, endDate: String): List<OptimizationMetrics> {
-        return optimizationMetricsDao.getByVariantAndDateRange(variantId, startDate, endDate).map { it.toDomain() }
+        val tenantId = authManager.getTenantId() ?: ""
+        return optimizationMetricsDao.getByVariantAndDateRange(variantId, startDate, endDate, tenantId).map { it.toDomain() }
     }
 
     override suspend fun getMetricsByFeatureKeyAndDateRange(featureKey: String, startDate: String, endDate: String): List<OptimizationMetrics> {
-        return optimizationMetricsDao.getByFeatureKeyAndDateRange(featureKey, startDate, endDate).map { it.toDomain() }
+        val tenantId = authManager.getTenantId() ?: ""
+        return optimizationMetricsDao.getByFeatureKeyAndDateRange(featureKey, startDate, endDate, tenantId).map { it.toDomain() }
     }
 
     override suspend fun upsertMetrics(metrics: OptimizationMetrics) {
@@ -43,13 +49,15 @@ class OptimizationRepositoryImpl @Inject constructor(
 
     // Event methods
     override fun getEventsByFeatureKey(featureKey: String): Flow<List<OptimizationEvent>> {
-        return optimizationEventDao.getByFeatureKey(featureKey).map { entities ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return optimizationEventDao.getByFeatureKey(featureKey, tenantId).map { entities ->
             entities.map { it.toDomain() }
         }
     }
 
     override fun getAllEvents(): Flow<List<OptimizationEvent>> {
-        return optimizationEventDao.getAll().map { entities ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return optimizationEventDao.getAll(tenantId).map { entities ->
             entities.map { it.toDomain() }
         }
     }

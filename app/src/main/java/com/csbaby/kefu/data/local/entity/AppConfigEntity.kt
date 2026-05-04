@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey
 data class AppConfigEntity(
     @PrimaryKey
     val packageName: String,
+    val tenantId: String = "",
     val appName: String,
     val iconUri: String?,
     val isMonitored: Boolean = false,

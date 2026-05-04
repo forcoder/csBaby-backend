@@ -75,5 +75,6 @@ interface ReplyHistoryRepository {
     suspend fun deleteReply(id: Long)
     suspend fun getStyleAppliedReplies(limit: Int = 100): List<ReplyHistory>
     suspend fun getTotalCount(): Int
+    suspend fun getTodayCount(startOfDay: Long): Int
     suspend fun getModifiedCount(): Int
 }

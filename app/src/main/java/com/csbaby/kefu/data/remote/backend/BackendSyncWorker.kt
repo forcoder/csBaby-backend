@@ -7,6 +7,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.csbaby.kefu.data.local.AuthManager
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import timber.log.Timber
@@ -23,11 +24,18 @@ class BackendSyncWorker @AssistedInject constructor(
     private val syncManager: BackendSyncManager,
     private val ruleBackendSync: RuleBackendSync,
     private val modelBackendSync: ModelBackendSync,
-    private val historyBackendSync: HistoryBackendSync
+    private val historyBackendSync: HistoryBackendSync,
+    private val authManager: AuthManager
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
         Timber.d("BackendSyncWorker: starting periodic sync")
+
+        // 0. 检查登录状态
+        if (!authManager.isLoggedIn) {
+            Timber.w("BackendSyncWorker: user not logged in, skipping sync")
+            return Result.retry()
+        }
 
         // 1. 确保设备已注册
         if (!syncManager.registerIfNeeded()) {

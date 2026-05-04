@@ -14,7 +14,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -23,11 +22,15 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.csbaby.kefu.R
+import com.csbaby.kefu.data.local.AuthManager
+import com.csbaby.kefu.presentation.screens.auth.LoginScreen
 import com.csbaby.kefu.presentation.screens.blacklist.BlacklistScreen
+import com.csbaby.kefu.presentation.screens.history.HistoryScreen
 import com.csbaby.kefu.presentation.screens.home.HomeScreen
 import com.csbaby.kefu.presentation.screens.knowledge.KnowledgeScreen
 import com.csbaby.kefu.presentation.screens.model.ModelScreen
 import com.csbaby.kefu.presentation.screens.profile.ProfileScreen
+import javax.inject.Inject
 
 sealed class Screen(
     val route: String,
@@ -47,10 +50,39 @@ val bottomNavItems = listOf(
     Screen.Profile
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * 根导航器：根据登录状态决定起始页面
+ */
 @Composable
-fun AppNavigation() {
+fun RootNavigation(authManager: AuthManager) {
     val navController = rememberNavController()
+    val startDest = if (authManager.isLoggedIn) Screen.Home.route else "login"
+
+    NavHost(
+        navController = navController,
+        startDestination = startDest
+    ) {
+        composable("login") {
+            LoginScreen(
+                onLoginSuccess = {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo("login") { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable(Screen.Home.route) {
+            MainNavigation(navController = navController)
+        }
+    }
+}
+
+/**
+ * 主导航（底部导航栏 + 子页面）
+ */
+@Composable
+fun MainNavigation(navController: NavHostController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val showBottomBar = currentDestination?.route in bottomNavItems.map { it.route }
@@ -59,73 +91,91 @@ fun AppNavigation() {
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             if (showBottomBar) {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp,
-                modifier = Modifier
-                    .padding(horizontal = 8.dp)
-                    .padding(bottom = 8.dp)
-            ) {
-                bottomNavItems.forEach { screen ->
-                    NavigationBarItem(
-                        icon = { 
-                            Icon(
-                                screen.icon, 
-                                contentDescription = stringResource(screen.titleResId),
-                                modifier = Modifier.size(24.dp)
-                            ) 
-                        },
-                        label = { 
-                            Text(
-                                stringResource(screen.titleResId),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = if (currentDestination?.hierarchy?.any { it.route == screen.route } == true) {
-                                    androidx.compose.ui.text.font.FontWeight.SemiBold
-                                } else {
-                                    androidx.compose.ui.text.font.FontWeight.Normal
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 8.dp,
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp)
+                        .padding(bottom = 8.dp)
+                ) {
+                    bottomNavItems.forEach { screen ->
+                        NavigationBarItem(
+                            icon = {
+                                Icon(
+                                    screen.icon,
+                                    contentDescription = stringResource(screen.titleResId),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            },
+                            label = {
+                                Text(
+                                    stringResource(screen.titleResId),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (currentDestination?.hierarchy?.any { it.route == screen.route } == true) {
+                                        androidx.compose.ui.text.font.FontWeight.SemiBold
+                                    } else {
+                                        androidx.compose.ui.text.font.FontWeight.Normal
+                                    }
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                            onClick = {
+                                navController.navigate(screen.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                            ) 
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
-                        onClick = {
-                            navController.navigate(screen.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
                             }
-                        }
-                    )
+                        )
+                    }
                 }
-            }
             }
         }
     ) { innerPadding ->
-
         NavHost(
             navController = navController,
             startDestination = Screen.Home.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(Screen.Home.route) { HomeScreen() }
+            composable(Screen.Home.route) {
+                HomeScreen(
+                    onNavigateToHistory = {
+                        navController.navigate("history")
+                    },
+                    onNavigateToKnowledge = {
+                        navController.navigate(Screen.Knowledge.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
+            }
             composable(Screen.Knowledge.route) { KnowledgeScreen() }
             composable(Screen.Models.route) { ModelScreen() }
-            composable(Screen.Profile.route) { 
+            composable(Screen.Profile.route) {
                 ProfileScreen(
                     onNavigateToBlacklist = {
                         navController.navigate("blacklist")
                     }
                 )
             }
-                        
+            composable("history") {
+                HistoryScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
             composable("blacklist") {
                 BlacklistScreen(
                     onNavigateBack = { navController.popBackStack() }

@@ -19,6 +19,7 @@ import androidx.room.PrimaryKey
 data class FeatureVariantEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
+    val tenantId: String = "",
     val featureId: Long,
     val variantName: String,
     val variantType: String, // PROMPT / MODEL / STRATEGY

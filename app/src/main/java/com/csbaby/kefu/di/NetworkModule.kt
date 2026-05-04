@@ -12,8 +12,11 @@ import com.csbaby.kefu.data.remote.backend.BackendSyncManager
 import com.csbaby.kefu.data.remote.backend.HistoryBackendSync
 import com.csbaby.kefu.data.remote.backend.ModelBackendSync
 import com.csbaby.kefu.data.remote.backend.RuleBackendSync
+import com.csbaby.kefu.data.local.AuthManager
+import com.csbaby.kefu.data.remote.backend.AuthInterceptor
 import com.csbaby.kefu.data.remote.backend.TokenInterceptor
 import com.csbaby.kefu.infrastructure.error.ErrorHandler
+import com.csbaby.kefu.BuildConfig
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -46,7 +49,7 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
         val loggingInterceptor = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY else HttpLoggingInterceptor.Level.NONE
         }
 
         return OkHttpClient.Builder()
@@ -81,19 +84,25 @@ object NetworkModule {
         return TokenInterceptor(context)
     }
 
+    @Provides
+    @Singleton
+    fun provideAuthInterceptor(authManager: AuthManager): AuthInterceptor {
+        return AuthInterceptor(authManager)
+    }
+
     /** 后端专用 OkHttpClient，带 Token 认证 */
     @Provides
     @Singleton
     @BackendHttpClient
     fun provideBackendOkHttpClient(
-        tokenInterceptor: TokenInterceptor
+        authInterceptor: AuthInterceptor
     ): OkHttpClient {
         val loggingInterceptor = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY else HttpLoggingInterceptor.Level.NONE
         }
 
         return OkHttpClient.Builder()
-            .addInterceptor(tokenInterceptor)
+            .addInterceptor(authInterceptor)
             .addInterceptor(loggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
@@ -134,27 +143,30 @@ object NetworkModule {
     @Singleton
     fun provideRuleBackendSync(
         backendClient: BackendClient,
-        keywordRuleDao: KeywordRuleDao
+        keywordRuleDao: KeywordRuleDao,
+        authManager: AuthManager
     ): RuleBackendSync {
-        return RuleBackendSync(backendClient, keywordRuleDao)
+        return RuleBackendSync(backendClient, keywordRuleDao, authManager)
     }
 
     @Provides
     @Singleton
     fun provideModelBackendSync(
         backendClient: BackendClient,
-        aiModelConfigDao: AIModelConfigDao
+        aiModelConfigDao: AIModelConfigDao,
+        authManager: AuthManager
     ): ModelBackendSync {
-        return ModelBackendSync(backendClient, aiModelConfigDao)
+        return ModelBackendSync(backendClient, aiModelConfigDao, authManager)
     }
 
     @Provides
     @Singleton
     fun provideHistoryBackendSync(
         backendClient: BackendClient,
-        replyHistoryDao: ReplyHistoryDao
+        replyHistoryDao: ReplyHistoryDao,
+        authManager: AuthManager
     ): HistoryBackendSync {
-        return HistoryBackendSync(backendClient, replyHistoryDao)
+        return HistoryBackendSync(backendClient, replyHistoryDao, authManager)
     }
 
     @Provides

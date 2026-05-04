@@ -4,11 +4,13 @@ import android.content.Context
 import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.csbaby.kefu.data.local.AuthManager
 import com.csbaby.kefu.data.local.KefuDatabase
 import com.csbaby.kefu.data.local.PreferencesManager
 import com.csbaby.kefu.data.local.dao.*
 import com.csbaby.kefu.data.local.migration.Migration5to6
 import com.csbaby.kefu.data.local.migration.Migration6to7
+import com.csbaby.kefu.data.local.migration.Migration7to8
 
 import dagger.Module
 import dagger.Provides
@@ -29,7 +31,7 @@ object DatabaseModule {
             KefuDatabase::class.java,
             KefuDatabase.DATABASE_NAME
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_4_6, Migration5to6(), Migration6to7())
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_4_6, Migration5to6(), Migration6to7(), Migration7to8())
             .fallbackToDestructiveMigration()
             .build()
     }
@@ -111,6 +113,12 @@ object DatabaseModule {
     @Singleton
     fun providePreferencesManager(@ApplicationContext context: Context): PreferencesManager {
         return PreferencesManager(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAuthManager(@ApplicationContext context: Context): AuthManager {
+        return AuthManager(context)
     }
 
     private val MIGRATION_1_2 = object : Migration(1, 2) {

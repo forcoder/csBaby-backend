@@ -1,5 +1,6 @@
 package com.csbaby.kefu.presentation.screens.home
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 
 import androidx.compose.foundation.lazy.LazyColumn
@@ -41,6 +42,8 @@ import com.csbaby.kefu.R
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
+    onNavigateToHistory: () -> Unit = {},
+    onNavigateToKnowledge: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -88,7 +91,10 @@ fun HomeScreen(
             QuickStatsCard(
                 totalReplies = uiState.totalReplies,
                 todayReplies = uiState.todayReplies,
-                knowledgeBaseCount = uiState.knowledgeBaseCount
+                knowledgeBaseCount = uiState.knowledgeBaseCount,
+                onTotalRepliesClick = { onNavigateToHistory() },
+                onTodayRepliesClick = { onNavigateToHistory() },
+                onKnowledgeBaseClick = { onNavigateToKnowledge() }
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -349,7 +355,10 @@ fun MonitoredAppsDialog(
 fun QuickStatsCard(
     totalReplies: Int,
     todayReplies: Int,
-    knowledgeBaseCount: Int
+    knowledgeBaseCount: Int,
+    onTotalRepliesClick: () -> Unit = {},
+    onTodayRepliesClick: () -> Unit = {},
+    onKnowledgeBaseClick: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -362,19 +371,33 @@ fun QuickStatsCard(
                 .padding(20.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            StatItem(label = "总回复", value = totalReplies.toString())
-            StatItem(label = "今日", value = todayReplies.toString())
-            StatItem(label = "知识库", value = knowledgeBaseCount.toString())
+            StatItem(
+                label = "总回复",
+                value = totalReplies.toString(),
+                onClick = onTotalRepliesClick
+            )
+            StatItem(
+                label = "今日",
+                value = todayReplies.toString(),
+                onClick = onTodayRepliesClick
+            )
+            StatItem(
+                label = "知识库",
+                value = knowledgeBaseCount.toString(),
+                onClick = onKnowledgeBaseClick
+            )
         }
     }
 }
 
 @Composable
-fun StatItem(label: String, value: String) {
+fun StatItem(label: String, value: String, onClick: () -> Unit = {}) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
-        modifier = Modifier.padding(12.dp)
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(12.dp)
     ) {
         Text(
             text = value,

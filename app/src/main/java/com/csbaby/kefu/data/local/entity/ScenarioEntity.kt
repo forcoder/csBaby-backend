@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey
 data class ScenarioEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
+    val tenantId: String = "",
     val name: String,
     val type: String, // ALL_PROPERTIES, SPECIFIC_PROPERTY, PRODUCT
     val targetId: String?,

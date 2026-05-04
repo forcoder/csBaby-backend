@@ -10,6 +10,8 @@ data class OptimizationMetricsEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     @ColumnInfo(defaultValue = "''")
+    val tenantId: String = "",
+    @ColumnInfo(defaultValue = "''")
     val featureKey: String,
     @ColumnInfo(defaultValue = "0")
     val variantId: Long,

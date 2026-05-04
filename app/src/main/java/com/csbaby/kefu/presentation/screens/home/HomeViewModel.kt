@@ -59,13 +59,12 @@ class HomeViewModel @Inject constructor(
 
         viewModelScope.launch {
             replyHistoryRepository.getRecentReplies(10).collect { replies ->
+                val startOfDay = getStartOfDay()
                 _uiState.update { state ->
                     state.copy(
                         recentReplies = replies,
                         totalReplies = replyHistoryRepository.getTotalCount(),
-                        todayReplies = replies.count {
-                            isToday(it.sendTime)
-                        }
+                        todayReplies = replyHistoryRepository.getTodayCount(startOfDay)
                     )
                 }
             }
@@ -107,10 +106,13 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private fun isToday(timestamp: Long): Boolean {
-        val now = System.currentTimeMillis()
-        val dayInMillis = 24 * 60 * 60 * 1000
-        return (now - timestamp) < dayInMillis
+    private fun getStartOfDay(): Long {
+        val cal = java.util.Calendar.getInstance()
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
     }
 
     private data class SupportedApp(

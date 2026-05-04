@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey
 data class KeywordRuleEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
+    val tenantId: String = "",
     val keyword: String,
     val matchType: String, // EXACT, CONTAINS, REGEX
     val replyTemplate: String,

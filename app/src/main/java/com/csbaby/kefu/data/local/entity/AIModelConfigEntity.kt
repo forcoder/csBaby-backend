@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey
 data class AIModelConfigEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
+    val tenantId: String = "",
     val modelType: String, // OPENAI, CLAUDE, ZHIPU, TONGYI, CUSTOM
     val modelName: String,
     val model: String = "", // 模型具体名称，如gpt-4、claude-3-opus等

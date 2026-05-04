@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey
 data class LLMFeatureEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
+    val tenantId: String = "",
     val featureKey: String,
     val displayName: String,
     val description: String,

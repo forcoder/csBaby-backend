@@ -87,7 +87,7 @@ fun KefuTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.primary.toArgb()
+            window.statusBarColor = colorScheme.surfaceVariant.toArgb()
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !when (themeMode) {
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true

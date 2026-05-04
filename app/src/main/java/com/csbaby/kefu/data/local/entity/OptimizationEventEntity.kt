@@ -8,6 +8,7 @@ import androidx.room.PrimaryKey
 data class OptimizationEventEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
+    val tenantId: String = "",
     val featureKey: String,
     val eventType: String, // AUTO_OPTIMIZE / MANUAL_TUNE / A_B_TEST
     @ColumnInfo(defaultValue = "''")

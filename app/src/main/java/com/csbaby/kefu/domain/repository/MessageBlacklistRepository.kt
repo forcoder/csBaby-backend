@@ -1,5 +1,6 @@
 package com.csbaby.kefu.domain.repository
 
+import com.csbaby.kefu.data.local.AuthManager
 import com.csbaby.kefu.data.local.dao.MessageBlacklistDao
 import com.csbaby.kefu.data.local.entity.MessageBlacklistEntity
 import kotlinx.coroutines.flow.Flow
@@ -9,14 +10,17 @@ import javax.inject.Singleton
 
 @Singleton
 class MessageBlacklistRepository @Inject constructor(
-    private val blacklistDao: MessageBlacklistDao
+    private val blacklistDao: MessageBlacklistDao,
+    private val authManager: AuthManager
 ) {
+    private val tenantId: String
+        get() = authManager.getTenantId() ?: ""
     fun getAllEnabled(): Flow<List<MessageBlacklistEntity>> {
-        return blacklistDao.getAllEnabledFlow()
+        return blacklistDao.getAllEnabledFlow(tenantId)
     }
 
     fun getAll(): Flow<List<MessageBlacklistEntity>> {
-        return blacklistDao.getAllFlow()
+        return blacklistDao.getAllFlow(tenantId)
     }
 
     suspend fun addToBlacklist(
@@ -30,13 +34,14 @@ class MessageBlacklistRepository @Inject constructor(
                 type = type,
                 value = value,
                 description = description,
-                packageName = packageName
+                packageName = packageName,
+                tenantId = tenantId
             )
         )
     }
 
     suspend fun removeFromBlacklist(id: Long) {
-        blacklistDao.deleteById(id)
+        blacklistDao.deleteById(id, tenantId)
     }
 
     suspend fun updateBlacklist(blacklist: MessageBlacklistEntity) {
@@ -44,14 +49,14 @@ class MessageBlacklistRepository @Inject constructor(
     }
 
     suspend fun toggleBlacklist(id: Long, isEnabled: Boolean) {
-        val blacklist = blacklistDao.getAllFlow().first().find { it.id == id }
+        val blacklist = blacklistDao.getAllFlow(tenantId).first().find { it.id == id }
         blacklist?.let {
             blacklistDao.update(it.copy(isEnabled = isEnabled))
         }
     }
 
     suspend fun clearAll() {
-        blacklistDao.deleteAll()
+        blacklistDao.deleteAll(tenantId)
     }
 
     suspend fun importBlacklist(items: List<MessageBlacklistEntity>) {
@@ -59,7 +64,7 @@ class MessageBlacklistRepository @Inject constructor(
     }
 
     suspend fun isBlacklisted(value: String): Boolean {
-        return blacklistDao.isBlacklisted(value)
+        return blacklistDao.isBlacklisted(value, tenantId)
     }
 
     /**
@@ -71,7 +76,7 @@ class MessageBlacklistRepository @Inject constructor(
         packageName: String? = null
     ): Boolean {
         // 检查内容关键词
-        val blacklists = blacklistDao.getAllEnabledFlow().first()
+        val blacklists = blacklistDao.getAllEnabledFlow(tenantId).first()
         
         for (blacklist in blacklists) {
             // 如果指定了包名且不匹配，跳过

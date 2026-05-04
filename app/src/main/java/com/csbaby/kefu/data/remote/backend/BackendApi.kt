@@ -14,6 +14,9 @@ interface BackendApi {
     @POST("api/auth/register")
     suspend fun register(@Body body: RegisterRequest): Response<AuthResponse>
 
+    @POST("api/auth/login")
+    suspend fun login(@Body body: LoginRequest): Response<LoginResponse>
+
     @POST("api/auth/heartbeat")
     suspend fun heartbeat(): Response<HeartbeatResponse>
 

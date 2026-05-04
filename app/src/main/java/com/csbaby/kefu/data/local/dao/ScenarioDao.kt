@@ -7,11 +7,11 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ScenarioDao {
-    @Query("SELECT * FROM scenarios ORDER BY createdAt DESC")
-    fun getAllScenarios(): Flow<List<ScenarioEntity>>
+    @Query("SELECT * FROM scenarios WHERE tenantId = :tenantId ORDER BY createdAt DESC")
+    fun getAllScenarios(tenantId: String): Flow<List<ScenarioEntity>>
 
-    @Query("SELECT * FROM scenarios WHERE id = :id")
-    suspend fun getScenarioById(id: Long): ScenarioEntity?
+    @Query("SELECT * FROM scenarios WHERE id = :id AND tenantId = :tenantId")
+    suspend fun getScenarioById(id: Long, tenantId: String): ScenarioEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertScenario(scenario: ScenarioEntity): Long
@@ -22,7 +22,7 @@ interface ScenarioDao {
     @Delete
     suspend fun deleteScenario(scenario: ScenarioEntity)
 
-    // Cross reference operations
+    // Cross reference operations - no tenantId needed (foreign key association)
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRuleScenarioRelation(crossRef: RuleScenarioCrossRef)
 
@@ -41,7 +41,6 @@ interface ScenarioDao {
     @Query("DELETE FROM rule_scenario_relation")
     suspend fun deleteAllRelations()
 
-    @Query("SELECT * FROM scenarios ORDER BY createdAt DESC")
-    suspend fun getAllScenariosList(): List<ScenarioEntity>
+    @Query("SELECT * FROM scenarios WHERE tenantId = :tenantId ORDER BY createdAt DESC")
+    suspend fun getAllScenariosList(tenantId: String): List<ScenarioEntity>
 }
-

@@ -8,5 +8,6 @@ import androidx.room.Entity
 )
 data class RuleScenarioCrossRef(
     val ruleId: Long,
-    val scenarioId: Long
+    val scenarioId: Long,
+    val tenantId: String = ""
 )

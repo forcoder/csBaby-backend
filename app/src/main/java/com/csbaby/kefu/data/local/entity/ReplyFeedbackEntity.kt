@@ -19,6 +19,7 @@ import androidx.room.PrimaryKey
 data class ReplyFeedbackEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
+    val tenantId: String = "",
     val replyHistoryId: Long,
     val variantId: Long? = null,
     val userAction: String, // ACCEPTED / MODIFIED / REJECTED

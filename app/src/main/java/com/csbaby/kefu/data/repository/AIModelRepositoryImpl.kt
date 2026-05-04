@@ -1,5 +1,6 @@
 package com.csbaby.kefu.data.repository
 
+import com.csbaby.kefu.data.local.AuthManager
 import com.csbaby.kefu.data.local.EntityMapper.toDomain
 import com.csbaby.kefu.data.local.EntityMapper.toEntity
 import com.csbaby.kefu.data.local.dao.AIModelConfigDao
@@ -24,17 +25,20 @@ import javax.inject.Singleton
 class AIModelRepositoryImpl @Inject constructor(
     private val aiModelConfigDao: AIModelConfigDao,
     private val modelBackendSync: ModelBackendSync,
-    private val networkMonitor: NetworkMonitor
+    private val networkMonitor: NetworkMonitor,
+    private val authManager: AuthManager
 ) : AIModelRepository {
 
     override fun getAllModels(): Flow<List<AIModelConfig>> {
-        return aiModelConfigDao.getAllModels().map { entities ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return aiModelConfigDao.getAllModels(tenantId).map { entities ->
             entities.map { it.toDomain() }
         }
     }
 
     override fun getEnabledModels(): Flow<List<AIModelConfig>> {
-        return aiModelConfigDao.getEnabledModels().map { entities ->
+        val tenantId = authManager.getTenantId() ?: ""
+        return aiModelConfigDao.getEnabledModels(tenantId).map { entities ->
             entities.map { it.toDomain() }
         }
     }
@@ -42,17 +46,20 @@ class AIModelRepositoryImpl @Inject constructor(
     override suspend fun getDefaultModel(): AIModelConfig? {
         // 后端优先：尝试从后端拉取最新配置
         fetchFromBackendIfNeeded()
-        return aiModelConfigDao.getDefaultModel()?.toDomain()
+        val tenantId = authManager.getTenantId() ?: ""
+        return aiModelConfigDao.getDefaultModel(tenantId)?.toDomain()
     }
 
     override suspend fun getModelById(id: Long): AIModelConfig? {
         fetchFromBackendIfNeeded()
-        return aiModelConfigDao.getModelById(id)?.toDomain()
+        val tenantId = authManager.getTenantId() ?: ""
+        return aiModelConfigDao.getModelById(id, tenantId)?.toDomain()
     }
 
     override suspend fun insertModel(model: AIModelConfig): Long {
+        val tenantId = authManager.getTenantId() ?: ""
         if (model.isDefault) {
-            aiModelConfigDao.clearDefaultModel()
+            aiModelConfigDao.clearDefaultModel(tenantId)
         }
 
         if (networkMonitor.isNetworkAvailable) {
@@ -76,8 +83,9 @@ class AIModelRepositoryImpl @Inject constructor(
     }
 
     override suspend fun updateModel(model: AIModelConfig) {
+        val tenantId = authManager.getTenantId() ?: ""
         if (model.isDefault) {
-            aiModelConfigDao.clearDefaultModel()
+            aiModelConfigDao.clearDefaultModel(tenantId)
         }
         aiModelConfigDao.updateModel(model.toEntity())
 
@@ -96,7 +104,8 @@ class AIModelRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteModel(id: Long) {
-        aiModelConfigDao.deleteById(id)
+        val tenantId = authManager.getTenantId() ?: ""
+        aiModelConfigDao.deleteById(id, tenantId)
 
         if (networkMonitor.isNetworkAvailable) {
             try {
@@ -113,17 +122,20 @@ class AIModelRepositoryImpl @Inject constructor(
     }
 
     override suspend fun setDefaultModel(id: Long) {
-        aiModelConfigDao.clearDefaultModel()
-        aiModelConfigDao.setDefaultModel(id)
+        val tenantId = authManager.getTenantId() ?: ""
+        aiModelConfigDao.clearDefaultModel(tenantId)
+        aiModelConfigDao.setDefaultModel(id, tenantId)
         // 后端同步由 SyncWorker 处理
     }
 
     override suspend fun updateLastUsed(id: Long) {
-        aiModelConfigDao.updateLastUsed(id, System.currentTimeMillis())
+        val tenantId = authManager.getTenantId() ?: ""
+        aiModelConfigDao.updateLastUsed(id, tenantId, System.currentTimeMillis())
     }
 
     override suspend fun addCost(id: Long, cost: Double) {
-        aiModelConfigDao.addCost(id, cost)
+        val tenantId = authManager.getTenantId() ?: ""
+        aiModelConfigDao.addCost(id, tenantId, cost)
     }
 
     /**
