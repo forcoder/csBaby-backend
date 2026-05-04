@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.csbaby.kefu.data.remote.backend.BackendSyncManager
+import com.csbaby.kefu.data.remote.backend.BackendSyncWorker
 import com.csbaby.kefu.infrastructure.monitoring.AppPerformanceMonitor
 import com.csbaby.kefu.infrastructure.ota.OtaScheduler
 import com.csbaby.kefu.infrastructure.reply.ReplyOrchestrator
@@ -69,7 +70,7 @@ class KefuApplication : Application(), Configuration.Provider {
             
             // 性能监控器已通过Hilt自动初始化
 
-            // 后端设备注册
+            // 后端设备注册 + 定期同步
             try {
                 val syncManager = entryPoint.backendSyncManager()
                 CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
@@ -80,6 +81,8 @@ class KefuApplication : Application(), Configuration.Provider {
                         Timber.w("Backend device registration failed — will retry later")
                     }
                 }
+                // 启动定期后台同步（心跳 + 数据拉取）
+                BackendSyncWorker.schedule(this@KefuApplication)
             } catch (e: Exception) {
                 Timber.e(e, "Backend sync initialization failed")
             }

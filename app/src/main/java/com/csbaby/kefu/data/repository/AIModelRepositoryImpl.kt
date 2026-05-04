@@ -6,16 +6,25 @@ import com.csbaby.kefu.data.local.dao.AIModelConfigDao
 import com.csbaby.kefu.data.remote.backend.ModelBackendSync
 import com.csbaby.kefu.domain.model.AIModelConfig
 import com.csbaby.kefu.domain.repository.AIModelRepository
+import com.csbaby.kefu.infrastructure.network.NetworkMonitor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * AI 模型 Repository — 后端优先架构
+ *
+ * 读取策略：网络可用时优先从后端获取最新配置，失败时降级到本地
+ * 写入策略：网络可用时先写后端成功后更新本地，离线时写本地待同步
+ */
 @Singleton
 class AIModelRepositoryImpl @Inject constructor(
     private val aiModelConfigDao: AIModelConfigDao,
-    private val modelBackendSync: ModelBackendSync
+    private val modelBackendSync: ModelBackendSync,
+    private val networkMonitor: NetworkMonitor
 ) : AIModelRepository {
 
     override fun getAllModels(): Flow<List<AIModelConfig>> {
@@ -31,10 +40,13 @@ class AIModelRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getDefaultModel(): AIModelConfig? {
+        // 后端优先：尝试从后端拉取最新配置
+        fetchFromBackendIfNeeded()
         return aiModelConfigDao.getDefaultModel()?.toDomain()
     }
 
     override suspend fun getModelById(id: Long): AIModelConfig? {
+        fetchFromBackendIfNeeded()
         return aiModelConfigDao.getModelById(id)?.toDomain()
     }
 
@@ -42,12 +54,24 @@ class AIModelRepositoryImpl @Inject constructor(
         if (model.isDefault) {
             aiModelConfigDao.clearDefaultModel()
         }
-        val id = aiModelConfigDao.insertModel(model.toEntity())
-        try {
-            modelBackendSync.pushModel(model.copy(id = id))
-        } catch (e: Exception) {
-            Timber.w(e, "Failed to sync new model to backend")
+
+        if (networkMonitor.isNetworkAvailable) {
+            try {
+                val result = withTimeoutOrNull(BACKEND_TIMEOUT_MS) {
+                    modelBackendSync.pushModel(model)
+                }
+                if (result?.isSuccess == true) {
+                    val id = aiModelConfigDao.insertModel(model.toEntity())
+                    Timber.d("insertModel: synced to backend first, local id=$id")
+                    return id
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "insertModel: backend push failed, caching locally")
+            }
         }
+
+        val id = aiModelConfigDao.insertModel(model.toEntity())
+        Timber.d("insertModel: cached locally id=$id, will sync later")
         return id
     }
 
@@ -56,25 +80,42 @@ class AIModelRepositoryImpl @Inject constructor(
             aiModelConfigDao.clearDefaultModel()
         }
         aiModelConfigDao.updateModel(model.toEntity())
-        try {
-            modelBackendSync.pushModel(model)
-        } catch (e: Exception) {
-            Timber.w(e, "Failed to sync updated model to backend")
+
+        if (networkMonitor.isNetworkAvailable) {
+            try {
+                withTimeoutOrNull(BACKEND_TIMEOUT_MS) {
+                    modelBackendSync.pushModel(model)
+                }
+                Timber.d("updateModel: synced to backend")
+            } catch (e: Exception) {
+                Timber.w(e, "updateModel: backend sync failed, will retry later")
+            }
+        } else {
+            Timber.d("updateModel: offline, will sync later")
         }
     }
 
     override suspend fun deleteModel(id: Long) {
         aiModelConfigDao.deleteById(id)
-        try {
-            modelBackendSync.deleteModel(id)
-        } catch (e: Exception) {
-            Timber.w(e, "Failed to sync model deletion to backend")
+
+        if (networkMonitor.isNetworkAvailable) {
+            try {
+                withTimeoutOrNull(BACKEND_TIMEOUT_MS) {
+                    modelBackendSync.deleteModel(id)
+                }
+                Timber.d("deleteModel: synced to backend")
+            } catch (e: Exception) {
+                Timber.w(e, "deleteModel: backend sync failed, will retry later")
+            }
+        } else {
+            Timber.d("deleteModel: offline, will sync later")
         }
     }
 
     override suspend fun setDefaultModel(id: Long) {
         aiModelConfigDao.clearDefaultModel()
         aiModelConfigDao.setDefaultModel(id)
+        // 后端同步由 SyncWorker 处理
     }
 
     override suspend fun updateLastUsed(id: Long) {
@@ -83,5 +124,26 @@ class AIModelRepositoryImpl @Inject constructor(
 
     override suspend fun addCost(id: Long, cost: Double) {
         aiModelConfigDao.addCost(id, cost)
+    }
+
+    /**
+     * 网络可用时从后端拉取最新模型配置并更新本地
+     */
+    private suspend fun fetchFromBackendIfNeeded() {
+        if (!networkMonitor.isNetworkAvailable) return
+        try {
+            val result = withTimeoutOrNull(BACKEND_TIMEOUT_MS) {
+                modelBackendSync.pullFromBackend()
+            }
+            if (result?.isSuccess == true) {
+                Timber.d("fetchFromBackend: updated local models from backend")
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "fetchFromBackend: failed, using local cache")
+        }
+    }
+
+    companion object {
+        private const val BACKEND_TIMEOUT_MS = 10_000L
     }
 }
