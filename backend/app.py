@@ -5,7 +5,8 @@ from config import HOST, PORT
 from database import init_db
 
 # 导入 API 路由
-from api.auth_api import AuthRegister, AuthHeartbeat
+from api.auth_api import AuthRegister, AuthHeartbeat, AuthLogin, AuthChangePassword
+from api.admin_api import AdminLogin, AdminTenants, AdminTenantDetail, AdminStats
 from api.rules_api import RulesAPI, RuleDetailAPI, RulesBatchAPI
 from api.models_api import ModelsAPI, ModelDetailAPI, ModelTestAPI
 from api.ai_api import AIGenerateAPI, AIChatAPI
@@ -17,7 +18,13 @@ from api.backup_api import BackupExportAPI, BackupRestoreAPI
 # URL 路由
 urls = (
     "/api/auth/register", "AuthRegister",
+    "/api/auth/login", "AuthLogin",
+    "/api/auth/change_password", "AuthChangePassword",
     "/api/auth/heartbeat", "AuthHeartbeat",
+    "/api/admin/login", "AdminLogin",
+    "/api/admin/stats", "AdminStats",
+    "/api/admin/tenants/(\w+)", "AdminTenantDetail",
+    "/api/admin/tenants", "AdminTenants",
     "/api/rules/batch", "RulesBatchAPI",
     "/api/rules/(\d+)", "RuleDetailAPI",
     "/api/rules", "RulesAPI",
