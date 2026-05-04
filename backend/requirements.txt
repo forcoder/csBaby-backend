@@ -1,3 +1,3 @@
-web.py==0.62
-gunicorn==21.2.0
-passlib==1.7.4
+web.py
+gunicorn
+passlib
