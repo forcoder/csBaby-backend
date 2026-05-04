@@ -25,10 +25,70 @@
 </div>
 <h2>操作</h2>
 <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}" class="action-form">
+    <input type="hidden" name="action" value="toggle_status">
     <input type="hidden" name="is_active" value="{{ 0 if tenant.get('is_active', 1) else 1 }}">
     <button type="submit" class="btn {{ 'btn-danger' if tenant.get('is_active', 1) else 'btn-success' }}">
         {{ '禁用租户' if tenant.get('is_active', 1) else '启用租户' }}
     </button>
 </form>
+
+<h2>默认 LLM 模型配置</h2>
+<p style="color:#888;font-size:13px;margin-bottom:16px;">配置后，该租户首次注册时将自动获得此模型配置。</p>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+{% if success %}
+<div class="alert alert-success">{{ success }}</div>
+{% endif %}
+
+<form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}" class="form-card">
+    <input type="hidden" name="action" value="save_default_model">
+    <div class="form-group">
+        <label>模型名称</label>
+        <input type="text" name="name" value="{{ default_model.get('name', '') }}" placeholder="如：GPT-4o" required>
+    </div>
+    <div class="form-group">
+        <label>模型类型</label>
+        <select name="model_type">
+            <option value="OPENAI" {{ 'selected' if default_model.get('model_type') == 'OPENAI' }}>OpenAI</option>
+            <option value="CLAUDE" {{ 'selected' if default_model.get('model_type') == 'CLAUDE' }}>Claude</option>
+            <option value="ZHIPU" {{ 'selected' if default_model.get('model_type') == 'ZHIPU' }}>智谱 GLM</option>
+            <option value="TONGYI" {{ 'selected' if default_model.get('model_type') == 'TONGYI' }}>通义千问</option>
+            <option value="CUSTOM" {{ 'selected' if default_model.get('model_type') == 'CUSTOM' }}>自定义</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label>模型 ID</label>
+        <input type="text" name="model" value="{{ default_model.get('model', '') }}" placeholder="如：gpt-4o" required>
+    </div>
+    <div class="form-group">
+        <label>API Key</label>
+        <input type="password" name="api_key" value="{{ default_model.get('api_key', '') }}" placeholder="sk-...">
+    </div>
+    <div class="form-group">
+        <label>API 端点（可选）</label>
+        <input type="text" name="api_endpoint" value="{{ default_model.get('api_endpoint', '') }}" placeholder="留空使用默认">
+    </div>
+    <div class="form-group">
+        <label>Temperature</label>
+        <input type="number" name="temperature" value="{{ default_model.get('temperature', 0.7) }}" step="0.1" min="0" max="2">
+    </div>
+    <div class="form-group">
+        <label>Max Tokens</label>
+        <input type="number" name="max_tokens" value="{{ default_model.get('max_tokens', 2000) }}" min="1" max="32000">
+    </div>
+    <div class="form-group">
+        <label>
+            <input type="checkbox" name="enabled" {{ 'checked' if default_model.get('enabled', 1) }}> 启用
+        </label>
+    </div>
+    <button type="submit" class="btn btn-primary">保存默认模型</button>
+    {% if default_model %}
+    <button type="submit" name="action" value="delete_default_model" class="btn btn-danger" style="margin-left:8px;"
+            onclick="return confirm('确定删除该租户的默认模型配置？')">删除配置</button>
+    {% endif %}
+</form>
+
 <a href="/admin/tenants" class="btn">返回列表</a>
 {% endblock %}

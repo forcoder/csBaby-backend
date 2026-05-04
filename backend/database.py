@@ -121,6 +121,22 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_history_created ON reply_history(created_at);
         CREATE INDEX IF NOT EXISTS idx_feedback_device ON feedback(device_id);
         CREATE INDEX IF NOT EXISTS idx_metrics_device_date ON optimization_metrics(device_id, date);
+
+        CREATE TABLE IF NOT EXISTS tenant_default_models (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            model_type TEXT NOT NULL DEFAULT 'OPENAI',
+            model TEXT NOT NULL,
+            api_key TEXT NOT NULL DEFAULT '',
+            api_endpoint TEXT DEFAULT '',
+            temperature REAL DEFAULT 0.7,
+            max_tokens INTEGER DEFAULT 2000,
+            enabled INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(tenant_id)
+        );
     """)
 
     # 迁移：为 devices 表添加 user_id 列（如果不存在）

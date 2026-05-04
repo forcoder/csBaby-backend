@@ -84,6 +84,25 @@ def auth_register():
         "INSERT INTO users (phone, password_hash, tenant_id, is_admin) VALUES (?, ?, ?, ?)",
         (phone, password_hash, tenant_id, is_admin),
     )
+
+    # 自动复制默认模型配置
+    default_model = db.execute(
+        "SELECT * FROM tenant_default_models WHERE tenant_id = '_global' AND enabled = 1"
+    ).fetchone()
+    if default_model:
+        dm = dict(default_model)
+        db.execute(
+            """INSERT INTO model_configs
+               (device_id, name, model_type, model, api_key, api_endpoint, temperature, max_tokens, is_default, enabled)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1)""",
+            (
+                tenant_id, dm.get("name", ""), dm.get("model_type", "OPENAI"),
+                dm.get("model", ""), dm.get("api_key", ""),
+                dm.get("api_endpoint", ""), dm.get("temperature", 0.7),
+                dm.get("max_tokens", 2000),
+            ),
+        )
+
     db.commit()
 
     token = generate_user_token(tenant_id, tenant_id, is_admin)
@@ -322,6 +341,68 @@ def admin_tenant_detail(tenant_id):
 
         db.commit()
         return jsonify({"status": "ok", "tenant_id": tenant_id, "is_active": is_active})
+
+
+@app.route("/api/admin/tenants/<tenant_id>/default-model", methods=["GET", "POST", "DELETE"])
+def admin_tenant_default_model(tenant_id):
+    info, err = require_admin()
+    if err:
+        return err
+
+    db = get_db_conn()
+
+    if request.method == "GET":
+        row = db.execute(
+            "SELECT * FROM tenant_default_models WHERE tenant_id = ?", (tenant_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "未配置默认模型"}), 404
+        return jsonify(dict_from_row(row))
+
+    elif request.method == "POST":
+        data = request.get_json(force=True)
+        existing = db.execute(
+            "SELECT id FROM tenant_default_models WHERE tenant_id = ?", (tenant_id,)
+        ).fetchone()
+
+        if existing:
+            db.execute(
+                """UPDATE tenant_default_models SET
+                   name=?, model_type=?, model=?, api_key=?,
+                   api_endpoint=?, temperature=?, max_tokens=?, enabled=?,
+                   updated_at=CURRENT_TIMESTAMP
+                   WHERE tenant_id=?""",
+                (
+                    data.get("name", ""), data.get("model_type", "OPENAI"),
+                    data.get("model", ""), data.get("api_key", ""),
+                    data.get("api_endpoint", ""), data.get("temperature", 0.7),
+                    data.get("max_tokens", 2000), data.get("enabled", 1),
+                    tenant_id,
+                ),
+            )
+        else:
+            db.execute(
+                """INSERT INTO tenant_default_models
+                   (tenant_id, name, model_type, model, api_key, api_endpoint, temperature, max_tokens, enabled)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    tenant_id, data.get("name", ""), data.get("model_type", "OPENAI"),
+                    data.get("model", ""), data.get("api_key", ""),
+                    data.get("api_endpoint", ""), data.get("temperature", 0.7),
+                    data.get("max_tokens", 2000), data.get("enabled", 1),
+                ),
+            )
+        db.commit()
+
+        row = db.execute(
+            "SELECT * FROM tenant_default_models WHERE tenant_id = ?", (tenant_id,)
+        ).fetchone()
+        return jsonify(dict_from_row(row))
+
+    elif request.method == "DELETE":
+        db.execute("DELETE FROM tenant_default_models WHERE tenant_id = ?", (tenant_id,))
+        db.commit()
+        return jsonify({"status": "ok"})
 
 
 @app.route("/api/admin/stats", methods=["GET"])

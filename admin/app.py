@@ -46,6 +46,14 @@ def api_put(path, token, data):
     )
 
 
+def api_delete(path, token):
+    return http_requests.delete(
+        f"{API_BASE_URL}{path}",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=10
+    )
+
+
 @app.route("/admin/login", methods=["GET", "POST"])
 def login():
     if session.get("admin_phone"):
@@ -124,20 +132,152 @@ def tenants():
 @login_required
 def tenant_detail(tenant_id):
     token = session.get("admin_token", "")
-    if request.method == "POST":
-        is_active = request.form.get("is_active")
-        if is_active is not None:
-            api_put(f"/api/admin/tenants/{tenant_id}", token, {"is_active": int(is_active)})
-        return redirect(url_for("tenant_detail", tenant_id=tenant_id))
+    error = None
+    success = None
 
-    tenant = {}
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "toggle_status":
+            is_active = request.form.get("is_active")
+            if is_active is not None:
+                api_put(f"/api/admin/tenants/{tenant_id}", token, {"is_active": int(is_active)})
+            return redirect(url_for("tenant_detail", tenant_id=tenant_id)))
+        elif action == "save_default_model":
+            model_data = {
+                "name": request.form.get("name", "").strip(),
+                "model_type": request.form.get("model_type", "OPENAI").strip(),
+                "model": request.form.get("model", "").strip(),
+                "api_key": request.form.get("api_key", "").strip(),
+                "api_endpoint": request.form.get("api_endpoint", "").strip(),
+                "temperature": float(request.form.get("temperature", 0.7)),
+                "max_tokens": int(request.form.get("max_tokens", 2000)),
+                "enabled": 1 if request.form.get("enabled") else 0,
+            }
+            try:
+                resp = api_post(f"/api/admin/tenants/{tenant_id}/default-model", model_data, token=token)
+                if resp.status_code in (200, 201):
+                    success = "默认模型配置已保存"
+                else:
+                    error = resp.json().get("error", "保存失败")
+            except Exception as e:
+                error = f"网络错误: {e}"
+            return render_template("tenant_detail.html", tenant=_get_tenant(tenant_id, token),
+                                   default_model=_get_default_model(tenant_id, token),
+                                   admin_phone=session.get("admin_phone"), error=error, success=success)
+        elif action == "delete_default_model":
+            try:
+                resp = api_delete(f"/api/admin/tenants/{tenant_id}/default-model", token)
+                if resp.status_code == 200:
+                    success = "默认模型配置已删除"
+                else:
+                    error = resp.json().get("error", "删除失败")
+            except Exception as e:
+                error = f"网络错误: {e}"
+            return render_template("tenant_detail.html", tenant=_get_tenant(tenant_id, token),
+                                   default_model=None,
+                                   admin_phone=session.get("admin_phone"), error=error, success=success)
+
+    tenant = _get_tenant(tenant_id, token)
+    default_model = _get_default_model(tenant_id, token)
+    return render_template("tenant_detail.html", tenant=tenant, default_model=default_model,
+                           admin_phone=session.get("admin_phone"), error=error, success=success)
+
+
+def _get_tenant(tenant_id, token):
     try:
         resp = api_get(f"/api/admin/tenants/{tenant_id}", token)
         if resp.status_code == 200:
-            tenant = resp.json()
+            return resp.json()
     except Exception:
         pass
-    return render_template("tenant_detail.html", tenant=tenant, admin_phone=session.get("admin_phone"))
+    return {}
+
+
+def _get_default_model(tenant_id, token):
+    try:
+        resp = api_get(f"/api/admin/tenants/{tenant_id}/default-model", token)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:
+        pass
+    return None
+
+
+@app.route("/admin/default-model", methods=["GET", "POST"])
+@login_required
+def default_model():
+    token = session.get("admin_token", "")
+    error = None
+    success = None
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "apply_to_tenant":
+            tenant_id = request.form.get("tenant_id", "").strip()
+            if not tenant_id:
+                error = "请输入租户 ID"
+            else:
+                # 获取当前全局默认配置
+                current = None
+                try:
+                    resp = api_get("/api/admin/tenants/_global/default-model", token)
+                    if resp.status_code == 200:
+                        current = resp.json()
+                except Exception:
+                    pass
+                if not current:
+                    error = "请先保存全局默认模型配置"
+                else:
+                    model_data = {
+                        "name": current.get("name", ""),
+                        "model_type": current.get("model_type", "OPENAI"),
+                        "model": current.get("model", ""),
+                        "api_key": current.get("api_key", ""),
+                        "api_endpoint": current.get("api_endpoint", ""),
+                        "temperature": current.get("temperature", 0.7),
+                        "max_tokens": current.get("max_tokens", 2000),
+                        "enabled": 1,
+                    }
+                    try:
+                        resp = api_post(f"/api/admin/tenants/{tenant_id}/default-model", model_data, token=token)
+                        if resp.status_code in (200, 201):
+                            success = f"已应用到租户 {tenant_id[:12]}..."
+                        else:
+                            error = resp.json().get("error", "应用失败")
+                    except Exception as e:
+                        error = f"网络错误: {e}"
+        else:
+            # 保存全局默认（tenant_id = _global）
+            model_data = {
+                "name": request.form.get("name", "").strip(),
+                "model_type": request.form.get("model_type", "OPENAI").strip(),
+                "model": request.form.get("model", "").strip(),
+                "api_key": request.form.get("api_key", "").strip(),
+                "api_endpoint": request.form.get("api_endpoint", "").strip(),
+                "temperature": float(request.form.get("temperature", 0.7)),
+                "max_tokens": int(request.form.get("max_tokens", 2000)),
+                "enabled": 1 if request.form.get("enabled") else 0,
+            }
+            try:
+                resp = api_post("/api/admin/tenants/_global/default-model", model_data, token=token)
+                if resp.status_code in (200, 201):
+                    success = "全局默认模型已保存"
+                else:
+                    error = resp.json().get("error", "保存失败")
+            except Exception as e:
+                error = f"网络错误: {e}"
+
+    # 获取当前全局默认
+    current_model = None
+    try:
+        resp = api_get("/api/admin/tenants/_global/default-model", token)
+        if resp.status_code == 200:
+            current_model = resp.json()
+    except Exception:
+        pass
+
+    return render_template("default_model.html", model=current_model,
+                           admin_phone=session.get("admin_phone"), error=error, success=success)
 
 
 @app.route("/admin/profile", methods=["GET", "POST"])
