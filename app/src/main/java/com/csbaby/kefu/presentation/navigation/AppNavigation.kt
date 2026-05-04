@@ -18,7 +18,6 @@ import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import android.util.Log
@@ -32,7 +31,6 @@ import com.csbaby.kefu.presentation.screens.home.HomeScreen
 import com.csbaby.kefu.presentation.screens.knowledge.KnowledgeScreen
 import com.csbaby.kefu.presentation.screens.model.ModelScreen
 import com.csbaby.kefu.presentation.screens.profile.ProfileScreen
-import javax.inject.Inject
 
 sealed class Screen(
     val route: String,
@@ -60,17 +58,17 @@ fun RootNavigation(authManager: AuthManager) {
     val navController = rememberNavController()
     val isLoggedIn = authManager.isLoggedIn
     Log.d("RootNavigation", "isLoggedIn=$isLoggedIn")
-    val startDest = if (isLoggedIn) Screen.Home.route else "login"
 
     NavHost(
         navController = navController,
-        startDestination = startDest
+        startDestination = if (isLoggedIn) Screen.Home.route else "login"
     ) {
         composable("login") {
             LoginScreen(
                 onLoginSuccess = {
+                    // 登录成功后直接导航到主页，清除登录页
                     navController.navigate(Screen.Home.route) {
-                        popUpTo("login") { inclusive = true }
+                        popUpTo(0) { inclusive = true }
                     }
                 },
                 onNavigateToRegister = {
@@ -83,7 +81,7 @@ fun RootNavigation(authManager: AuthManager) {
             RegisterScreen(
                 onRegisterSuccess = {
                     navController.navigate(Screen.Home.route) {
-                        popUpTo("register") { inclusive = true }
+                        popUpTo(0) { inclusive = true }
                     }
                 },
                 onNavigateToLogin = {
@@ -95,16 +93,18 @@ fun RootNavigation(authManager: AuthManager) {
         }
 
         composable(Screen.Home.route) {
-            MainNavigation(navController = navController)
+            MainNavigation()
         }
     }
 }
 
 /**
  * 主导航（底部导航栏 + 子页面）
+ * 使用独立的 NavHost，避免与 RootNavigation 的 NavHost 冲突
  */
 @Composable
-fun MainNavigation(navController: NavHostController) {
+fun MainNavigation() {
+    val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val showBottomBar = currentDestination?.route in bottomNavItems.map { it.route }
