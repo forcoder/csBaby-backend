@@ -115,8 +115,6 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
         CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
 
-        ALTER TABLE devices ADD COLUMN user_id INTEGER REFERENCES users(id);
-
         CREATE INDEX IF NOT EXISTS idx_rules_device ON keyword_rules(device_id);
         CREATE INDEX IF NOT EXISTS idx_rules_keyword ON keyword_rules(keyword);
         CREATE INDEX IF NOT EXISTS idx_history_device ON reply_history(device_id);
@@ -124,6 +122,12 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_feedback_device ON feedback(device_id);
         CREATE INDEX IF NOT EXISTS idx_metrics_device_date ON optimization_metrics(device_id, date);
     """)
+
+    # 迁移：为 devices 表添加 user_id 列（如果不存在）
+    columns = db.execute("PRAGMA table_info(devices)").fetchall()
+    col_names = [col[1] for col in columns]
+    if "user_id" not in col_names:
+        db.execute("ALTER TABLE devices ADD COLUMN user_id INTEGER REFERENCES users(id)")
 
     # 数据迁移：为已有 devices 创建对应的 user 记录
     existing_migration = db.execute(
