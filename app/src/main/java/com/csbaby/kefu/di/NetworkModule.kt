@@ -3,11 +3,13 @@ package com.csbaby.kefu.di
 import android.content.Context
 import com.csbaby.kefu.data.local.dao.AIModelConfigDao
 import com.csbaby.kefu.data.local.dao.KeywordRuleDao
+import com.csbaby.kefu.data.local.dao.ReplyHistoryDao
 import com.csbaby.kefu.data.remote.AIClient
 import com.csbaby.kefu.data.remote.AIClientImpl
 import com.csbaby.kefu.data.remote.backend.BackendApi
 import com.csbaby.kefu.data.remote.backend.BackendClient
 import com.csbaby.kefu.data.remote.backend.BackendSyncManager
+import com.csbaby.kefu.data.remote.backend.HistoryBackendSync
 import com.csbaby.kefu.data.remote.backend.ModelBackendSync
 import com.csbaby.kefu.data.remote.backend.RuleBackendSync
 import com.csbaby.kefu.data.remote.backend.TokenInterceptor
@@ -144,6 +146,15 @@ object NetworkModule {
         aiModelConfigDao: AIModelConfigDao
     ): ModelBackendSync {
         return ModelBackendSync(backendClient, aiModelConfigDao)
+    }
+
+    @Provides
+    @Singleton
+    fun provideHistoryBackendSync(
+        backendClient: BackendClient,
+        replyHistoryDao: ReplyHistoryDao
+    ): HistoryBackendSync {
+        return HistoryBackendSync(backendClient, replyHistoryDao)
     }
 
     @Provides
