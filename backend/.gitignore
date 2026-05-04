@@ -1,0 +1,4 @@
+admin_config.py
+__pycache__/
+*.pyc
+*.db

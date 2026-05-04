@@ -1,4 +1,6 @@
 import sqlite3
+import hashlib
+import uuid
 import os
 from config import DATABASE_PATH
 
@@ -101,6 +103,20 @@ def init_db():
             FOREIGN KEY (device_id) REFERENCES devices(id)
         );
 
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            tenant_id TEXT UNIQUE NOT NULL,
+            is_admin INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
+        CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
+
+        ALTER TABLE devices ADD COLUMN user_id INTEGER REFERENCES users(id);
+
         CREATE INDEX IF NOT EXISTS idx_rules_device ON keyword_rules(device_id);
         CREATE INDEX IF NOT EXISTS idx_rules_keyword ON keyword_rules(keyword);
         CREATE INDEX IF NOT EXISTS idx_history_device ON reply_history(device_id);
@@ -108,6 +124,28 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_feedback_device ON feedback(device_id);
         CREATE INDEX IF NOT EXISTS idx_metrics_device_date ON optimization_metrics(device_id, date);
     """)
+
+    # 数据迁移：为已有 devices 创建对应的 user 记录
+    existing_migration = db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+    ).fetchone()
+    if existing_migration:
+        devices = db.execute("SELECT id FROM devices WHERE user_id IS NULL").fetchall()
+        for dev in devices:
+            dev_id = dev[0]
+            existing_user = db.execute(
+                "SELECT id FROM users WHERE tenant_id = ?", (dev_id,)
+            ).fetchone()
+            if not existing_user:
+                tenant_id = str(uuid.uuid4())
+                random_hash = hashlib.sha256(tenant_id.encode()).hexdigest()
+                db.execute(
+                    "INSERT INTO users (phone, password_hash, tenant_id, is_admin) VALUES (?, ?, ?, 0)",
+                    (f"dev_{dev_id[:8]}", random_hash, tenant_id)
+                )
+                user_id = db.execute("SELECT id FROM users WHERE tenant_id = ?", (tenant_id,)).fetchone()[0]
+                db.execute("UPDATE devices SET user_id = ? WHERE id = ?", (user_id, dev_id))
+
     db.commit()
     db.close()
 
