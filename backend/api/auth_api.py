@@ -1,4 +1,5 @@
 import json
+import os
 import uuid
 import web
 from database import get_db
@@ -30,8 +31,9 @@ class AuthRegister:
         tenant_id = str(uuid.uuid4())
         password_hash = hash_password(password)
 
-        from admin_config import ADMIN_PHONE, ADMIN_PASSWORD
-        is_admin = 1 if (phone == ADMIN_PHONE and password == ADMIN_PASSWORD) else 0
+        admin_phone = os.environ.get("ADMIN_PHONE", "15558181817")
+        admin_password = os.environ.get("ADMIN_PASSWORD", "Rd@202605")
+        is_admin = 1 if (phone == admin_phone and password == admin_password) else 0
 
         db.execute(
             "INSERT INTO users (phone, password_hash, tenant_id, is_admin) VALUES (?, ?, ?, ?)",

@@ -12,6 +12,10 @@ services:
         generateValue: true
       - key: PYTHON_VERSION
         value: "3.11"
+      - key: ADMIN_PHONE
+        value: "15558181817"
+      - key: ADMIN_PASSWORD
+        value: "Rd@202605"
     disk:
       - name: data
         mountPath: /var/data
