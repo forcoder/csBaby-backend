@@ -187,3 +187,4 @@ reports/
 upload-to-shzl.ps1
 upload-to-shzl.py
 upload-history.json
+.env
