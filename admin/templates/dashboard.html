@@ -1,0 +1,26 @@
+{% extends "layout.html" %}
+{% block content %}
+<h1>总览</h1>
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.get('total_tenants', 0) }}</div>
+        <div class="stat-label">总租户数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.get('active_tenants', 0) }}</div>
+        <div class="stat-label">活跃租户</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.get('total_rules', 0) }}</div>
+        <div class="stat-label">总规则数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.get('today_history', 0) }}</div>
+        <div class="stat-label">今日回复</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.get('total_history', 0) }}</div>
+        <div class="stat-label">总回复数</div>
+    </div>
+</div>
+{% endblock %}

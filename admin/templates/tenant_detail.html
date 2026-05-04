@@ -1,0 +1,34 @@
+{% extends "layout.html" %}
+{% block content %}
+<h1>租户详情</h1>
+<div class="detail-card">
+    <div class="detail-row"><label>手机号</label><span>{{ tenant.phone }}</span></div>
+    <div class="detail-row"><label>租户ID</label><span>{{ tenant.tenant_id }}</span></div>
+    <div class="detail-row"><label>注册时间</label><span>{{ tenant.get('created_at', '') }}</span></div>
+    <div class="detail-row">
+        <label>状态</label>
+        <span>
+            {% if tenant.get('is_active', 1) %}
+            <span class="badge badge-success">正常</span>
+            {% else %}
+            <span class="badge badge-danger">已禁用</span>
+            {% endif %}
+        </span>
+    </div>
+</div>
+<h2>数据统计</h2>
+<div class="stats-grid">
+    <div class="stat-card"><div class="stat-value">{{ tenant.get('rule_count', 0) }}</div><div class="stat-label">规则数</div></div>
+    <div class="stat-card"><div class="stat-value">{{ tenant.get('model_count', 0) }}</div><div class="stat-label">模型数</div></div>
+    <div class="stat-card"><div class="stat-value">{{ tenant.get('history_count', 0) }}</div><div class="stat-label">回复数</div></div>
+    <div class="stat-card"><div class="stat-value">{{ tenant.get('feedback_count', 0) }}</div><div class="stat-label">反馈数</div></div>
+</div>
+<h2>操作</h2>
+<form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}" class="action-form">
+    <input type="hidden" name="is_active" value="{{ 0 if tenant.get('is_active', 1) else 1 }}">
+    <button type="submit" class="btn {{ 'btn-danger' if tenant.get('is_active', 1) else 'btn-success' }}">
+        {{ '禁用租户' if tenant.get('is_active', 1) else '启用租户' }}
+    </button>
+</form>
+<a href="/admin/tenants" class="btn">返回列表</a>
+{% endblock %}

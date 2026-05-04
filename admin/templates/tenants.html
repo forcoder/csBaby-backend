@@ -1,0 +1,49 @@
+{% extends "layout.html" %}
+{% block content %}
+<h1>租户管理</h1>
+<form method="GET" action="/admin/tenants" class="search-form">
+    <input type="text" name="search" value="{{ search }}" placeholder="搜索手机号...">
+    <button type="submit" class="btn">搜索</button>
+</form>
+<table class="table">
+    <thead>
+        <tr>
+            <th>手机号</th>
+            <th>规则数</th>
+            <th>回复数</th>
+            <th>注册时间</th>
+            <th>状态</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for t in tenants %}
+        <tr>
+            <td>{{ t.phone }}</td>
+            <td>{{ t.get('rule_count', 0) }}</td>
+            <td>{{ t.get('history_count', 0) }}</td>
+            <td>{{ t.get('created_at', '')[:10] }}</td>
+            <td>
+                {% if t.get('is_active', 1) %}
+                <span class="badge badge-success">正常</span>
+                {% else %}
+                <span class="badge badge-danger">已禁用</span>
+                {% endif %}
+            </td>
+            <td><a href="/admin/tenants/{{ t.tenant_id }}">详情</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% if total > page_size %}
+<div class="pagination">
+    {% if page > 1 %}
+    <a href="/admin/tenants?page={{ page - 1 }}&search={{ search }}">上一页</a>
+    {% endif %}
+    <span>第 {{ page }} 页 / 共 {{ (total + page_size - 1) // page_size }} 页</span>
+    {% if page * page_size < total %}
+    <a href="/admin/tenants?page={{ page + 1 }}&search={{ search }}">下一页</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
