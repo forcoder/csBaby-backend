@@ -116,7 +116,7 @@ jobs:
           GRADLE_OPTS: "-Xmx2048m"
         run: |
           ./gradlew testDebugUnitTest --no-daemon -PskipVersionIncrement -PskipUpload \
-            -Dorg.gradle.jvmargs="-Xmx2048m -Xms512m" \
+            -Dorg.gradle.jvmargs="-Xmx1536m -Xms256m" \
             --stacktrace || echo "跳过单元测试"
 
       - name: 上传测试报告
