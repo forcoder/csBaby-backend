@@ -14,7 +14,7 @@ data class AuthResponse(
     val token: String = "",
     @SerializedName("expires_in") val expiresIn: Long = 0,
     @SerializedName("tenant_id") val tenantId: String = "",
-    @SerializedName("phone_number") val phoneNumber: String = ""
+    @SerializedName("phone") val phoneNumber: String = ""
 )
 
 data class HeartbeatResponse(
@@ -31,7 +31,7 @@ data class LoginRequest(
 data class LoginResponse(
     val token: String = "",
     @SerializedName("tenant_id") val tenantId: String = "",
-    @SerializedName("phone_number") val phoneNumber: String = "",
+    @SerializedName("phone") val phoneNumber: String = "",
     @SerializedName("expires_in") val expiresIn: Long = 0
 )
 
