@@ -150,7 +150,7 @@ def tenant_detail(tenant_id):
             is_active = request.form.get("is_active")
             if is_active is not None:
                 api_put(f"/api/admin/tenants/{tenant_id}", token, {"is_active": int(is_active)})
-            return redirect(url_for("tenant_detail", tenant_id=tenant_id)))
+            return redirect(url_for("tenant_detail", tenant_id=tenant_id))
         elif action == "save_default_model":
             model_data = {
                 "name": request.form.get("name", "").strip(),
