@@ -14,9 +14,12 @@ import com.csbaby.kefu.infrastructure.search.SearchType
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.xmlpull.v1.XmlPullParser
@@ -44,8 +47,10 @@ class KnowledgeBaseManager @Inject constructor(
 ) {
     companion object {
         private const val TAG = "KnowledgeBaseManager"
+        private const val SYNC_TIMEOUT_MS = 30_000L
     }
     private val gson = Gson()
+    private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // Default categories
     object Categories {
@@ -344,12 +349,14 @@ class KnowledgeBaseManager @Inject constructor(
 
                 // 批量写入本地数据库（单条 SQL INSERT，不触发逐条后端同步）
                 keywordRuleDao.insertRules(entities)
+                Log.d(TAG, "importFromJson: ${entities.size} rules written to local DB")
 
-                // 一次性批量同步到后端
-                syncRulesToBackend(parsedRules)
+                // 异步批量同步到后端，不阻塞导入结果返回
+                syncScope.launch { syncRulesToBackend(parsedRules) }
 
                 ImportResult(entities.size, 0)
             } catch (e: Exception) {
+                Log.e(TAG, "importFromJson failed: ${e.message}", e)
                 ImportResult(0, 1, e.message)
             }
         }
@@ -475,9 +482,10 @@ class KnowledgeBaseManager @Inject constructor(
             rule.copy(id = 0, createdAt = now, updatedAt = now).toEntity().copy(tenantId = tenantId)
         }
         keywordRuleDao.insertRules(entities)
+        Log.d(TAG, "importTabularRows: ${entities.size} rules written to local DB")
 
-        // 一次性批量同步到后端
-        syncRulesToBackend(parsedRules)
+        // 异步批量同步到后端，不阻塞导入结果返回
+        syncScope.launch { syncRulesToBackend(parsedRules) }
 
         return ImportResult(entities.size, errorCount)
     }
@@ -1244,32 +1252,40 @@ class KnowledgeBaseManager @Inject constructor(
 
     /**
      * 批量同步规则到后端（一次性调用 /api/rules/batch）
-     * 导入完成后调用，避免逐条同步的超时累积问题
+     * 在 syncScope 后台协程中调用，不阻塞导入流程。
+     * 使用 30 秒超时，失败只记录日志不抛异常。
      */
     private suspend fun syncRulesToBackend(rules: List<KeywordRule>) {
         if (rules.isEmpty()) return
+        val tenantId = authManager.getTenantId()
+        if (tenantId.isNullOrBlank()) {
+            Log.w(TAG, "syncRulesToBackend: no tenant_id, skipping")
+            return
+        }
         try {
-            withContext(Dispatchers.IO) {
-                val tenantId = authManager.getTenantId() ?: return@withContext
-                val dtoList = rules.map { rule ->
-                    com.csbaby.kefu.data.remote.backend.RuleDto(
-                        keyword = rule.keyword,
-                        matchType = rule.matchType.name,
-                        replyTemplate = rule.replyTemplate,
-                        category = rule.category,
-                        targetType = rule.targetType.name,
-                        targetNames = com.google.gson.Gson().toJson(rule.targetNames),
-                        priority = rule.priority,
-                        enabled = if (rule.enabled) 1 else 0
-                    )
-                }
-                // 使用 30 秒超时进行批量同步
-                withTimeoutOrNull(30_000L) {
-                    ruleBackendSync.batchPushToBackend(dtoList)
-                }
+            val dtoList = rules.map { rule ->
+                com.csbaby.kefu.data.remote.backend.RuleDto(
+                    keyword = rule.keyword,
+                    matchType = rule.matchType.name,
+                    replyTemplate = rule.replyTemplate,
+                    category = rule.category,
+                    targetType = rule.targetType.name,
+                    targetNames = rule.targetNames.joinToString(",", "[", "]"),
+                    priority = rule.priority,
+                    enabled = if (rule.enabled) 1 else 0
+                )
+            }
+            Log.d(TAG, "syncRulesToBackend: syncing ${dtoList.size} rules for tenant=$tenantId")
+            val result = withTimeoutOrNull(SYNC_TIMEOUT_MS) {
+                ruleBackendSync.batchPushToBackend(dtoList)
+            }
+            if (result == null) {
+                Log.w(TAG, "syncRulesToBackend: timed out after ${SYNC_TIMEOUT_MS}ms")
+            } else {
+                Log.d(TAG, "syncRulesToBackend: completed for tenant=$tenantId")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Batch sync to backend failed: ${e.message}")
+            Log.e(TAG, "syncRulesToBackend failed: ${e.message}", e)
         }
     }
 

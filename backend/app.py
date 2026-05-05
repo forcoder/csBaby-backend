@@ -539,7 +539,7 @@ def admin_rules_batch(tenant_id):
             ),
         )
     db.commit()
-    return jsonify({"status": "ok", "count": len(rules)})
+    return jsonify({"status": "ok", "imported": len(rules), "total": len(rules)})
 
 
 # ========== Rules ==========
@@ -629,10 +629,12 @@ def rules_batch():
 
     data = request.get_json(force=True)
     rules = data.get("rules", [])
+    mode = data.get("mode", "override")
     db = get_db_conn()
 
-    # 先删除该设备的所有规则，再批量插入
-    db.execute("DELETE FROM keyword_rules WHERE device_id = ?", (device_id,))
+    # 覆盖模式：先删除再插入；追加模式：直接插入
+    if mode == "override":
+        db.execute("DELETE FROM keyword_rules WHERE device_id = ?", (device_id,))
     for rule in rules:
         db.execute(
             """INSERT INTO keyword_rules
@@ -646,7 +648,7 @@ def rules_batch():
             ),
         )
     db.commit()
-    return jsonify({"status": "ok", "count": len(rules)})
+    return jsonify({"status": "ok", "imported": len(rules), "total": len(rules)})
 
 
 # ========== Models ==========
