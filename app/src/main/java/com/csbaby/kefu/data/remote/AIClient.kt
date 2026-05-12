@@ -516,8 +516,21 @@ class AIClientImpl @Inject constructor(
         val choices = json.getJSONArray("choices")
         if (choices.length() > 0) {
             val firstChoice = choices.getJSONObject(0)
-            val message = firstChoice.getJSONObject("message")
-            return message.getString("content")
+            // Some responses (e.g. content_filter) may not include "message"
+            if (firstChoice.has("message")) {
+                val message = firstChoice.getJSONObject("message")
+                if (message.has("content")) {
+                    return message.getString("content")
+                }
+            }
+            // Fallback: check for direct "content" or "text" field
+            if (firstChoice.has("content")) {
+                return firstChoice.getString("content")
+            }
+            if (firstChoice.has("text")) {
+                return firstChoice.getString("text")
+            }
+            throw Exception("No content in choice: ${firstChoice.toString().take(200)}")
         } else {
             throw Exception("No choices in response")
         }

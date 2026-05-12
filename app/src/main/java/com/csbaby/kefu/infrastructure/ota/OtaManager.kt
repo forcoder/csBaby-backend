@@ -162,7 +162,7 @@ class OtaManager @Inject constructor(
                     
                     val cursor = downloadManager?.query(query)
                     
-                    if (cursor?.moveToFirst() == true) {
+                    if (cursor != null && cursor.moveToFirst()) {
                         val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
                         if (statusIndex >= 0) {
                             val status = cursor.getInt(statusIndex)

@@ -51,11 +51,19 @@ class AIService:
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             )
 
-        resp = urllib.request.urlopen(req, timeout=60)
-        result = json.loads(resp.read())
+        try:
+            resp = urllib.request.urlopen(req, timeout=60)
+            result = json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode("utf-8", errors="replace")
+            elapsed = int((time.time() - start) * 1000)
+            return {"reply": "", "tokens_used": 0, "response_time_ms": elapsed, "model_used": model, "error": f"HTTP {e.code}: {error_body}"}
+        except (urllib.error.URLError, OSError) as e:
+            elapsed = int((time.time() - start) * 1000)
+            return {"reply": "", "tokens_used": 0, "response_time_ms": elapsed, "model_used": model, "error": str(e)}
 
         if model_type == "CLAUDE":
-            content = result.get("content", [{}])
+            content = result.get("content", [])
             reply = content[0].get("text", "") if content else ""
             tokens = result.get("usage", {}).get("input_tokens", 0) + result.get("usage", {}).get("output_tokens", 0)
         else:

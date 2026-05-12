@@ -61,3 +61,10 @@ class TestGetFeedback:
         resp = client.get("/api/feedback?limit=2&offset=0", headers=auth_headers)
         data = resp.get_json()
         assert len(data) == 2
+
+    def test_submit_feedback_comment_too_long(self, client, auth_headers):
+        resp = client.post("/api/feedback", json={
+            "action": "accepted",
+            "comment": "x" * 2001
+        }, headers=auth_headers)
+        assert resp.status_code == 400

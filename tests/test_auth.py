@@ -71,3 +71,29 @@ class TestCORS:
         resp = client.options("/api/rules")
         # OPTIONS handler returns empty string; status may be 200 or 204
         assert resp.status_code in (200, 204)
+
+
+class TestCORSWithSpaces:
+    def test_cors_origins_with_spaces(self, app_module):
+        """CORS origins should be stripped of whitespace."""
+        origins = app_module.CORS_ORIGINS
+        for origin in origins:
+            assert " " not in origin, f"Origin '{origin}' contains spaces"
+
+
+class TestJWTExpiration:
+    def test_expired_token_rejected(self, client, app_module):
+        """An expired JWT token should be rejected."""
+        import time
+        from domain.services.auth_service import AuthService
+        # Create a token with negative expiry (already expired)
+        expired_service = AuthService("test-secret-key", jwt_expire_days=-1)
+        # Generate and immediately the token is expired
+        token = expired_service.generate_token("test-device")
+        # Small delay to ensure expiry
+        time.sleep(0.1)
+        resp = client.get("/api/rules", headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        })
+        assert resp.status_code == 401

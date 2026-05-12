@@ -103,11 +103,11 @@ def init_db():
 
         CREATE INDEX IF NOT EXISTS idx_rules_device ON keyword_rules(device_id);
         CREATE INDEX IF NOT EXISTS idx_rules_keyword ON keyword_rules(keyword);
-        CREATE INDEX IF NOT EXISTS idx_history_device ON reply_history(device_id);
-        CREATE INDEX IF NOT EXISTS idx_history_created ON reply_history(created_at);
+        CREATE INDEX IF NOT EXISTS idx_history_device_created ON reply_history(device_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_feedback_device ON feedback(device_id);
+        CREATE INDEX IF NOT EXISTS idx_feedback_history ON feedback(reply_history_id);
         CREATE INDEX IF NOT EXISTS idx_metrics_device_date ON optimization_metrics(device_id, date);
-        CREATE INDEX IF NOT EXISTS idx_models_device ON model_configs(device_id);
+        CREATE INDEX IF NOT EXISTS idx_models_device_enabled ON model_configs(device_id, enabled);
     """)
     db.commit()
     db.close()

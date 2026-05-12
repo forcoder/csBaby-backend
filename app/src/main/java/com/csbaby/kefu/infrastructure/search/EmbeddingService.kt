@@ -294,23 +294,28 @@ class EmbeddingService @Inject constructor(
     // Parse OpenAI/Zhipu response format
     private fun parseEmbeddingResponse(response: String): FloatArray {
         val json = JSONObject(response)
-        val data = json.getJSONArray("data").getJSONObject(0)
+        val dataArray = json.getJSONArray("data")
+        if (dataArray.length() == 0) throw Exception("Empty data array in embedding response")
+        val data = dataArray.getJSONObject(0)
+        if (!data.has("embedding")) throw Exception("Missing 'embedding' field in response data")
         val embedding = data.getJSONArray("embedding")
-        
+
         return FloatArray(embedding.length()) { i ->
             embedding.getDouble(i).toFloat()
         }
     }
-    
+
     private fun parseBatchEmbeddingResponse(response: String): List<FloatArray> {
         val json = JSONObject(response)
         val dataArray = json.getJSONArray("data")
-        
+
+        if (dataArray.length() == 0) return emptyList()
+
         // Sort by index to maintain order
         val sortedData = (0 until dataArray.length()).map { i ->
             dataArray.getJSONObject(i)
-        }.sortedBy { it.getInt("index") }
-        
+        }.sortedBy { it.optInt("index", 0) }
+
         return sortedData.map { data ->
             val embedding = data.getJSONArray("embedding")
             FloatArray(embedding.length()) { i ->
@@ -318,30 +323,34 @@ class EmbeddingService @Inject constructor(
             }
         }
     }
-    
+
     // Parse Tongyi response format
     private fun parseTongyiEmbeddingResponse(response: String): FloatArray {
         val json = JSONObject(response)
         val output = json.getJSONObject("output")
         val embeddings = output.getJSONArray("embeddings")
+        if (embeddings.length() == 0) throw Exception("Empty embeddings array in Tongyi response")
         val firstEmbedding = embeddings.getJSONObject(0)
+        if (!firstEmbedding.has("embedding")) throw Exception("Missing 'embedding' field in Tongyi response")
         val embedding = firstEmbedding.getJSONArray("embedding")
-        
+
         return FloatArray(embedding.length()) { i ->
             embedding.getDouble(i).toFloat()
         }
     }
-    
+
     private fun parseTongyiBatchEmbeddingResponse(response: String): List<FloatArray> {
         val json = JSONObject(response)
         val output = json.getJSONObject("output")
         val embeddings = output.getJSONArray("embeddings")
-        
+
+        if (embeddings.length() == 0) return emptyList()
+
         // Sort by text_index to maintain order
         val sortedEmbeddings = (0 until embeddings.length()).map { i ->
             embeddings.getJSONObject(i)
-        }.sortedBy { it.getInt("text_index") }
-        
+        }.sortedBy { it.optInt("text_index", 0) }
+
         return sortedEmbeddings.map { data ->
             val embedding = data.getJSONArray("embedding")
             FloatArray(embedding.length()) { i ->

@@ -192,6 +192,24 @@ class TestModelTest:
         assert resp.status_code == 404
 
 
+class TestModelTestEndpoint:
+    def test_test_model_endpoint(self, client, auth_headers):
+        created = client.post("/api/models", json={
+            "name": "Test", "model_type": "OPENAI",
+            "model": "gpt-4", "api_key": "k"
+        }, headers=auth_headers)
+        model_id = created.get_json()["id"]
+        resp = client.post(f"/api/models/{model_id}/test", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert data["model"] == "gpt-4"
+
+    def test_test_model_not_found(self, client, auth_headers):
+        resp = client.post("/api/models/99999/test", headers=auth_headers)
+        assert resp.status_code == 404
+
+
 class TestModelApiKeyMasking:
     def test_model_api_key_masked_in_list(self, client, auth_headers):
         client.post("/api/models", json={

@@ -61,3 +61,17 @@ class TestRecordHistory:
     def test_record_history_unauthorized(self, client):
         resp = client.post("/api/history", json={"original_message": "test"})
         assert resp.status_code == 401
+
+    def test_record_history_message_too_long(self, client, auth_headers):
+        resp = client.post("/api/history", json={
+            "original_message": "x" * 50001,
+            "reply_content": "ok"
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_record_history_reply_too_long(self, client, auth_headers):
+        resp = client.post("/api/history", json={
+            "original_message": "ok",
+            "reply_content": "x" * 50001
+        }, headers=auth_headers)
+        assert resp.status_code == 400

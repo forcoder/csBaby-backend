@@ -10,6 +10,7 @@ import json
 import os
 import uuid
 import re
+import time
 from functools import wraps
 from flask import Flask, request, jsonify, g
 
@@ -82,8 +83,29 @@ def require_auth(f):
         return f(*args, **kwargs)
     return decorated
 
+# ========== Rate Limiting ==========
+_rate_limit_store = {}
+
+def rate_limit(max_requests: int, window_seconds: int):
+    """Decorator: limit requests per IP within a time window."""
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            key = f"{request.remote_addr}:{request.endpoint}"
+            now = time.time()
+            window = _rate_limit_store.get(key, [])
+            # Remove expired timestamps
+            window = [t for t in window if now - t < window_seconds]
+            if len(window) >= max_requests:
+                return jsonify({"error": "rate limit exceeded"}), 429
+            window.append(now)
+            _rate_limit_store[key] = window
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
+
 # ========== CORS ==========
-CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")
+CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")]
 
 @app.after_request
 def after_request(response):
@@ -106,6 +128,7 @@ def health_check():
 
 # ========== 认证 API ==========
 @app.route("/api/auth/register", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
 def register():
     data = request.get_json() or {}
     device = Device.create(
@@ -119,6 +142,7 @@ def register():
     return jsonify({"device_id": device.id, "token": device.token, "expires_in": 30 * 86400})
 
 @app.route("/api/auth/heartbeat", methods=["POST"])
+@rate_limit(max_requests=60, window_seconds=60)
 @require_auth
 def heartbeat():
     repo = SqliteDeviceRepository()
@@ -216,6 +240,7 @@ def delete_rule(rule_id):
     return jsonify({"status": "deleted", "id": rule_id})
 
 @app.route("/api/rules/batch", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
 @require_auth
 def batch_import_rules():
     data = request.get_json() or {}
@@ -353,6 +378,7 @@ def _model_to_ai_config(m: ModelConfig) -> dict:
 
 # ========== AI 生成 API ==========
 @app.route("/api/ai/generate", methods=["POST"])
+@rate_limit(max_requests=30, window_seconds=60)
 @require_auth
 def generate_reply():
     data = request.get_json() or {}
@@ -428,6 +454,7 @@ def generate_reply():
     })
 
 @app.route("/api/ai/chat", methods=["POST"])
+@rate_limit(max_requests=30, window_seconds=60)
 @require_auth
 def chat():
     data = request.get_json() or {}
@@ -474,10 +501,16 @@ def get_history():
 @require_auth
 def record_history():
     data = request.get_json() or {}
+    original_message = data.get("original_message", "")
+    reply_content = data.get("reply_content", "")
+    if len(original_message) > 50000:
+        return jsonify({"error": "original_message too long (max 50000 chars)"}), 400
+    if len(reply_content) > 50000:
+        return jsonify({"error": "reply_content too long (max 50000 chars)"}), 400
     entry = ReplyHistory(
         device_id=request.device_id,
-        original_message=data.get("original_message", ""),
-        reply_content=data.get("reply_content", ""),
+        original_message=original_message,
+        reply_content=reply_content,
         source=data.get("source", "ai"), model_used=data.get("model_used", ""),
         confidence=data.get("confidence", 0), response_time_ms=data.get("response_time_ms", 0),
         platform=data.get("platform", ""), customer_name=data.get("customer_name", ""),
@@ -518,11 +551,14 @@ def submit_feedback():
 
     SqliteMetricsRepository().increment_metric(request.device_id, action)
 
+    comment = data.get("comment", "")
+    if len(comment) > 2000:
+        return jsonify({"error": "comment too long (max 2000 chars)"}), 400
     fb = Feedback(
         device_id=request.device_id,
         reply_history_id=data.get("reply_history_id"),
         action=action, modified_text=data.get("modified_text", ""),
-        rating=data.get("rating", 0), comment=data.get("comment", ""),
+        rating=data.get("rating", 0), comment=comment,
     )
     repo = SqliteFeedbackRepository()
     created = repo.create(fb)

@@ -18,9 +18,11 @@ class KeywordMatcher:
                 matched.append(rule)
             elif match_type == "REGEX":
                 try:
-                    if re.search(keyword, message, re.IGNORECASE):
+                    if re.search(keyword, message, re.IGNORECASE | re.DOTALL):
                         matched.append(rule)
                 except re.error:
+                    pass
+                except Exception:
                     pass
             elif match_type == "CONTAINS" and keyword.lower() in msg_lower:
                 matched.append(rule)
