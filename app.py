@@ -337,6 +337,7 @@ def get_model(model_id):
     return jsonify(_model_to_dict(config))
 
 @app.route("/api/models/<int:model_id>", methods=["PUT"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_auth
 def update_model(model_id):
     repo = SqliteModelRepository()
@@ -365,6 +366,7 @@ def update_model(model_id):
     return jsonify(_model_to_dict(updated))
 
 @app.route("/api/models/<int:model_id>", methods=["DELETE"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_auth
 def delete_model(model_id):
     repo = SqliteModelRepository()
@@ -921,6 +923,7 @@ def admin_get_tenant(tenant_id):
         db.close()
 
 @app.route("/api/admin/tenants/<tenant_id>", methods=["PUT"])
+@rate_limit(max_requests=10, window_seconds=60)
 @require_admin
 def admin_update_tenant(tenant_id):
     data = request.get_json() or {}
@@ -964,6 +967,7 @@ def admin_get_global_default_model():
         db.close()
 
 @app.route("/api/admin/tenants/_global/default-model", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
 @require_admin
 def admin_save_global_default_model():
     data = request.get_json() or {}
@@ -1007,6 +1011,7 @@ def admin_get_tenant_default_model(tenant_id):
     return jsonify({})
 
 @app.route("/api/admin/tenants/<tenant_id>/default-model", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
 @require_admin
 def admin_save_tenant_default_model(tenant_id):
     data = request.get_json() or {}
@@ -1032,6 +1037,7 @@ def admin_save_tenant_default_model(tenant_id):
     return jsonify(_model_to_dict(config))
 
 @app.route("/api/admin/tenants/<tenant_id>/default-model", methods=["DELETE"])
+@rate_limit(max_requests=10, window_seconds=60)
 @require_admin
 def admin_delete_tenant_default_model(tenant_id):
     db = get_connection()
@@ -1051,6 +1057,7 @@ def admin_get_tenant_rules(tenant_id):
     return jsonify([_rule_to_dict(r) for r in rules])
 
 @app.route("/api/admin/tenants/<tenant_id>/rules", methods=["POST"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_admin
 def admin_create_tenant_rule(tenant_id):
     data = request.get_json() or {}

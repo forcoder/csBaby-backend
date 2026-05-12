@@ -21,6 +21,17 @@ def app():
     return admin_app
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Reset login rate limiter between tests to prevent state pollution."""
+    from app import _login_attempts, _login_lock
+    with _login_lock:
+        _login_attempts.clear()
+    yield
+    with _login_lock:
+        _login_attempts.clear()
+
+
 @pytest.fixture
 def client(app):
     """Flask test client."""

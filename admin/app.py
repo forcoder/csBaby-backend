@@ -19,8 +19,13 @@ app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_ENV") != "developmen
 import hashlib
 import hmac
 import secrets
+from threading import Lock
 
 from utils import parse_json_content
+
+# ========== IP-based Rate Limiting for Login ==========
+_login_attempts = {}  # ip -> [timestamps]
+_login_lock = Lock()
 
 
 def _safe_float(val, default=0.0):
@@ -49,6 +54,15 @@ def _csrf_token():
     session["_csrf_token"] = token
     return token
 
+def _cleanup_login_attempts():
+    """Remove expired login attempt entries to prevent memory leak."""
+    now = time.time()
+    with _login_lock:
+        stale_ips = [ip for ip, attempts in _login_attempts.items()
+                     if all(now - t >= 300 for t in attempts)]
+        for ip in stale_ips:
+            del _login_attempts[ip]
+
 @app.before_request
 def _check_csrf():
     """Validate CSRF token for POST requests."""
@@ -57,6 +71,9 @@ def _check_csrf():
     # Skip CSRF check in testing mode (tests obtain token via GET or session_transaction)
     if app.config.get("TESTING"):
         return
+    # Periodic cleanup of login rate limiter (1% of requests)
+    if secrets.randbelow(100) == 0:
+        _cleanup_login_attempts()
     form_token = request.form.get("_csrf_token", "")
     session_token = session.get("_csrf_token", "")
     if not form_token or not session_token or not hmac.compare_digest(form_token, session_token):
@@ -274,15 +291,17 @@ def login():
     if request.method == "POST":
         phone = request.form.get("phone", "").strip()
         password = request.form.get("password", "")
-        # Simple rate limiting via session
+        # IP-based rate limiting (not bypassable by clearing cookies)
+        client_ip = request.remote_addr or "unknown"
         now = time.time()
-        attempts = session.get('_login_attempts', [])
-        attempts = [t for t in attempts if now - t < 300]  # 5-minute window
-        if len(attempts) >= 5:
-            error = "登录尝试次数过多，请5分钟后再试"
-            return render_template("login.html", error=error)
-        attempts.append(now)
-        session['_login_attempts'] = attempts
+        with _login_lock:
+            attempts = _login_attempts.get(client_ip, [])
+            attempts = [t for t in attempts if now - t < 300]  # 5-minute window
+            if len(attempts) >= 5:
+                error = "登录尝试次数过多，请5分钟后再试"
+                return render_template("login.html", error=error)
+            attempts.append(now)
+            _login_attempts[client_ip] = attempts
         try:
             resp = api_post("/api/admin/login", {"phone": phone, "password": password})
             if resp.status_code == 200:
@@ -298,7 +317,8 @@ def login():
                 session["admin_token"] = result.get("token", "")
                 session["is_admin"] = 1
                 session.permanent = True
-                session['_login_attempts'] = []
+                with _login_lock:
+                    _login_attempts.pop(client_ip, None)
                 return redirect(url_for("dashboard"))
             else:
                 error = _safe_api_error(resp)
