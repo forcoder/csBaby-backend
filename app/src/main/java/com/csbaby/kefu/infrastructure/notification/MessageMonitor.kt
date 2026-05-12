@@ -44,14 +44,13 @@ class MessageMonitor @Inject constructor() {
         // Emit to flow for coroutine-based consumers
         _messageFlow.emit(message)
 
-        // Notify listeners
-        synchronized(listeners) {
-            listeners.forEach { listener ->
-                try {
-                    listener.onNewMessage(message)
-                } catch (e: Exception) {
-                    // Continue with other listeners
-                }
+        // Notify listeners using snapshot to avoid ConcurrentModificationException
+        val listenersCopy = synchronized(listeners) { listeners.toList() }
+        listenersCopy.forEach { listener ->
+            try {
+                listener.onNewMessage(message)
+            } catch (e: Exception) {
+                // Continue with other listeners
             }
         }
     }

@@ -47,6 +47,7 @@ call_ai_model = ai_service.call_model
 
 # ========== Flask App ==========
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB max request body
 
 # ========== Database ==========
 _db_initialized = False
@@ -657,7 +658,7 @@ def restore_backup():
             device_id=device_id, keyword=r.get("keyword", ""),
             match_type=r.get("match_type", "CONTAINS"), reply_template=r.get("reply_template", ""),
             category=r.get("category", ""), target_type=r.get("target_type", "ALL"),
-            target_names=r.get("target_names", []) if isinstance(r.get("target_names"), list) else json.loads(r.get("target_names", "[]")),
+            target_names=r.get("target_names", []) if isinstance(r.get("target_names"), list) else json.loads(r.get("target_names", "[]")) if isinstance(r.get("target_names"), str) else [],
             priority=r.get("priority", 0), enabled=bool(r.get("enabled", True)),
         ) for r in rules_data]
         SqliteRuleRepository().batch_create(rules, device_id, "override")

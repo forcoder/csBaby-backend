@@ -152,6 +152,10 @@ class OtaManager @Inject constructor(
      * 注册下载完成广播接收器
      */
     private fun registerDownloadReceiver() {
+        // Unregister old receiver first to prevent leaks
+        downloadReceiver?.let {
+            try { context.unregisterReceiver(it) } catch (_: Exception) {}
+        }
         downloadReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
@@ -161,70 +165,56 @@ class OtaManager @Inject constructor(
                     query.setFilterById(id)
                     
                     val cursor = downloadManager?.query(query)
-                    
-                    if (cursor != null && cursor.moveToFirst()) {
-                        val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                        if (statusIndex >= 0) {
-                            val status = cursor.getInt(statusIndex)
-                            
-                            when (status) {
-                                DownloadManager.STATUS_SUCCESSFUL -> {
-                                    _updateStatus.value = UpdateStatus.DOWNLOADED
-                                    
-                                    // 获取下载文件的路径
-                                    var apkFile: File? = null
-                                    
-                                    // 方式1: 使用COLUMN_LOCAL_FILENAME（最可靠）
-                                    val localFilenameIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_FILENAME)
-                                    if (localFilenameIndex != -1) {
-                                        val localFilename = cursor.getString(localFilenameIndex)
-                                        if (!localFilename.isNullOrEmpty()) {
-                                            val file = File(localFilename)
-                                            if (file.exists()) {
-                                                apkFile = file
+                    try {
+                        if (cursor != null && cursor.moveToFirst()) {
+                            val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                            if (statusIndex >= 0) {
+                                val status = cursor.getInt(statusIndex)
+
+                                when (status) {
+                                    DownloadManager.STATUS_SUCCESSFUL -> {
+                                        _updateStatus.value = UpdateStatus.DOWNLOADED
+
+                                        var apkFile: File? = null
+                                        val localFilenameIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_FILENAME)
+                                        if (localFilenameIndex != -1) {
+                                            val localFilename = cursor.getString(localFilenameIndex)
+                                            if (!localFilename.isNullOrEmpty()) {
+                                                val file = File(localFilename)
+                                                if (file.exists()) apkFile = file
                                             }
                                         }
-                                    }
-                                    
-                                    // 方式2: 直接使用下载目录
-                                    if (apkFile == null) {
-                                        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                                        val appDir = File(downloadsDir, "KefuUpdates")
-                                        _availableUpdate.value?.let { update ->
-                                            val fileName = "kefu_v${update.versionName}_${update.versionCode}.apk"
-                                            val file = File(appDir, fileName)
-                                            if (file.exists()) {
-                                                apkFile = file
+                                        if (apkFile == null) {
+                                            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                                            val appDir = File(downloadsDir, "KefuUpdates")
+                                            _availableUpdate.value?.let { update ->
+                                                val fileName = "kefu_v${update.versionName}_${update.versionCode}.apk"
+                                                val file = File(appDir, fileName)
+                                                if (file.exists()) apkFile = file
                                             }
                                         }
+                                        apkFile?.let {
+                                            pendingApkFile = it
+                                            Log.d(TAG, "下载完成，APK路径: ${it.absolutePath}")
+                                            prepareInstallation(it)
+                                        } ?: run {
+                                            _errorMessage.value = "无法找到下载文件"
+                                            _updateStatus.value = UpdateStatus.FAILED
+                                        }
                                     }
-                                    
-                                    // 保存APK路径供后续安装使用
-                                    apkFile?.let {
-                                        pendingApkFile = it
-                                        Log.d(TAG, "下载完成，APK路径: ${it.absolutePath}")
-                                        prepareInstallation(it)
-                                    } ?: run {
-                                        _errorMessage.value = "无法找到下载文件"
+
+                                    DownloadManager.STATUS_FAILED -> {
+                                        val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+                                        val reason = if (reasonIndex >= 0) cursor.getInt(reasonIndex) else 0
+                                        _errorMessage.value = "下载失败: ${getDownloadErrorReason(reason)}"
                                         _updateStatus.value = UpdateStatus.FAILED
                                     }
                                 }
-                                
-                                DownloadManager.STATUS_FAILED -> {
-                                    val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
-                                    if (reasonIndex >= 0) {
-                                        val reason = cursor.getInt(reasonIndex)
-                                        _errorMessage.value = "下载失败: ${getDownloadErrorReason(reason)}"
-                                    } else {
-                                        _errorMessage.value = "下载失败: 未知原因"
-                                    }
-                                    _updateStatus.value = UpdateStatus.FAILED
-                                }
                             }
                         }
+                    } finally {
+                        cursor?.close()
                     }
-                    
-                    cursor?.close()
                 }
             }
         }

@@ -14,8 +14,7 @@ app.secret_key = SESSION_SECRET
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["PERMANENT_SESSION_LIFETIME"] = 1800  # 30 minutes
-if os.environ.get("FLASK_ENV") == "production":
-    app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_ENV") != "development"
 
 import hashlib
 import hmac
@@ -117,6 +116,13 @@ def api_delete(path, token):
         timeout=10
     )
 
+
+def _safe_api_error(resp):
+    """Safely extract error message from an API response."""
+    try:
+        return resp.json().get("error", f"请求失败 (HTTP {resp.status_code})")
+    except Exception:
+        return f"请求失败 (HTTP {resp.status_code})"
 
 
 def parse_csv_content(content):
@@ -375,11 +381,14 @@ def tenant_detail(tenant_id):
         if action == "toggle_status":
             is_active = request.form.get("is_active")
             if is_active is not None:
-                resp = api_put(f"/api/admin/tenants/{tenant_id}", token, {"is_active": int(is_active)})
-                if resp.status_code == 200:
-                    flash("状态已更新", "success")
-                else:
-                    flash(resp.json().get("error", "操作失败"), "error")
+                try:
+                    resp = api_put(f"/api/admin/tenants/{tenant_id}", token, {"is_active": int(is_active)})
+                    if resp.status_code == 200:
+                        flash("状态已更新", "success")
+                    else:
+                        flash(_safe_api_error(resp), "error")
+                except Exception as e:
+                    flash(f"网络错误: {e}", "error")
             return redirect(url_for("tenant_detail", tenant_id=tenant_id))
         elif action == "save_default_model":
             model_data = {
@@ -397,7 +406,7 @@ def tenant_detail(tenant_id):
                 if resp.status_code in (200, 201):
                     success = "默认模型配置已保存"
                 else:
-                    error = resp.json().get("error", "保存失败")
+                    error = _safe_api_error(resp)
             except Exception as e:
                 error = f"网络错误: {e}"
             return render_template("tenant_detail.html", tenant=_get_tenant(tenant_id, token),
@@ -614,6 +623,8 @@ def admin_tenant_rules_batch(tenant_id):
     """批量导入规则，支持文件上传（JSON/CSV/Excel）和 JSON 文本粘贴"""
     token = session.get("admin_token", "")
     import_mode = request.form.get("import_mode", "override")
+    if import_mode not in ("override", "append"):
+        import_mode = "override"
     rules = []
     source_desc = ""
 
@@ -662,6 +673,10 @@ def admin_tenant_rules_batch(tenant_id):
         flash(f"{source_desc} 中没有可导入的规则", "error")
         return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
 
+    if len(rules) > 1000:
+        flash(f"规则数量超过上限（1000条），当前 {len(rules)} 条", "error")
+        return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+
     try:
         resp = api_post(
             f"/api/admin/tenants/{tenant_id}/rules/batch",
@@ -670,16 +685,20 @@ def admin_tenant_rules_batch(tenant_id):
             timeout=30,
         )
         if resp.status_code == 200:
-            result = resp.json()
-            imported = result.get("imported", len(rules))
-            total = result.get("total", imported)
+            try:
+                result = resp.json()
+                imported = result.get("imported", len(rules))
+                total = result.get("total", imported)
+            except Exception:
+                imported = len(rules)
+                total = imported
             mode_desc = "覆盖导入" if import_mode == "override" else "追加导入"
             flash(
                 f"{mode_desc}成功：从 {source_desc} 导入 {imported} 条规则，当前共 {total} 条",
                 "success",
             )
         else:
-            flash(resp.json().get("error", "导入失败"), "error")
+            flash(_safe_api_error(resp), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
@@ -1219,11 +1238,14 @@ def admin_tenant_routing_agent_add(tenant_id):
         "status": status,
         "max_concurrent": max_concurrent,
     }
-    resp = api_post(f"/api/agent/status", data, token, timeout=10)
-    if resp.status_code in (200, 201):
-        flash(f"客服 {agent_phone} 添加成功", "success")
-    else:
-        flash(resp.json().get("error", "添加失败"), "error")
+    try:
+        resp = api_post(f"/api/agent/status", data, token, timeout=10)
+        if resp.status_code in (200, 201):
+            flash(f"客服 {agent_phone} 添加成功", "success")
+        else:
+            flash(_safe_api_error(resp), "error")
+    except Exception as e:
+        flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
 
 
@@ -1238,11 +1260,14 @@ def admin_tenant_routing_agent_status(tenant_id, agent_phone):
         return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
 
     data = {"agent_phone": agent_phone, "status": status}
-    resp = api_post(f"/api/agent/status", data, token, timeout=10)
-    if resp.status_code == 200:
-        flash(f"客服 {agent_phone} 状态已更新为 {status}", "success")
-    else:
-        flash(resp.json().get("error", "更新失败"), "error")
+    try:
+        resp = api_post(f"/api/agent/status", data, token, timeout=10)
+        if resp.status_code == 200:
+            flash(f"客服 {agent_phone} 状态已更新为 {status}", "success")
+        else:
+            flash(_safe_api_error(resp), "error")
+    except Exception as e:
+        flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
 
 
@@ -1269,11 +1294,14 @@ def admin_tenant_routing_agent_skills(tenant_id, agent_phone):
             skills.append({"skill_tag": tag, "proficiency": prof})
 
     data = {"agent_phone": agent_phone, "skills": skills}
-    resp = api_post(f"/api/agent/skills", data, token, timeout=10)
-    if resp.status_code == 200:
-        flash(f"客服 {agent_phone} 技能已更新", "success")
-    else:
-        flash(resp.json().get("error", "更新失败"), "error")
+    try:
+        resp = api_post(f"/api/agent/skills", data, token, timeout=10)
+        if resp.status_code == 200:
+            flash(f"客服 {agent_phone} 技能已更新", "success")
+        else:
+            flash(_safe_api_error(resp), "error")
+    except Exception as e:
+        flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
 
 
@@ -1302,11 +1330,14 @@ def admin_tenant_routing_config(tenant_id):
         "max_queue_size": max_queue_size,
         "timeout_seconds": timeout_seconds,
     }
-    resp = api_post(f"/api/routing/config", data, token, timeout=10)
-    if resp.status_code == 200:
-        flash("路由配置已更新", "success")
-    else:
-        flash(resp.json().get("error", "更新失败"), "error")
+    try:
+        resp = api_post(f"/api/routing/config", data, token, timeout=10)
+        if resp.status_code == 200:
+            flash("路由配置已更新", "success")
+        else:
+            flash(_safe_api_error(resp), "error")
+    except Exception as e:
+        flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
 
 
@@ -1320,12 +1351,15 @@ def admin_tenant_routing_session_close(tenant_id, session_id):
         flash("需要指定客服手机号", "error")
         return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
 
-    resp = api_post(f"/api/conversation/{session_id}/close",
-                    {"agent_phone": agent_phone}, token, timeout=10)
-    if resp.status_code == 200:
-        flash("会话已关闭", "success")
-    else:
-        flash(resp.json().get("error", "关闭失败"), "error")
+    try:
+        resp = api_post(f"/api/conversation/{session_id}/close",
+                        {"agent_phone": agent_phone}, token, timeout=10)
+        if resp.status_code == 200:
+            flash("会话已关闭", "success")
+        else:
+            flash(_safe_api_error(resp), "error")
+    except Exception as e:
+        flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
 
 

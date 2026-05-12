@@ -84,7 +84,8 @@ def init_db():
             rating INTEGER,
             comment TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (device_id) REFERENCES devices(id)
+            FOREIGN KEY (device_id) REFERENCES devices(id),
+            FOREIGN KEY (reply_history_id) REFERENCES reply_history(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS optimization_metrics (
