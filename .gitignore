@@ -1,3 +1,10 @@
+# Sensitive files - never commit
+.env
+local.properties
+*.keystore
+*.jks
+keystore/
+
 # Gradle
 .gradle/
 build/
@@ -6,13 +13,22 @@ build/
 # Android Studio
 *.iml
 .idea/
-local.properties
 
 # Build outputs
 *.apk
 *.aab
 *.ap_
 *.dex
+
+# Python
+__pycache__/
+*.pyc
+.coverage
+htmlcov/
+.pytest_cache/
+*.egg-info/
+dist/
+*.egg
 
 # Node
 node_modules/
@@ -30,7 +46,6 @@ Thumbs.db
 *.ab
 
 # Local config
-local.properties
 secrets/
 credentials/
 
@@ -46,4 +61,14 @@ app/_disabled_sources/
 *.tmp
 *.swp
 *~
+
+# Wolf/OpenWolf
+.wolf/designqc-captures/
+
+# Graphify
 graphify
+graphify-out/
+
+# Coverage
+.coverage
+htmlcov/
