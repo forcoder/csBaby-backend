@@ -58,11 +58,15 @@ class HomeViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
+            val totalCount = replyHistoryRepository.getTotalCount()
+            _uiState.update { it.copy(totalReplies = totalCount) }
+        }
+
+        viewModelScope.launch {
             replyHistoryRepository.getRecentReplies(10).collect { replies ->
                 _uiState.update { state ->
                     state.copy(
                         recentReplies = replies,
-                        totalReplies = replyHistoryRepository.getTotalCount(),
                         todayReplies = replies.count {
                             isToday(it.sendTime)
                         }

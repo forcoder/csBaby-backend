@@ -1,5 +1,7 @@
 package com.csbaby.kefu.infrastructure.notification
 
+import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -13,6 +15,10 @@ import javax.inject.Singleton
  */
 @Singleton
 class MessageMonitor @Inject constructor() {
+
+    companion object {
+        private const val TAG = "MessageMonitor"
+    }
 
     private val _messageFlow = MutableSharedFlow<MonitoredMessage>(
         replay = 0,
@@ -49,8 +55,10 @@ class MessageMonitor @Inject constructor() {
         listenersCopy.forEach { listener ->
             try {
                 listener.onNewMessage(message)
+            } catch (e: CancellationException) {
+                throw e // Always rethrow CancellationException to preserve structured concurrency
             } catch (e: Exception) {
-                // Continue with other listeners
+                Log.e(TAG, "Listener ${listener.javaClass.simpleName} threw exception", e)
             }
         }
     }
