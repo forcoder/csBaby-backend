@@ -286,7 +286,11 @@ def login():
         try:
             resp = api_post("/api/admin/login", {"phone": phone, "password": password})
             if resp.status_code == 200:
-                result = resp.json()
+                try:
+                    result = resp.json()
+                except Exception:
+                    error = "API 返回了无效的响应"
+                    return render_template("login.html", error=error)
                 if not result.get("is_admin"):
                     error = "需要管理员权限"
                     return render_template("login.html", error=error)

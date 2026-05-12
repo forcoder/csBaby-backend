@@ -175,6 +175,7 @@ def get_rules():
     return jsonify([_rule_to_dict(r) for r in rules])
 
 @app.route("/api/rules", methods=["POST"])
+@rate_limit(max_requests=30, window_seconds=60)
 @require_auth
 def create_rule():
     data = request.get_json() or {}
@@ -294,6 +295,7 @@ def get_models():
     return jsonify([_model_to_dict(m) for m in models])
 
 @app.route("/api/models", methods=["POST"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_auth
 def create_model():
     data = request.get_json() or {}
@@ -515,6 +517,7 @@ def get_history():
     })
 
 @app.route("/api/history", methods=["POST"])
+@rate_limit(max_requests=60, window_seconds=60)
 @require_auth
 def record_history():
     data = request.get_json() or {}
@@ -558,6 +561,7 @@ def get_feedback():
     return jsonify([{"id": f.id, "device_id": f.device_id, "action": f.action} for f in items])
 
 @app.route("/api/feedback", methods=["POST"])
+@rate_limit(max_requests=60, window_seconds=60)
 @require_auth
 def submit_feedback():
     data = request.get_json() or {}
@@ -632,6 +636,7 @@ def analyze_optimize():
 
 # ========== 备份 API ==========
 @app.route("/api/backup", methods=["GET"])
+@rate_limit(max_requests=10, window_seconds=60)
 @require_auth
 def export_backup():
     device_id = request.device_id
@@ -658,6 +663,7 @@ def export_backup():
     })
 
 @app.route("/api/backup/restore", methods=["POST"])
+@rate_limit(max_requests=5, window_seconds=60)
 @require_auth
 def restore_backup():
     data = request.get_json() or {}
