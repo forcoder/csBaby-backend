@@ -15,7 +15,9 @@ import javax.inject.Singleton
 class KeywordMatcher @Inject constructor() {
 
     private val trieRoot = TrieNode()
+    @Volatile
     private var rules: List<KeywordRule> = emptyList()
+    @Volatile
     private var isTrieBuilt = false
     private val matchCache = ConcurrentHashMap<String, List<MatchedResult>>()
     private val CACHE_SIZE = 1000
@@ -72,10 +74,7 @@ class KeywordMatcher @Inject constructor() {
         var node = trieRoot
         for (char in keyword) {
             val lowerChar = char.lowercaseChar()
-            if (!node.children.containsKey(lowerChar)) {
-                node.children[lowerChar] = TrieNode()
-            }
-            node = node.children[lowerChar]!!
+            node = node.children.getOrPut(lowerChar) { TrieNode() }
         }
         node.isEndOfWord = true
         node.ruleIds.add(MatchedRule(ruleId, priority))

@@ -76,6 +76,15 @@ fun BlacklistScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            if (uiState.isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+                return@Column
+            }
             if (uiState.blacklists.isEmpty()) {
                 Box(
                     modifier = Modifier

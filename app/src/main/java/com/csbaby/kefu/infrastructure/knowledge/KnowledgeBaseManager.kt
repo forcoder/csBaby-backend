@@ -38,6 +38,7 @@ class KnowledgeBaseManager @Inject constructor(
 ) {
     companion object {
         private const val TAG = "KnowledgeBaseManager"
+        private const val MAX_EXCEL_ENTRY_SIZE_BYTES = 10 * 1024 * 1024 // 10MB
     }
     private val gson = Gson()
 
@@ -279,7 +280,7 @@ class KnowledgeBaseManager @Inject constructor(
         withContext(Dispatchers.IO) {
             val rules = keywordRuleRepository.getEnabledRules().first()
             val json = gson.toJson(ExportData(rules = rules))
-            outputStream.write(json.toByteArray())
+            outputStream.use { it.write(json.toByteArray()) }
         }
     }
 
@@ -296,7 +297,7 @@ class KnowledgeBaseManager @Inject constructor(
                     "\"${rule.keyword}\",${rule.matchType},\"${rule.replyTemplate.replace("\"", "\"\"")}\",\"${rule.category}\",${rule.targetType},\"${rule.targetNames.joinToString("|")}\",${rule.priority},${rule.enabled}"
                 )
             }
-            outputStream.write(sb.toString().toByteArray())
+            outputStream.use { it.write(sb.toString().toByteArray()) }
         }
     }
 
@@ -343,7 +344,7 @@ class KnowledgeBaseManager @Inject constructor(
     suspend fun importFromCsv(inputStream: InputStream): ImportResult {
         return withContext(Dispatchers.IO) {
             try {
-                val lines = inputStream.bufferedReader().readLines()
+                val lines = inputStream.bufferedReader().use { it.readLines() }
                 importTabularRows(
                     rows = lines.map(::parseCsvLine),
                     emptyMessage = "CSV 中没有可导入的规则"
@@ -1076,6 +1077,13 @@ class KnowledgeBaseManager @Inject constructor(
 
         ZipInputStream(BufferedInputStream(inputStream)).use { zipInputStream ->
             generateSequence { zipInputStream.nextEntry }.forEach { entry ->
+                // 防止恶意/损坏的 xlsx 文件导致 OOM：跳过超大 entry
+                val entrySize = entry.size
+                if (entrySize > MAX_EXCEL_ENTRY_SIZE_BYTES) {
+                    Log.w(TAG, "parseExcelWorksheets: 跳过超大 entry: ${entry.name} (${entrySize} bytes)")
+                    zipInputStream.closeEntry()
+                    return@forEach
+                }
                 val entryBytes = zipInputStream.readBytes()
                 when {
                     entry.name == "xl/sharedStrings.xml" -> {

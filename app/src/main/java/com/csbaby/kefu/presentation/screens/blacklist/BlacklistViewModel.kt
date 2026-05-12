@@ -29,12 +29,13 @@ class BlacklistViewModel @Inject constructor(
     
     private fun loadBlacklists() {
         viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
             blacklistRepository.getAll()
                 .catch { e ->
-                    _uiState.update { it.copy(noticeMessage = "加载黑名单失败: ${e.message}") }
+                    _uiState.update { it.copy(isLoading = false, noticeMessage = "加载黑名单失败: ${e.message}") }
                 }
                 .collect { blacklists ->
-                    _uiState.update { it.copy(blacklists = blacklists) }
+                    _uiState.update { it.copy(isLoading = false, blacklists = blacklists) }
                 }
         }
     }

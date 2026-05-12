@@ -8,9 +8,12 @@ import com.csbaby.kefu.infrastructure.window.FloatingWindowService
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import timber.log.Timber
 
 
 @AndroidEntryPoint
@@ -21,11 +24,19 @@ class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            CoroutineScope(Dispatchers.IO).launch {
-                val preferences = preferencesManager.userPreferencesFlow.first()
-                if (preferences.floatingIconEnabled) {
-                    // 开机后如果开启了悬浮图标，则默认显示悬浮图标
-                    FloatingWindowService.showIconOnly(context)
+            val pendingResult = goAsync()
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                try {
+                    val preferences = preferencesManager.userPreferencesFlow.first()
+                    if (preferences.floatingIconEnabled) {
+                        withContext(Dispatchers.Main) {
+                            FloatingWindowService.showIconOnly(context.applicationContext)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "BootReceiver: 显示悬浮图标失败")
+                } finally {
+                    pendingResult.finish()
                 }
             }
         }

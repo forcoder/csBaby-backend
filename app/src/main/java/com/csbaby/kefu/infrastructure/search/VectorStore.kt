@@ -33,6 +33,7 @@ class VectorStore @Inject constructor(
     private val vectorIndex = mutableMapOf<Long, Pair<KeywordRule, FloatArray>>()
     
     // Flag to track if index is initialized
+    @Volatile
     private var isInitialized = false
     
     /**

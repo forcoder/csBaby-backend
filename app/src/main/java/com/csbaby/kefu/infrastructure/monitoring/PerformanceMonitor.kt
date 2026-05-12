@@ -4,10 +4,15 @@ import android.content.Context
 import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,38 +30,39 @@ class PerformanceMonitor @Inject constructor(
         private const val TAG = "PerformanceMonitor"
         private const val SAMPLE_INTERVAL_MS = 5000L
     }
-    
+
     // 性能指标
     private val performanceMetrics = ConcurrentHashMap<String, PerformanceMetric>()
-    private val crashReports = mutableListOf<CrashReport>()
+    private val crashReports = CopyOnWriteArrayList<CrashReport>()
     private val startupTime = SystemClock.elapsedRealtime()
-    
+
     // 监控状态
-    private var isMonitoring = false
-    
+    private val isMonitoring = AtomicBoolean(false)
+    private val monitorJob = SupervisorJob()
+    private val monitorScope = CoroutineScope(monitorJob + Dispatchers.IO)
+
     /**
      * 开始监控
      */
     fun startMonitoring() {
-        if (isMonitoring) return
-        
-        isMonitoring = true
+        if (!isMonitoring.compareAndSet(false, true)) return
+
         Timber.d("开始性能监控")
-        
-        // 启动定期采样
-        CoroutineScope(Dispatchers.IO).launch {
-            while (isMonitoring) {
+
+        monitorScope.launch {
+            while (isMonitoring.get()) {
                 collectPerformanceMetrics()
                 delay(SAMPLE_INTERVAL_MS)
             }
         }
     }
-    
+
     /**
      * 停止监控
      */
     fun stopMonitoring() {
-        isMonitoring = false
+        isMonitoring.set(false)
+        monitorJob.cancel()
         Timber.d("停止性能监控")
     }
     
@@ -90,11 +96,9 @@ class PerformanceMonitor @Inject constructor(
             stackTrace = throwable.stackTraceToString(),
             context = context
         )
-        
+
         crashReports.add(crashReport)
         Timber.e(throwable, "应用崩溃: $context")
-        
-        // 这里可以添加上传崩溃报告的逻辑
     }
     
     /**
@@ -142,6 +146,14 @@ class PerformanceMonitor @Inject constructor(
     fun clearMetrics() {
         performanceMetrics.clear()
         crashReports.clear()
+    }
+
+    /**
+     * 关闭性能监控器，取消所有后台协程。
+     * 应在应用退出时调用。
+     */
+    fun shutdown() {
+        stopMonitoring()
     }
     
     /**
