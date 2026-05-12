@@ -1079,8 +1079,10 @@ class KnowledgeBaseManager @Inject constructor(
             generateSequence { zipInputStream.nextEntry }.forEach { entry ->
                 // 防止恶意/损坏的 xlsx 文件导致 OOM：跳过超大 entry
                 val entrySize = entry.size
-                if (entrySize > MAX_EXCEL_ENTRY_SIZE_BYTES) {
-                    Log.w(TAG, "parseExcelWorksheets: 跳过超大 entry: ${entry.name} (${entrySize} bytes)")
+                // entry.size can be -1 if unknown; treat unknown size as potentially dangerous
+                if (entrySize > MAX_EXCEL_ENTRY_SIZE_BYTES || entrySize == -1L) {
+                    val sizeDesc = if (entrySize == -1L) "unknown" else "${entrySize} bytes"
+                    Log.w(TAG, "parseExcelWorksheets: 跳过超大/未知大小 entry: ${entry.name} ($sizeDesc)")
                     zipInputStream.closeEntry()
                     return@forEach
                 }
@@ -1105,6 +1107,8 @@ class KnowledgeBaseManager @Inject constructor(
 
     private fun parseSharedStrings(bytes: ByteArray): List<String> {
         val parser = Xml.newPullParser().apply {
+            setFeature(XmlPullParser.FEATURE_PROCESS_DOCDECL, false)
+            setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
             setInput(ByteArrayInputStream(bytes), Charsets.UTF_8.name())
         }
         val sharedStrings = mutableListOf<String>()
@@ -1136,6 +1140,8 @@ class KnowledgeBaseManager @Inject constructor(
 
     private fun parseWorksheetRows(bytes: ByteArray, sharedStrings: List<String>): List<List<String>> {
         val parser = Xml.newPullParser().apply {
+            setFeature(XmlPullParser.FEATURE_PROCESS_DOCDECL, false)
+            setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
             setInput(ByteArrayInputStream(bytes), Charsets.UTF_8.name())
         }
         val rows = mutableListOf<List<String>>()

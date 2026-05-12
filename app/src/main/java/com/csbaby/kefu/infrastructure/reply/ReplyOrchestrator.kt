@@ -38,9 +38,13 @@ class ReplyOrchestrator @Inject constructor(
 ) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
+    @Volatile
     private var currentJob: Job? = null
+    @Volatile
     private var collectorJob: Job? = null
+    @Volatile
     private var matcherJob: Job? = null
+    @Volatile
     private var iconObserverJob: Job? = null
 
     /**
@@ -130,6 +134,7 @@ class ReplyOrchestrator @Inject constructor(
                 return
             }
 
+            // Cancel previous job before launching new one
             currentJob?.cancel()
 
             currentJob = scope.launch {
@@ -147,76 +152,75 @@ class ReplyOrchestrator @Inject constructor(
                         return@launch
                     }
 
-                    val isBaijuyiMessage = isBaijuyiMessage(message)
-                if (isBaijuyiMessage) {
-                    Log.d(
-                        TAG,
-                        "Baijuyi message received by ReplyOrchestrator. title=${previewForLog(message.title)}, conversation=${previewForLog(message.conversationTitle)}, content=${previewForLog(message.content)}, timestamp=${message.timestamp}"
-                    )
-                }
-
-                val preferences = preferencesManager.userPreferencesFlow.first()
-                if (!preferences.monitoringEnabled) {
-                    if (isBaijuyiMessage) {
-                        Log.d(TAG, "Baijuyi message skipped in ReplyOrchestrator: monitoring disabled")
+                    val isBaijuyi = isBaijuyiMessage(message)
+                    if (isBaijuyi) {
+                        Log.d(
+                            TAG,
+                            "Baijuyi message received by ReplyOrchestrator. title=${previewForLog(message.title)}, conversation=${previewForLog(message.conversationTitle)}, content=${previewForLog(message.content)}, timestamp=${message.timestamp}"
+                        )
                     }
-                    return@launch
-                }
 
-                val monitoredApps = preferences.selectedApps
-                if (message.packageName !in monitoredApps) {
-
-                    if (isBaijuyiMessage) {
-                        Log.d(TAG, "Baijuyi message skipped in ReplyOrchestrator: package not selected")
+                    val preferences = preferencesManager.userPreferencesFlow.first()
+                    if (!preferences.monitoringEnabled) {
+                        if (isBaijuyi) {
+                            Log.d(TAG, "Baijuyi message skipped in ReplyOrchestrator: monitoring disabled")
+                        }
+                        return@launch
                     }
-                    return@launch
-                }
 
-                val propertyName = extractPropertyName(message)
-                val replyContext = ReplyContext(
-                    appPackage = message.packageName,
-                    scenarioId = null,
-                    conversationTitle = message.conversationTitle ?: message.title,
-                    propertyName = propertyName,
-                    isGroupConversation = message.isGroupConversation,
-                    userId = preferences.currentUserId
-                )
-
-                if (isBaijuyiMessage) {
-                    Log.d(
-                        TAG,
-                        "Baijuyi reply context built. conversation=${previewForLog(replyContext.conversationTitle)}, property=${previewForLog(replyContext.propertyName)}, isGroup=${replyContext.isGroupConversation}, floatingEnabled=${preferences.floatingWindowEnabled}"
-                    )
-                }
-
-                val result = replyGenerator.generateReply(
-                    message = message.content,
-                    context = replyContext
-                )
-
-                if (isBaijuyiMessage) {
-                    Log.d(
-                        TAG,
-                        "Baijuyi reply generated. source=${result.source}, confidence=${result.confidence}, ruleId=${result.ruleId ?: -1}, modelId=${result.modelId ?: -1}, reply=${previewForLog(result.reply)}"
-                    )
-                }
-
-                if (preferences.floatingWindowEnabled) {
-                    if (isBaijuyiMessage) {
-                        Log.d(TAG, "Baijuyi reply forwarding to floating window")
+                    val monitoredApps = preferences.selectedApps
+                    if (message.packageName !in monitoredApps) {
+                        if (isBaijuyi) {
+                            Log.d(TAG, "Baijuyi message skipped in ReplyOrchestrator: package not selected")
+                        }
+                        return@launch
                     }
-                    showFloatingWindow(message, result)
-                } else if (isBaijuyiMessage) {
-                    Log.d(TAG, "Baijuyi reply not shown: floating window disabled")
+
+                    val propertyName = extractPropertyName(message)
+                    val replyContext = ReplyContext(
+                        appPackage = message.packageName,
+                        scenarioId = null,
+                        conversationTitle = message.conversationTitle ?: message.title,
+                        propertyName = propertyName,
+                        isGroupConversation = message.isGroupConversation,
+                        userId = preferences.currentUserId
+                    )
+
+                    if (isBaijuyi) {
+                        Log.d(
+                            TAG,
+                            "Baijuyi reply context built. conversation=${previewForLog(replyContext.conversationTitle)}, property=${previewForLog(replyContext.propertyName)}, isGroup=${replyContext.isGroupConversation}, floatingEnabled=${preferences.floatingWindowEnabled}"
+                        )
+                    }
+
+                    val result = replyGenerator.generateReply(
+                        message = message.content,
+                        context = replyContext
+                    )
+
+                    if (isBaijuyi) {
+                        Log.d(
+                            TAG,
+                            "Baijuyi reply generated. source=${result.source}, confidence=${result.confidence}, ruleId=${result.ruleId ?: -1}, modelId=${result.modelId ?: -1}, reply=${previewForLog(result.reply)}"
+                        )
+                    }
+
+                    if (preferences.floatingWindowEnabled) {
+                        if (isBaijuyi) {
+                            Log.d(TAG, "Baijuyi reply forwarding to floating window")
+                        }
+                        showFloatingWindow(message, result)
+                    } else if (isBaijuyi) {
+                        Log.d(TAG, "Baijuyi reply not shown: floating window disabled")
+                    }
+
+                } catch (e: CancellationException) {
+                    Log.d(TAG, "Reply generation cancelled")
+                    throw e // Rethrow to preserve structured concurrency
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to generate reply", e)
                 }
-
-            } catch (e: CancellationException) {
-
-                Log.d(TAG, "Reply generation cancelled for a newer message")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to generate reply", e)
             }
-        }
         } catch (e: Exception) {
             Log.e(TAG, "Error in handleNewMessage", e)
         }
