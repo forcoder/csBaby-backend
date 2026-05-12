@@ -97,3 +97,35 @@ class TestJWTExpiration:
             "Content-Type": "application/json"
         })
         assert resp.status_code == 401
+
+
+class TestJWTPadding:
+    """Tests for JWT base64 padding fix."""
+
+    def test_token_with_various_payload_lengths(self, app_module):
+        """JWT tokens should verify correctly regardless of payload length."""
+        from domain.services.auth_service import AuthService
+        service = AuthService("test-secret-key")
+        # Test with various device IDs that produce different payload lengths
+        for device_id in ["a", "ab", "abc", "abcd", "abcde", "abcdef", "x" * 50, "y" * 99]:
+            token = service.generate_token(device_id)
+            verified_id = service.verify_token(token)
+            assert verified_id == device_id, f"Token verification failed for device_id='{device_id}'"
+
+    def test_token_verification_roundtrip(self, app_module):
+        """Generated tokens should always verify back to the same device_id."""
+        from domain.services.auth_service import AuthService
+        service = AuthService("my-jwt-secret")
+        device_id = "test-device-12345"
+        token = service.generate_token(device_id)
+        assert service.verify_token(token) == device_id
+
+    def test_tampered_token_rejected(self, app_module):
+        """Tampered tokens should fail verification."""
+        from domain.services.auth_service import AuthService
+        service = AuthService("test-secret")
+        token = service.generate_token("device1")
+        parts = token.split(".")
+        # Tamper with the payload
+        tampered = parts[0] + ".AAAA." + parts[2]
+        assert service.verify_token(tampered) is None

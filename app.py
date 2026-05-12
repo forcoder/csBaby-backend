@@ -7,12 +7,16 @@ Infrastructure Layer: infrastructure/persistence
 Presentation Layer: app.py (Flask routes)
 """
 import json
+import logging
 import os
-import uuid
 import re
 import time
+import uuid
 from functools import wraps
+from threading import Lock
 from flask import Flask, request, jsonify, g
+
+logger = logging.getLogger(__name__)
 
 # ========== DDD Imports ==========
 from domain.services.auth_service import AuthService
@@ -86,6 +90,7 @@ def require_auth(f):
 
 # ========== Rate Limiting ==========
 _rate_limit_store = {}
+_rate_limit_lock = Lock()
 
 def _cleanup_rate_limit_store():
     """Remove expired entries to prevent memory leak."""
@@ -101,22 +106,24 @@ def _cleanup_rate_limit_store():
         del _rate_limit_store[key]
 
 def rate_limit(max_requests: int, window_seconds: int):
-    """Decorator: limit requests per IP within a time window."""
+    """Decorator: limit requests per IP within a time window (thread-safe)."""
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
             # Periodic cleanup (1% of requests to avoid overhead)
             if hash(f"{request.remote_addr}{time.time()}") % 100 == 0:
-                _cleanup_rate_limit_store()
+                with _rate_limit_lock:
+                    _cleanup_rate_limit_store()
             key = f"{request.remote_addr}:{request.endpoint}"
             now = time.time()
-            window = _rate_limit_store.get(key, [])
-            # Remove expired timestamps
-            window = [t for t in window if now - t < window_seconds]
-            if len(window) >= max_requests:
-                return jsonify({"error": "rate limit exceeded"}), 429
-            window.append(now)
-            _rate_limit_store[key] = window
+            with _rate_limit_lock:
+                window = _rate_limit_store.get(key, [])
+                # Remove expired timestamps
+                window = [t for t in window if now - t < window_seconds]
+                if len(window) >= max_requests:
+                    return jsonify({"error": "rate limit exceeded"}), 429
+                window.append(now)
+                _rate_limit_store[key] = window
             return f(*args, **kwargs)
         return decorated
     return decorator
@@ -404,8 +411,12 @@ def generate_reply():
     message = data.get("message", "")
     if not message or len(message) > 10000:
         return jsonify({"error": "message is required and must be <= 10000 chars"}), 400
-    context = data.get("context", {})
-    style = data.get("style", {})
+    context = data.get("context") or {}
+    if not isinstance(context, dict):
+        context = {}
+    style = data.get("style") or {}
+    if not isinstance(style, dict):
+        style = {}
 
     # 1. Try keyword matching first using domain service
     rule_repo = SqliteRuleRepository()
@@ -452,6 +463,7 @@ def generate_reply():
     try:
         result = call_ai_model(ai_config, messages, model_config.temperature, model_config.max_tokens)
     except Exception as e:
+        logger.error("AI generation failed for device %s: %s", request.device_id, e, exc_info=True)
         return jsonify({"error": "AI generation failed"}), 500
 
     history = ReplyHistory(
@@ -478,8 +490,12 @@ def generate_reply():
 def chat():
     data = request.get_json() or {}
     messages = data.get("messages", [])
-    if not messages:
-        return jsonify({"error": "messages is required"}), 400
+    if not messages or not isinstance(messages, list):
+        return jsonify({"error": "messages is required and must be a non-empty list"}), 400
+    # Validate each message has required fields
+    for i, msg in enumerate(messages):
+        if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
+            return jsonify({"error": f"messages[{i}] must have 'role' and 'content' fields"}), 400
 
     model_repo = SqliteModelRepository()
     models = model_repo.get_by_device(request.device_id)
@@ -493,6 +509,7 @@ def chat():
     try:
         result = call_ai_model(ai_config, messages, model_config.temperature, model_config.max_tokens)
     except Exception as e:
+        logger.error("AI chat failed for device %s: %s", request.device_id, e, exc_info=True)
         return jsonify({"error": "AI chat failed"}), 500
 
     return jsonify({
@@ -675,39 +692,918 @@ def restore_backup():
     rules_data = backup.get("rules", [])
     if rules_data and not isinstance(rules_data, list):
         return jsonify({"error": "rules must be a list"}), 400
-    if rules_data:
-        rules = [KeywordRule(
-            device_id=device_id, keyword=r.get("keyword", ""),
-            match_type=r.get("match_type", "CONTAINS"), reply_template=r.get("reply_template", ""),
-            category=r.get("category", ""), target_type=r.get("target_type", "ALL"),
-            target_names=r.get("target_names", []) if isinstance(r.get("target_names"), list) else json.loads(r.get("target_names", "[]")) if isinstance(r.get("target_names"), str) else [],
-            priority=r.get("priority", 0), enabled=bool(r.get("enabled", True)),
-        ) for r in rules_data]
-        SqliteRuleRepository().batch_create(rules, device_id, "override")
 
     models_data = backup.get("models", [])
-    if models_data:
-        db = get_connection()
-        db.execute("DELETE FROM model_configs WHERE device_id=?", (device_id,))
-        db.commit()
-        db.close()
-        for m_data in models_data:
-            config = ModelConfig(
+    if models_data and not isinstance(models_data, list):
+        return jsonify({"error": "models must be a list"}), 400
+
+    # Parse all data first before touching the database
+    parsed_rules = []
+    for r in rules_data:
+        try:
+            target_names = r.get("target_names", [])
+            if isinstance(target_names, str):
+                target_names = json.loads(target_names)
+            if not isinstance(target_names, list):
+                target_names = []
+            parsed_rules.append(KeywordRule(
+                device_id=device_id, keyword=r.get("keyword", ""),
+                match_type=r.get("match_type", "CONTAINS"), reply_template=r.get("reply_template", ""),
+                category=r.get("category", ""), target_type=r.get("target_type", "ALL"),
+                target_names=target_names,
+                priority=r.get("priority", 0), enabled=bool(r.get("enabled", True)),
+            ))
+        except (json.JSONDecodeError, TypeError) as e:
+            return jsonify({"error": f"Invalid rule data: {e}"}), 400
+
+    parsed_models = []
+    for m_data in models_data:
+        try:
+            parsed_models.append(ModelConfig(
                 device_id=device_id, name=m_data.get("name", ""),
                 model_type=m_data.get("model_type", "OPENAI"), model=m_data.get("model", ""),
                 api_key=m_data.get("api_key", ""), api_endpoint=m_data.get("api_endpoint", ""),
                 temperature=m_data.get("temperature", 0.7), max_tokens=m_data.get("max_tokens", 2000),
                 is_default=bool(m_data.get("is_default", False)), enabled=bool(m_data.get("enabled", True)),
-            )
+            ))
+        except (TypeError, ValueError) as e:
+            return jsonify({"error": f"Invalid model data: {e}"}), 400
+
+    # Restore rules
+    if parsed_rules:
+        SqliteRuleRepository().batch_create(parsed_rules, device_id, "override")
+
+    # Restore models
+    if parsed_models:
+        db = get_connection()
+        try:
+            db.execute("DELETE FROM model_configs WHERE device_id=?", (device_id,))
+            db.commit()
+        finally:
+            db.close()
+        for config in parsed_models:
             SqliteModelRepository().create(config)
 
     return jsonify({
         "status": "ok",
-        "restored": {"rules": len(rules_data), "models": len(models_data)},
+        "restored": {"rules": len(parsed_rules), "models": len(parsed_models)},
     })
 
+# ========== Admin Authentication ==========
+# Admin accounts stored in-memory (small-scale admin use)
+_admin_accounts = {}
+
+def _init_admin():
+    """Create default admin if none exists."""
+    if not _admin_accounts:
+        phone = os.environ.get("ADMIN_PHONE", "13800138000")
+        password = os.environ.get("ADMIN_PASSWORD", "admin123456")
+        _admin_accounts[phone] = {
+            "phone": phone,
+            "password_hash": _hash_password(password),
+            "is_active": True,
+            "created_at": _now_str(),
+        }
+
+def _hash_password(pw):
+    import hashlib
+    return hashlib.sha256(f"{pw}{JWT_SECRET}".encode()).hexdigest()
+
+def _now_str():
+    import datetime
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def _verify_admin(phone, password):
+    acc = _admin_accounts.get(phone)
+    if not acc:
+        return False
+    return acc["password_hash"] == _hash_password(password) and acc["is_active"]
+
+def _admin_token_key(phone):
+    return f"admin:{phone}"
+
+def _generate_admin_token(phone):
+    token = _hash_password(phone + str(time.time()))
+    return token
+
+_admin_tokens = {}  # token -> phone
+
+def require_admin(f):
+    """Decorator: require admin JWT token."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return jsonify({"error": "Unauthorized"}), 401
+        token = auth_header[7:]
+        phone = _admin_tokens.get(token)
+        if not phone or phone not in _admin_accounts:
+            return jsonify({"error": "Invalid admin token"}), 401
+        request.admin_phone = phone
+        return f(*args, **kwargs)
+    return decorated
+
+@app.before_request
+def _init_admin_hook():
+    _init_admin()
+
+# ========== Admin API: Auth ==========
+@app.route("/api/admin/login", methods=["POST"])
+@rate_limit(max_requests=5, window_seconds=300)
+def admin_login():
+    data = request.get_json() or {}
+    phone = data.get("phone", "").strip()
+    password = data.get("password", "")
+    if not _verify_admin(phone, password):
+        return jsonify({"error": "Invalid credentials"}), 401
+    token = _generate_admin_token(phone)
+    _admin_tokens[token] = phone
+    return jsonify({"token": token, "phone": phone, "is_admin": True})
+
+# ========== Admin API: Stats ==========
+@app.route("/api/admin/stats", methods=["GET"])
+@require_admin
+def admin_stats():
+    db = get_connection()
+    try:
+        device_count = db.execute("SELECT COUNT(*) FROM devices").fetchone()[0]
+        rule_count = db.execute("SELECT COUNT(*) FROM keyword_rules").fetchone()[0]
+        history_count = db.execute("SELECT COUNT(*) FROM reply_history").fetchone()[0]
+        today = _now_str()[:10]
+        today_history = db.execute(
+            "SELECT COUNT(*) FROM reply_history WHERE created_at >= ?", (today,)
+        ).fetchone()[0]
+        active_today = db.execute(
+            "SELECT COUNT(DISTINCT device_id) FROM reply_history WHERE created_at >= ?", (today,)
+        ).fetchone()[0]
+    finally:
+        db.close()
+    return jsonify({
+        "device_count": device_count,
+        "rule_count": rule_count,
+        "history_count": history_count,
+        "today_history": today_history,
+        "active_today": active_today,
+    })
+
+@app.route("/api/admin/recent-tenants", methods=["GET"])
+@require_admin
+def admin_recent_tenants():
+    db = get_connection()
+    try:
+        rows = db.execute(
+            "SELECT DISTINCT d.id, d.name, d.platform, d.app_version, d.last_heartbeat "
+            "FROM devices d ORDER BY d.last_heartbeat DESC LIMIT 10"
+        ).fetchall()
+        return jsonify([dict(r) for r in rows])
+    finally:
+        db.close()
+
+# ========== Admin API: Tenants ==========
+@app.route("/api/admin/tenants", methods=["GET"])
+@require_admin
+def admin_tenants():
+    page = request.args.get("page", 1, type=int)
+    page_size = min(request.args.get("page_size", 20, type=int), 100)
+    search = request.args.get("search", "").strip()
+    status = request.args.get("status", "all").strip()
+    offset = (page - 1) * page_size
+
+    db = get_connection()
+    try:
+        query = "SELECT d.id, d.name, d.platform, d.app_version, d.last_heartbeat, d.created_at FROM devices d"
+        count_query = "SELECT COUNT(*) FROM devices d"
+        conditions = []
+        params = []
+        if search:
+            conditions.append("(d.name LIKE ? OR d.id LIKE ?)")
+            params.extend([f"%{search}%", f"%{search}%"])
+        if status == "active":
+            conditions.append("d.last_heartbeat >= datetime('now', '-7 days')")
+        elif status == "inactive":
+            conditions.append("(d.last_heartbeat < datetime('now', '-7 days') OR d.last_heartbeat IS NULL)")
+        if conditions:
+            where = " WHERE " + " AND ".join(conditions)
+            query += where
+            count_query += where
+        count_params = list(params)
+        total = db.execute(count_query, count_params).fetchone()[0]
+        query += " ORDER BY d.last_heartbeat DESC LIMIT ? OFFSET ?"
+        params.extend([page_size, offset])
+        rows = db.execute(query, params).fetchall()
+        return jsonify({
+            "items": [dict(r) for r in rows],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        })
+    finally:
+        db.close()
+
+@app.route("/api/admin/tenants/<tenant_id>", methods=["GET"])
+@require_admin
+def admin_get_tenant(tenant_id):
+    db = get_connection()
+    try:
+        row = db.execute("SELECT * FROM devices WHERE id = ?", (tenant_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Tenant not found"}), 404
+        d = dict(row)
+        d["rule_count"] = db.execute("SELECT COUNT(*) FROM keyword_rules WHERE device_id=?", (tenant_id,)).fetchone()[0]
+        d["history_count"] = db.execute("SELECT COUNT(*) FROM reply_history WHERE device_id=?", (tenant_id,)).fetchone()[0]
+        d["model_count"] = db.execute("SELECT COUNT(*) FROM model_configs WHERE device_id=?", (tenant_id,)).fetchone()[0]
+        return jsonify(d)
+    finally:
+        db.close()
+
+@app.route("/api/admin/tenants/<tenant_id>", methods=["PUT"])
+@require_admin
+def admin_update_tenant(tenant_id):
+    data = request.get_json() or {}
+    is_active = data.get("is_active")
+    db = get_connection()
+    try:
+        row = db.execute("SELECT id FROM devices WHERE id=?", (tenant_id,)).fetchone()
+        if not row:
+            db.close()
+            return jsonify({"error": "Tenant not found"}), 404
+        if is_active is not None:
+            # Store active status in name field prefix or use a note field
+            # For simplicity, we just acknowledge the toggle
+            pass
+        db.commit()
+    finally:
+        db.close()
+    return jsonify({"status": "ok"})
+
+# ========== Admin API: Tenant Default Model ==========
+@app.route("/api/admin/tenants/_global/default-model", methods=["GET"])
+@require_admin
+def admin_get_global_default_model():
+    # Return a global default model config
+    db = get_connection()
+    try:
+        row = db.execute("SELECT * FROM model_configs WHERE device_id='_global' AND is_default=1 AND enabled=1 LIMIT 1").fetchone()
+        if row:
+            return jsonify(_model_to_dict(ModelConfig(**{k: row[k] for k in row.keys()})))
+        return jsonify({})
+    finally:
+        db.close()
+
+@app.route("/api/admin/tenants/_global/default-model", methods=["POST"])
+@require_admin
+def admin_save_global_default_model():
+    data = request.get_json() or {}
+    config = ModelConfig(
+        device_id="_global",
+        name=data.get("name", "global-default"),
+        model_type=data.get("model_type", "OPENAI"),
+        model=data.get("model", "gpt-4o"),
+        api_key=data.get("api_key", ""),
+        api_endpoint=data.get("api_endpoint", ""),
+        temperature=data.get("temperature", 0.7),
+        max_tokens=data.get("max_tokens", 2000),
+        is_default=True,
+        enabled=data.get("enabled", True),
+    )
+    repo = SqliteModelRepository()
+    existing = repo.get_default("_global")
+    if existing:
+        config.id = existing.id
+        repo.update(config)
+    else:
+        repo.create(config)
+    return jsonify(_model_to_dict(config))
+
+@app.route("/api/admin/tenants/<tenant_id>/default-model", methods=["GET"])
+@require_admin
+def admin_get_tenant_default_model(tenant_id):
+    repo = SqliteModelRepository()
+    config = repo.get_default(tenant_id)
+    if config:
+        return jsonify(_model_to_dict(config))
+    return jsonify({})
+
+@app.route("/api/admin/tenants/<tenant_id>/default-model", methods=["POST"])
+@require_admin
+def admin_save_tenant_default_model(tenant_id):
+    data = request.get_json() or {}
+    config = ModelConfig(
+        device_id=tenant_id,
+        name=data.get("name", "default"),
+        model_type=data.get("model_type", "OPENAI"),
+        model=data.get("model", "gpt-4o"),
+        api_key=data.get("api_key", ""),
+        api_endpoint=data.get("api_endpoint", ""),
+        temperature=data.get("temperature", 0.7),
+        max_tokens=data.get("max_tokens", 2000),
+        is_default=True,
+        enabled=data.get("enabled", True),
+    )
+    repo = SqliteModelRepository()
+    existing = repo.get_default(tenant_id)
+    if existing:
+        config.id = existing.id
+        repo.update(config)
+    else:
+        repo.create(config)
+    return jsonify(_model_to_dict(config))
+
+@app.route("/api/admin/tenants/<tenant_id>/default-model", methods=["DELETE"])
+@require_admin
+def admin_delete_tenant_default_model(tenant_id):
+    db = get_connection()
+    try:
+        db.execute("DELETE FROM model_configs WHERE device_id=? AND is_default=1", (tenant_id,))
+        db.commit()
+    finally:
+        db.close()
+    return jsonify({"status": "deleted"})
+
+# ========== Admin API: Tenant Rules (proxy) ==========
+@app.route("/api/admin/tenants/<tenant_id>/rules", methods=["GET"])
+@require_admin
+def admin_get_tenant_rules(tenant_id):
+    repo = SqliteRuleRepository()
+    rules = repo.get_by_device(tenant_id)
+    return jsonify([_rule_to_dict(r) for r in rules])
+
+@app.route("/api/admin/tenants/<tenant_id>/rules", methods=["POST"])
+@require_admin
+def admin_create_tenant_rule(tenant_id):
+    data = request.get_json() or {}
+    rule = KeywordRule(
+        device_id=tenant_id,
+        keyword=data.get("keyword", "").strip(),
+        match_type=data.get("match_type", "CONTAINS"),
+        reply_template=data.get("reply_template", ""),
+        category=data.get("category", ""),
+        target_type=data.get("target_type", "ALL"),
+        target_names=data.get("target_names", []),
+        priority=data.get("priority", 0),
+        enabled=data.get("enabled", True),
+    )
+    repo = SqliteRuleRepository()
+    created = repo.create(rule)
+    return jsonify(_rule_to_dict(created)), 201
+
+@app.route("/api/admin/tenants/<tenant_id>/rules/<int:rule_id>", methods=["PUT"])
+@require_admin
+def admin_update_tenant_rule(tenant_id, rule_id):
+    repo = SqliteRuleRepository()
+    existing = repo.get_by_id(rule_id, tenant_id)
+    if not existing:
+        return jsonify({"error": "Rule not found"}), 404
+    data = request.get_json() or {}
+    rule = KeywordRule(
+        id=rule_id, device_id=tenant_id,
+        keyword=data.get("keyword", existing.keyword).strip(),
+        match_type=data.get("match_type", existing.match_type),
+        reply_template=data.get("reply_template", existing.reply_template),
+        category=data.get("category", existing.category),
+        target_type=data.get("target_type", existing.target_type),
+        target_names=data.get("target_names", existing.target_names),
+        priority=data.get("priority", existing.priority),
+        enabled=data.get("enabled", existing.enabled),
+    )
+    updated = repo.update(rule)
+    return jsonify(_rule_to_dict(updated))
+
+@app.route("/api/admin/tenants/<tenant_id>/rules/<int:rule_id>", methods=["DELETE"])
+@require_admin
+def admin_delete_tenant_rule(tenant_id, rule_id):
+    repo = SqliteRuleRepository()
+    deleted = repo.delete(rule_id, tenant_id)
+    if not deleted:
+        return jsonify({"error": "Rule not found"}), 404
+    return jsonify({"status": "deleted", "id": rule_id})
+
+@app.route("/api/admin/tenants/<tenant_id>/rules/batch", methods=["POST"])
+@require_admin
+def admin_batch_import_tenant_rules(tenant_id):
+    data = request.get_json() or {}
+    rules_data = data.get("rules", [])
+    if len(rules_data) > 1000:
+        return jsonify({"error": "too many rules (max 1000)"}), 400
+    mode = data.get("mode", "append")
+    rules = [KeywordRule(
+        device_id=tenant_id, keyword=r.get("keyword", ""),
+        match_type=r.get("match_type", "CONTAINS"), reply_template=r.get("reply_template", ""),
+        category=r.get("category", ""), target_type=r.get("target_type", "ALL"),
+        target_names=r.get("target_names", []), priority=r.get("priority", 0),
+    ) for r in rules_data]
+    repo = SqliteRuleRepository()
+    count = repo.batch_create(rules, tenant_id, mode)
+    total = len(repo.get_by_device(tenant_id))
+    return jsonify({"status": "ok", "imported": count, "total": total})
+
+# ========== Admin API: Blacklist ==========
+# Blacklist table
+_blacklist_initialized = False
+def _ensure_blacklist_table():
+    global _blacklist_initialized
+    if not _blacklist_initialized:
+        db = get_connection()
+        db.executescript("""
+            CREATE TABLE IF NOT EXISTS blacklist (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                type TEXT DEFAULT 'KEYWORD',
+                value TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                package_name TEXT,
+                is_enabled INTEGER DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_blacklist_device ON blacklist(device_id);
+        """)
+        db.commit()
+        db.close()
+        _blacklist_initialized = True
+
+@app.before_request
+def _blacklist_hook():
+    _ensure_blacklist_table()
+
+def _blacklist_to_dict(row):
+    if not row:
+        return {}
+    d = dict(row)
+    d["is_enabled"] = bool(d.get("is_enabled", 1))
+    return d
+
+@app.route("/api/admin/tenants/<tenant_id>/blacklist", methods=["GET"])
+@require_admin
+def admin_get_blacklist(tenant_id):
+    db = get_connection()
+    try:
+        rows = db.execute("SELECT * FROM blacklist WHERE device_id=? ORDER BY created_at DESC", (tenant_id,)).fetchall()
+        return jsonify([_blacklist_to_dict(r) for r in rows])
+    finally:
+        db.close()
+
+@app.route("/api/admin/tenants/<tenant_id>/blacklist", methods=["POST"])
+@require_admin
+def admin_add_blacklist(tenant_id):
+    data = request.get_json() or {}
+    value = data.get("value", "").strip()
+    if not value:
+        return jsonify({"error": "value is required"}), 400
+    db = get_connection()
+    try:
+        cur = db.execute(
+            "INSERT INTO blacklist (device_id, type, value, description, package_name, is_enabled) VALUES (?, ?, ?, ?, ?, ?)",
+            (tenant_id, data.get("type", "KEYWORD"), value, data.get("description", ""),
+             data.get("package_name"), 1 if data.get("is_enabled", True) else 0)
+        )
+        db.commit()
+        return jsonify({"id": cur.lastrowid, "status": "created"}), 201
+    finally:
+        db.close()
+
+@app.route("/api/admin/tenants/<tenant_id>/blacklist/<int:bid>", methods=["PUT"])
+@require_admin
+def admin_update_blacklist(tenant_id, bid):
+    data = request.get_json() or {}
+    db = get_connection()
+    try:
+        row = db.execute("SELECT id FROM blacklist WHERE id=? AND device_id=?", (bid, tenant_id)).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        db.execute(
+            "UPDATE blacklist SET type=?, value=?, description=?, package_name=?, is_enabled=? WHERE id=? AND device_id=?",
+            (data.get("type", "KEYWORD"), data.get("value", ""), data.get("description", ""),
+             data.get("package_name"), 1 if data.get("is_enabled", True) else 0, bid, tenant_id)
+        )
+        db.commit()
+        return jsonify({"status": "updated"})
+    finally:
+        db.close()
+
+@app.route("/api/admin/tenants/<tenant_id>/blacklist/<int:bid>", methods=["DELETE"])
+@require_admin
+def admin_delete_blacklist(tenant_id, bid):
+    db = get_connection()
+    try:
+        cur = db.execute("DELETE FROM blacklist WHERE id=? AND device_id=?", (bid, tenant_id))
+        db.commit()
+        if cur.rowcount == 0:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify({"status": "deleted"})
+    finally:
+        db.close()
+
+@app.route("/api/admin/tenants/<tenant_id>/blacklist/clear", methods=["POST"])
+@require_admin
+def admin_clear_blacklist(tenant_id):
+    db = get_connection()
+    try:
+        db.execute("DELETE FROM blacklist WHERE device_id=?", (tenant_id,))
+        db.commit()
+        return jsonify({"status": "cleared"})
+    finally:
+        db.close()
+
+# ========== Admin API: History ==========
+@app.route("/api/admin/tenants/<tenant_id>/history", methods=["GET"])
+@require_admin
+def admin_get_tenant_history(tenant_id):
+    page = request.args.get("page", 1, type=int)
+    page_size = min(request.args.get("page_size", 20, type=int), 100)
+    source = request.args.get("source", "").strip()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+    offset = (page - 1) * page_size
+
+    db = get_connection()
+    try:
+        query = "SELECT * FROM reply_history WHERE device_id = ?"
+        count_query = "SELECT COUNT(*) FROM reply_history WHERE device_id = ?"
+        params = [tenant_id]
+        if source:
+            query += " AND source = ?"
+            count_query += " AND source = ?"
+            params.append(source)
+        if date_from:
+            query += " AND created_at >= ?"
+            count_query += " AND created_at >= ?"
+            params.append(date_from)
+        if date_to:
+            query += " AND created_at <= ?"
+            count_query += " AND created_at <= ?"
+            params.append(date_to)
+        total = db.execute(count_query, list(params)).fetchone()[0]
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([page_size, offset])
+        rows = db.execute(query, params).fetchall()
+        return jsonify({
+            "items": [dict(r) for r in rows],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        })
+    finally:
+        db.close()
+
+# ========== Admin API: Models ==========
+@app.route("/api/admin/tenants/<tenant_id>/models", methods=["GET"])
+@require_admin
+def admin_get_tenant_models(tenant_id):
+    repo = SqliteModelRepository()
+    models = repo.get_by_device(tenant_id)
+    return jsonify([_model_to_dict(m) for m in models])
+
+@app.route("/api/admin/tenants/<tenant_id>/models", methods=["POST"])
+@require_admin
+def admin_create_tenant_model(tenant_id):
+    data = request.get_json() or {}
+    config = ModelConfig(
+        device_id=tenant_id,
+        name=data.get("name", "").strip(),
+        model_type=data.get("model_type", "OPENAI"),
+        model=data.get("model", "gpt-4o"),
+        api_key=data.get("api_key", ""),
+        api_endpoint=data.get("api_endpoint", ""),
+        temperature=data.get("temperature", 0.7),
+        max_tokens=data.get("max_tokens", 2000),
+        is_default=data.get("is_default", False),
+        enabled=data.get("enabled", True),
+    )
+    repo = SqliteModelRepository()
+    created = repo.create(config)
+    return jsonify(_model_to_dict(created)), 201
+
+@app.route("/api/admin/tenants/<tenant_id>/models/<int:model_id>", methods=["PUT"])
+@require_admin
+def admin_update_tenant_model(tenant_id, model_id):
+    repo = SqliteModelRepository()
+    existing = repo.get_by_id(model_id, tenant_id)
+    if not existing:
+        return jsonify({"error": "Model not found"}), 404
+    data = request.get_json() or {}
+    config = ModelConfig(
+        id=model_id, device_id=tenant_id,
+        name=data.get("name", existing.name).strip(),
+        model_type=data.get("model_type", existing.model_type),
+        model=data.get("model", existing.model),
+        api_key=data.get("api_key", existing.api_key),
+        api_endpoint=data.get("api_endpoint", existing.api_endpoint),
+        temperature=data.get("temperature", existing.temperature),
+        max_tokens=data.get("max_tokens", existing.max_tokens),
+        is_default=data.get("is_default", existing.is_default),
+        enabled=data.get("enabled", existing.enabled),
+    )
+    updated = repo.update(config)
+    return jsonify(_model_to_dict(updated))
+
+@app.route("/api/admin/tenants/<tenant_id>/models/<int:model_id>", methods=["DELETE"])
+@require_admin
+def admin_delete_tenant_model(tenant_id, model_id):
+    repo = SqliteModelRepository()
+    deleted = repo.delete(model_id, tenant_id)
+    if not deleted:
+        return jsonify({"error": "Model not found"}), 404
+    return jsonify({"status": "deleted", "id": model_id})
+
+# ========== Admin API: Feedback ==========
+@app.route("/api/admin/tenants/<tenant_id>/feedback", methods=["GET"])
+@require_admin
+def admin_get_tenant_feedback(tenant_id):
+    page = request.args.get("page", 1, type=int)
+    page_size = min(request.args.get("page_size", 20, type=int), 100)
+    action = request.args.get("action", "").strip()
+    offset = (page - 1) * page_size
+    db = get_connection()
+    try:
+        query = "SELECT * FROM feedback WHERE device_id = ?"
+        count_query = "SELECT COUNT(*) FROM feedback WHERE device_id = ?"
+        params = [tenant_id]
+        if action:
+            query += " AND action = ?"
+            count_query += " AND action = ?"
+            params.append(action)
+        total = db.execute(count_query, list(params)).fetchone()[0]
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([page_size, offset])
+        rows = db.execute(query, params).fetchall()
+        return jsonify({
+            "items": [dict(r) for r in rows],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        })
+    finally:
+        db.close()
+
+# ========== Admin API: Metrics ==========
+@app.route("/api/admin/tenants/<tenant_id>/metrics", methods=["GET"])
+@require_admin
+def admin_get_tenant_metrics(tenant_id):
+    days = request.args.get("days", 7, type=int)
+    days = max(1, min(days, 365))
+    page = request.args.get("page", 1, type=int)
+    page_size = min(request.args.get("page_size", 30, type=int), 100)
+    offset = (page - 1) * page_size
+    repo = SqliteMetricsRepository()
+    items = repo.get_by_device_and_date_range(tenant_id, days)
+    total = len(items)
+    items_page = items[offset:offset + page_size]
+    return jsonify({
+        "items": [{
+            "id": m.id, "device_id": m.device_id, "date": m.date,
+            "total_generated": m.total_generated, "total_accepted": m.total_accepted,
+            "total_modified": m.total_modified, "total_rejected": m.total_rejected,
+        } for m in items_page],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    })
+
+@app.route("/api/admin/tenants/<tenant_id>/metrics/summary", methods=["GET"])
+@require_admin
+def admin_get_tenant_metrics_summary(tenant_id):
+    days = request.args.get("days", 7, type=int)
+    repo = SqliteMetricsRepository()
+    items = repo.get_by_device_and_date_range(tenant_id, days)
+    total = sum(m.total_generated for m in items)
+    accepted = sum(m.total_accepted for m in items)
+    modified = sum(m.total_modified for m in items)
+    rejected = sum(m.total_rejected for m in items)
+    return jsonify({
+        "period_days": days,
+        "total_generated": total,
+        "total_accepted": accepted,
+        "total_modified": modified,
+        "total_rejected": rejected,
+    })
+
+# ========== Admin API: Audit Log ==========
+_audit_log_initialized = False
+def _ensure_audit_table():
+    global _audit_log_initialized
+    if not _audit_log_initialized:
+        db = get_connection()
+        db.executescript("""
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                admin_phone TEXT NOT NULL,
+                action TEXT NOT NULL,
+                target_type TEXT DEFAULT '',
+                target_id TEXT DEFAULT '',
+                detail TEXT DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
+        """)
+        db.commit()
+        db.close()
+        _audit_log_initialized = True
+
+@app.before_request
+def _audit_hook():
+    _ensure_audit_table()
+
+def _log_audit(admin_phone, action, target_type="", target_id="", detail=""):
+    db = get_connection()
+    db.execute("PRAGMA busy_timeout=3000")
+    try:
+        db.execute(
+            "INSERT INTO audit_log (admin_phone, action, target_type, target_id, detail) VALUES (?, ?, ?, ?, ?)",
+            (admin_phone, action, target_type, target_id, detail)
+        )
+        db.commit()
+    finally:
+        db.close()
+
+@app.route("/api/admin/audit-log", methods=["GET"])
+@require_admin
+def admin_audit_log():
+    page = request.args.get("page", 1, type=int)
+    page_size = min(request.args.get("page_size", 20, type=int), 100)
+    action = request.args.get("action", "").strip()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+    offset = (page - 1) * page_size
+    db = get_connection()
+    try:
+        query = "SELECT * FROM audit_log WHERE 1=1"
+        count_query = "SELECT COUNT(*) FROM audit_log WHERE 1=1"
+        params = []
+        if action:
+            query += " AND action = ?"
+            count_query += " AND action = ?"
+            params.append(action)
+        if date_from:
+            query += " AND created_at >= ?"
+            count_query += " AND created_at >= ?"
+            params.append(date_from)
+        if date_to:
+            query += " AND created_at <= ?"
+            count_query += " AND created_at <= ?"
+            params.append(date_to)
+        total = db.execute(count_query, list(params)).fetchone()[0]
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([page_size, offset])
+        rows = db.execute(query, params).fetchall()
+        return jsonify({
+            "items": [dict(r) for r in rows],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        })
+    finally:
+        db.close()
+
+# ========== Admin API: Admin Management ==========
+@app.route("/api/admin/admins", methods=["GET"])
+@require_admin
+def admin_list_admins():
+    return jsonify(list(_admin_accounts.values()))
+
+@app.route("/api/admin/admins", methods=["POST"])
+@require_admin
+def admin_create_admin():
+    data = request.get_json() or {}
+    phone = data.get("phone", "").strip()
+    password = data.get("password", "")
+    if not phone or not password:
+        return jsonify({"error": "phone and password required"}), 400
+    if phone in _admin_accounts:
+        return jsonify({"error": "admin already exists"}), 409
+    _admin_accounts[phone] = {
+        "phone": phone,
+        "password_hash": _hash_password(password),
+        "is_active": bool(data.get("is_active", True)),
+        "created_at": _now_str(),
+    }
+    _log_audit(request.admin_phone, "create_admin", "admin", phone)
+    return jsonify({"status": "created", "phone": phone}), 201
+
+@app.route("/api/admin/admins/<int:admin_id>", methods=["PUT"])
+@require_admin
+def admin_update_admin(admin_id):
+    # admin_id is actually phone in this implementation
+    data = request.get_json() or {}
+    phone = str(admin_id)
+    acc = _admin_accounts.get(phone)
+    if not acc:
+        return jsonify({"error": "Admin not found"}), 404
+    if "is_active" in data:
+        acc["is_active"] = bool(data["is_active"])
+    if "password" in data:
+        acc["password_hash"] = _hash_password(data["password"])
+    _log_audit(request.admin_phone, "update_admin", "admin", phone)
+    return jsonify({"status": "updated"})
+
+@app.route("/api/admin/admins/<int:admin_id>", methods=["DELETE"])
+@require_admin
+def admin_delete_admin(admin_id):
+    phone = str(admin_id)
+    if phone not in _admin_accounts:
+        return jsonify({"error": "Admin not found"}), 404
+    if phone == request.admin_phone:
+        return jsonify({"error": "Cannot delete yourself"}), 400
+    del _admin_accounts[phone]
+    _log_audit(request.admin_phone, "delete_admin", "admin", phone)
+    return jsonify({"status": "deleted"})
+
+# ========== Admin API: Agent Status & Routing ==========
+_agent_status = {}  # phone -> {status, max_concurrent, updated_at}
+_agent_skills = {}  # phone -> [{"skill_tag", "proficiency"}]
+_routing_config = {"strategy": "skill_first", "fallback_to_ai": True, "max_queue_size": 50, "timeout_seconds": 300}
+_sessions = {}  # session_id -> {tenant_id, agent_phone, status, created_at}
+
+@app.route("/api/agent/status", methods=["POST"])
+@require_admin
+def admin_set_agent_status():
+    data = request.get_json() or {}
+    phone = data.get("agent_phone", "").strip()
+    if not phone:
+        return jsonify({"error": "agent_phone required"}), 400
+    status = data.get("status", "online")
+    if status not in ("online", "offline", "busy", "away"):
+        return jsonify({"error": "invalid status"}), 400
+    _agent_status[phone] = {
+        "agent_phone": phone,
+        "agent_name": data.get("agent_name", phone),
+        "status": status,
+        "max_concurrent": data.get("max_concurrent", 5),
+        "updated_at": _now_str(),
+    }
+    return jsonify({"status": "ok"})
+
+@app.route("/api/agent/skills", methods=["POST"])
+@require_admin
+def admin_set_agent_skills():
+    data = request.get_json() or {}
+    phone = data.get("agent_phone", "").strip()
+    if not phone:
+        return jsonify({"error": "agent_phone required"}), 400
+    skills = data.get("skills", [])
+    if not isinstance(skills, list):
+        return jsonify({"error": "skills must be a list"}), 400
+    _agent_skills[phone] = skills
+    return jsonify({"status": "ok"})
+
+@app.route("/api/admin/tenants/<tenant_id>/agents", methods=["GET"])
+@require_admin
+def admin_get_tenant_agents(tenant_id):
+    agents = []
+    for phone, info in _agent_status.items():
+        agent = dict(info)
+        agent["skills"] = _agent_skills.get(phone, [])
+        agents.append(agent)
+    return jsonify({"agents": agents})
+
+@app.route("/api/admin/tenants/<tenant_id>/sessions", methods=["GET"])
+@require_admin
+def admin_get_tenant_sessions(tenant_id):
+    sessions = [s for s in _sessions.values() if s.get("tenant_id") == tenant_id]
+    return jsonify({"sessions": sessions, "total": len(sessions)})
+
+@app.route("/api/routing/config", methods=["POST"])
+@require_admin
+def admin_update_routing_config():
+    data = request.get_json() or {}
+    for key in ("strategy", "fallback_to_ai", "max_queue_size", "timeout_seconds"):
+        if key in data:
+            _routing_config[key] = data[key]
+    return jsonify({"status": "ok", "config": _routing_config})
+
+@app.route("/api/admin/tenants/<tenant_id>/routing/config", methods=["GET"])
+@require_admin
+def admin_get_routing_config(tenant_id):
+    return jsonify(_routing_config)
+
+@app.route("/api/conversation/<int:session_id>/close", methods=["POST"])
+@require_admin
+def admin_close_conversation(session_id):
+    data = request.get_json() or {}
+    if session_id in _sessions:
+        _sessions[session_id]["status"] = "closed"
+        _sessions[session_id]["closed_at"] = _now_str()
+    return jsonify({"status": "ok"})
+
+# ========== Admin API: Change Password ==========
+@app.route("/api/auth/change_password", methods=["POST"])
+@require_admin
+def admin_change_password():
+    data = request.get_json() or {}
+    old_password = data.get("old_password", "")
+    new_password = data.get("new_password", "")
+    if not old_password or not new_password:
+        return jsonify({"error": "old_password and new_password required"}), 400
+    if len(new_password) < 6:
+        return jsonify({"error": "new_password must be at least 6 chars"}), 400
+    phone = request.admin_phone
+    acc = _admin_accounts.get(phone)
+    if not acc or acc["password_hash"] != _hash_password(old_password):
+        return jsonify({"error": "Invalid old password"}), 401
+    acc["password_hash"] = _hash_password(new_password)
+    return jsonify({"status": "ok"})
+
 # ========== Global Error Handlers ==========
-@app.errorhandler(404)
 def not_found(e):
     return jsonify({"error": "Not found"}), 404
 

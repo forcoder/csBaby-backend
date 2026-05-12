@@ -144,3 +144,102 @@ class TestAIServiceCallModel:
             max_tokens=2000,
         )
         assert result["response_time_ms"] >= 0
+
+    @patch("domain.services.ai_service.urllib.request.urlopen")
+    def test_claude_includes_temperature(self, mock_urlopen):
+        """Claude API payload must include temperature (required by Anthropic)."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "content": [{"text": "Hello!"}],
+            "usage": {"input_tokens": 5, "output_tokens": 10}
+        }).encode()
+        mock_urlopen.return_value = mock_response
+
+        service = self._make_ai_service()
+        service.call_model(
+            model_config={"model_type": "CLAUDE", "model": "claude-3-5-sonnet", "api_key": "sk-ant-test"},
+            messages=[{"role": "user", "content": "Hi"}],
+            temperature=0.5,
+            max_tokens=1000,
+        )
+        # Verify temperature was sent in the payload
+        call_args = mock_urlopen.call_args
+        request_obj = call_args[0][0]
+        sent_data = json.loads(request_obj.data)
+        assert "temperature" in sent_data
+        assert sent_data["temperature"] == 0.5
+
+    @patch("domain.services.ai_service.urllib.request.urlopen")
+    def test_openai_empty_choices_returns_empty_reply(self, mock_urlopen):
+        """Empty choices list should return empty string, not crash."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "choices": [],
+            "usage": {"total_tokens": 5}
+        }).encode()
+        mock_urlopen.return_value = mock_response
+
+        service = self._make_ai_service()
+        result = service.call_model(
+            model_config={"model_type": "OPENAI", "model": "gpt-4o", "api_key": "k"},
+            messages=[{"role": "user", "content": "Hi"}],
+            temperature=0.7,
+            max_tokens=2000,
+        )
+        assert result["reply"] == ""
+
+    @patch("domain.services.ai_service.urllib.request.urlopen")
+    def test_claude_empty_content_returns_empty_reply(self, mock_urlopen):
+        """Empty content list from Claude should return empty string."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "content": [],
+            "usage": {"input_tokens": 5, "output_tokens": 0}
+        }).encode()
+        mock_urlopen.return_value = mock_response
+
+        service = self._make_ai_service()
+        result = service.call_model(
+            model_config={"model_type": "CLAUDE", "model": "claude-3-5-sonnet", "api_key": "sk-ant"},
+            messages=[{"role": "user", "content": "Hi"}],
+            temperature=0.5,
+            max_tokens=1000,
+        )
+        assert result["reply"] == ""
+
+    @patch("domain.services.ai_service.urllib.request.urlopen")
+    def test_openai_missing_usage_returns_zero_tokens(self, mock_urlopen):
+        """Response without usage field should return 0 tokens."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "choices": [{"message": {"content": "Hi!"}}]
+        }).encode()
+        mock_urlopen.return_value = mock_response
+
+        service = self._make_ai_service()
+        result = service.call_model(
+            model_config={"model_type": "OPENAI", "model": "gpt-4o", "api_key": "k"},
+            messages=[{"role": "user", "content": "Hi"}],
+            temperature=0.7,
+            max_tokens=2000,
+        )
+        assert result["tokens_used"] == 0
+
+    @patch("domain.services.ai_service.urllib.request.urlopen")
+    def test_openai_malformed_choice_no_message_key(self, mock_urlopen):
+        """Choice item without 'message' key should not crash."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "choices": [{"finish_reason": "length"}],
+            "usage": {"total_tokens": 5}
+        }).encode()
+        mock_urlopen.return_value = mock_response
+
+        service = self._make_ai_service()
+        result = service.call_model(
+            model_config={"model_type": "OPENAI", "model": "gpt-4o", "api_key": "k"},
+            messages=[{"role": "user", "content": "Hi"}],
+            temperature=0.7,
+            max_tokens=2000,
+        )
+        assert result["reply"] == ""

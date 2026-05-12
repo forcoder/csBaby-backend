@@ -21,7 +21,7 @@ class AIService:
 
         if model_type == "CLAUDE":
             url = endpoint or "https://api.anthropic.com/v1/messages"
-            data = {"model": model or "claude-3-5-sonnet-20241022", "max_tokens": max_tokens, "messages": messages}
+            data = {"model": model or "claude-3-5-sonnet-20241022", "max_tokens": max_tokens, "temperature": temperature, "messages": messages}
             req = urllib.request.Request(
                 url, data=json.dumps(data).encode(),
                 headers={"x-api-key": api_key, "Content-Type": "application/json",
@@ -61,13 +61,17 @@ class AIService:
             raise Exception(f"AI API request failed: {e}") from e
 
         if model_type == "CLAUDE":
-            content = result.get("content", [])
-            reply = content[0].get("text", "") if content else ""
-            tokens = result.get("usage", {}).get("input_tokens", 0) + result.get("usage", {}).get("output_tokens", 0)
+            content = result.get("content") or []
+            reply = content[0].get("text", "") if content and isinstance(content[0], dict) else ""
+            usage = result.get("usage") or {}
+            tokens = (usage.get("input_tokens") or 0) + (usage.get("output_tokens") or 0)
         else:
-            choices = result.get("choices", [])
-            reply = choices[0]["message"]["content"] if choices else ""
-            tokens = result.get("usage", {}).get("total_tokens", 0)
+            choices = result.get("choices") or []
+            reply = ""
+            if choices and isinstance(choices[0], dict):
+                msg = choices[0].get("message") or {}
+                reply = msg.get("content", "")
+            tokens = (result.get("usage") or {}).get("total_tokens", 0)
 
         elapsed = int((time.time() - start) * 1000)
         return {"reply": reply, "tokens_used": tokens, "response_time_ms": elapsed, "model_used": model}

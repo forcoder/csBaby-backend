@@ -1235,6 +1235,7 @@ def admin_tenant_routing_agent_add(tenant_id):
         max_concurrent = int(max_concurrent)
     except ValueError:
         max_concurrent = 5
+    max_concurrent = max(1, min(max_concurrent, 100))
 
     data = {
         "agent_phone": agent_phone,
@@ -1389,13 +1390,14 @@ def _inject_csrf_token(response):
             token = _csrf_token()
         hidden = '<input type="hidden" name="_csrf_token" value="' + token + '">'
         html = response.get_data(as_text=True)
-        # Inject CSRF token into all POST forms that don't already have it
-        html = re.sub(
-            r'(<form\s[^>]*method=["\']POST["\'][^>]*>)',
-            r'\1' + hidden,
-            html,
-            flags=re.IGNORECASE
-        )
+        # Skip forms that already have a _csrf_token field
+        if '_csrf_token' not in html:
+            html = re.sub(
+                r'(<form\s[^>]*method=["\']POST["\'][^>]*>)',
+                r'\1' + hidden,
+                html,
+                flags=re.IGNORECASE
+            )
         response.set_data(html)
     return response
 

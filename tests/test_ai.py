@@ -171,6 +171,63 @@ class TestChat:
         })
         assert resp.status_code == 401
 
+    def test_chat_message_missing_content(self, client, auth_headers):
+        """Messages without 'content' field should be rejected."""
+        resp = client.post("/api/ai/chat", json={
+            "messages": [{"role": "user"}]
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_chat_message_missing_role(self, client, auth_headers):
+        """Messages without 'role' field should be rejected."""
+        resp = client.post("/api/ai/chat", json={
+            "messages": [{"content": "Hello"}]
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_chat_message_not_dict(self, client, auth_headers):
+        """Non-dict messages should be rejected."""
+        resp = client.post("/api/ai/chat", json={
+            "messages": ["just a string"]
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_chat_messages_not_list(self, client, auth_headers):
+        """Non-list messages should be rejected."""
+        resp = client.post("/api/ai/chat", json={
+            "messages": {"role": "user", "content": "Hello"}
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+
+class TestGenerateReplyInputValidation:
+    """Tests for input validation on the generate_reply endpoint."""
+
+    def test_context_as_string_treated_as_empty(self, client, auth_headers):
+        """If context is a string instead of dict, should not crash."""
+        resp = client.post("/api/ai/generate", json={
+            "message": "你好",
+            "context": "not a dict"
+        }, headers=auth_headers)
+        # Should not crash with 500; should handle gracefully
+        assert resp.status_code in (200, 400)
+
+    def test_style_as_string_treated_as_empty(self, client, auth_headers):
+        """If style is a string instead of dict, should not crash."""
+        resp = client.post("/api/ai/generate", json={
+            "message": "你好",
+            "style": "not a dict"
+        }, headers=auth_headers)
+        assert resp.status_code in (200, 400)
+
+    def test_context_as_list_treated_as_empty(self, client, auth_headers):
+        """If context is a list instead of dict, should not crash."""
+        resp = client.post("/api/ai/generate", json={
+            "message": "你好",
+            "context": ["not", "a", "dict"]
+        }, headers=auth_headers)
+        assert resp.status_code in (200, 400)
+
     @patch("app.call_ai_model")
     def test_chat_with_model(self, mock_ai, client, auth_headers):
         mock_ai.return_value = {

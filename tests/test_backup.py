@@ -100,3 +100,36 @@ class TestRestoreBackup:
     def test_restore_unauthorized(self, client):
         resp = client.post("/api/backup/restore", json={"backup": {}})
         assert resp.status_code == 401
+
+    def test_restore_rules_with_string_target_names(self, client, auth_headers):
+        """Restore with target_names as JSON string should parse correctly."""
+        backup = {
+            "rules": [{
+                "keyword": "test", "reply_template": "reply",
+                "target_names": '["house1", "house2"]'
+            }],
+            "models": []
+        }
+        resp = client.post("/api/backup/restore", json={"backup": backup}, headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["restored"]["rules"] == 1
+
+    def test_restore_rules_with_invalid_target_names(self, client, auth_headers):
+        """Restore with invalid target_names JSON should return 400."""
+        backup = {
+            "rules": [{
+                "keyword": "test", "reply_template": "reply",
+                "target_names": "not valid json"
+            }],
+            "models": []
+        }
+        resp = client.post("/api/backup/restore", json={"backup": backup}, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_restore_invalid_models_type(self, client, auth_headers):
+        """Restore with non-list models should return 400."""
+        resp = client.post("/api/backup/restore", json={
+            "backup": {"rules": [], "models": "not_a_list"}
+        }, headers=auth_headers)
+        assert resp.status_code == 400

@@ -39,7 +39,14 @@ class AuthService:
             ).rstrip(b"=").decode()
             if not hmac.compare_digest(signature, expected_sig):
                 return None
-            payload_padded = payload + "=" * (4 - len(payload) % 4) if len(payload) % 4 else payload
+            remainder = len(payload) % 4
+            if remainder == 1:
+                # Invalid base64 length - skip padding, let decode fail
+                payload_padded = payload + "==="
+            elif remainder:
+                payload_padded = payload + "=" * (4 - remainder)
+            else:
+                payload_padded = payload
             payload_data = json.loads(base64.urlsafe_b64decode(payload_padded.encode()))
             if payload_data.get("exp", 0) < time.time():
                 return None

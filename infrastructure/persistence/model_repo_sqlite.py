@@ -31,6 +31,17 @@ class SqliteModelRepository(ModelRepository):
         db.close()
         return [self._row_to_entity(r) for r in rows]
 
+    def get_default(self, device_id: str) -> Optional[ModelConfig]:
+        db = get_connection()
+        row = db.execute(
+            "SELECT * FROM model_configs WHERE device_id=? AND is_default=1 AND enabled=1 LIMIT 1",
+            (device_id,),
+        ).fetchone()
+        db.close()
+        if not row:
+            return None
+        return self._row_to_entity(row)
+
     def get_by_id(self, model_id: int, device_id: str) -> Optional[ModelConfig]:
         db = get_connection()
         row = db.execute(
