@@ -126,9 +126,28 @@ class KnowledgeViewModel @Inject constructor(
                 Log.d(TAG, "Import override: cleared $cleared existing rules")
             }
 
+            val format = resolveImportFormat(uri)
+
+            // Check file size before opening (max 10MB for CSV/JSON, Excel has its own check)
+            if (format != ImportFormat.EXCEL_XLSX) {
+                val fileSize = runCatching {
+                    appContext.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                            if (sizeIndex >= 0) cursor.getLong(sizeIndex) else -1L
+                        } else -1L
+                    } ?: -1L
+                }.getOrDefault(-1L)
+
+                if (fileSize > 10 * 1024 * 1024) {
+                    _uiState.update { it.copy(isImporting = false, noticeMessage = "文件过大（最大10MB），请选择较小的文件") }
+                    return@launch
+                }
+            }
+
             val result = runCatching {
                 appContext.contentResolver.openInputStream(uri)?.use { inputStream ->
-                    when (resolveImportFormat(uri)) {
+                    when (format) {
                         ImportFormat.CSV -> knowledgeBaseManager.importFromCsv(inputStream)
                         ImportFormat.EXCEL_XLSX -> knowledgeBaseManager.importFromExcel(inputStream)
                         ImportFormat.EXCEL_XLS -> KnowledgeBaseManager.ImportResult(
