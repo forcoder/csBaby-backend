@@ -72,3 +72,5 @@ graphify-out/
 # Coverage
 .coverage
 htmlcov/
+csBaby.db
+gbrain/
