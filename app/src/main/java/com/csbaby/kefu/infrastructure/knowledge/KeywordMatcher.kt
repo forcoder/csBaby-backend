@@ -36,11 +36,11 @@ class KeywordMatcher @Inject constructor() {
     }
 
     /**
-     * Rebuild the Trie tree from current rules.
+     * Rebuild the Trie tree from current rules (must be called under trieLock).
      */
     private fun rebuildTrie() {
         if (isTrieBuilt) return
-        
+
         trieRoot.children.clear()
         trieRoot.isEndOfWord = false
         trieRoot.ruleIds.clear()
@@ -58,16 +58,20 @@ class KeywordMatcher @Inject constructor() {
                 }
             }
         }
-        
+
         isTrieBuilt = true
     }
 
     /**
-     * Ensure Trie tree is built before matching
+     * Ensure Trie tree is built before matching (thread-safe double-checked locking).
      */
     private fun ensureTrieBuilt() {
         if (!isTrieBuilt) {
-            rebuildTrie()
+            synchronized(trieLock) {
+                if (!isTrieBuilt) {
+                    rebuildTrie()
+                }
+            }
         }
     }
 
@@ -100,10 +104,10 @@ class KeywordMatcher @Inject constructor() {
     fun findMatches(message: String): List<MatchedResult> {
         // Check cache first
         matchCache[message]?.let { return it }
-        
+
         // Ensure Trie is built
         ensureTrieBuilt()
-        
+
         val results = mutableListOf<MatchedResult>()
 
         // Trie-based matching for exact and contains
@@ -121,12 +125,12 @@ class KeywordMatcher @Inject constructor() {
                 )
             }
             .sortedByDescending { it.confidence }
-        
+
         // Cache the result if cache size is within limit
         if (matchCache.size < CACHE_SIZE) {
             matchCache[message] = finalResults
         }
-        
+
         return finalResults
     }
 
@@ -247,7 +251,8 @@ class KeywordMatcher @Inject constructor() {
     }
 
     private class TrieNode {
-        val children = mutableMapOf<Char, TrieNode>()
+        val children = ConcurrentHashMap<Char, TrieNode>()
+        @Volatile
         var isEndOfWord = false
         val ruleIds = mutableListOf<MatchedRule>()
     }

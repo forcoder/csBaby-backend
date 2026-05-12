@@ -57,10 +57,10 @@ class EmbeddingService @Inject constructor(
         
         val result = generateEmbeddingWithModel(defaultModel, text)
         
-        // Cache successful result
+        // Cache successful result (ConcurrentHashMap is thread-safe)
         result.onSuccess { embedding ->
-            if (embeddingCache.size < 1000) { // Limit cache size
-                embeddingCache[text] = embedding
+            if (embeddingCache.size < 1000) {
+                embeddingCache.putIfAbsent(text, embedding)
             }
         }
         
@@ -112,7 +112,7 @@ class EmbeddingService @Inject constructor(
             // Cache new embeddings
             embeddings.forEachIndexed { i, embedding ->
                 if (embeddingCache.size < 1000) {
-                    embeddingCache[uncached[i].second] = embedding
+                    embeddingCache.putIfAbsent(uncached[i].second, embedding)
                 }
             }
             

@@ -297,7 +297,7 @@ def login():
                 session['_login_attempts'] = []
                 return redirect(url_for("dashboard"))
             else:
-                error = resp.json().get("error", "登录失败")
+                error = _safe_api_error(resp)
         except http_requests.exceptions.RequestException:
             error = "无法连接 API 服务"
         return render_template("login.html", error=error)
