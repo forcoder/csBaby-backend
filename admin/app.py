@@ -117,12 +117,12 @@ def api_delete(path, token):
     )
 
 
-def _safe_api_error(resp):
+def _safe_api_error(resp, default=None):
     """Safely extract error message from an API response."""
     try:
-        return resp.json().get("error", f"请求失败 (HTTP {resp.status_code})")
+        return resp.json().get("error", default or f"请求失败 (HTTP {resp.status_code})")
     except Exception:
-        return f"请求失败 (HTTP {resp.status_code})"
+        return default or f"请求失败 (HTTP {resp.status_code})"
 
 
 def parse_csv_content(content):
@@ -422,7 +422,7 @@ def tenant_detail(tenant_id):
                 if resp.status_code == 200:
                     success = "默认模型配置已删除"
                 else:
-                    error = resp.json().get("error", "删除失败")
+                    error = _safe_api_error(resp, "删除失败")
             except Exception as e:
                 error = f"网络错误: {e}"
             return render_template("tenant_detail.html", tenant=_get_tenant(tenant_id, token),
@@ -495,7 +495,7 @@ def default_model():
                         if resp.status_code in (200, 201):
                             success = f"已应用到租户 {tenant_id[:12]}..."
                         else:
-                            error = resp.json().get("error", "应用失败")
+                            error = _safe_api_error(resp, "应用失败")
                     except Exception as e:
                         error = f"网络错误: {e}"
         else:
@@ -515,7 +515,7 @@ def default_model():
                 if resp.status_code in (200, 201):
                     success = "全局默认模型已保存"
                 else:
-                    error = resp.json().get("error", "保存失败")
+                    error = _safe_api_error(resp, "保存失败")
             except Exception as e:
                 error = f"网络错误: {e}"
 
@@ -573,7 +573,7 @@ def admin_tenant_rule_add(tenant_id):
         if resp.status_code in (200, 201):
             flash("规则添加成功", "success")
         else:
-            flash(resp.json().get("error", "添加失败"), "error")
+            flash(_safe_api_error(resp, "添加失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
@@ -599,7 +599,7 @@ def admin_tenant_rule_edit(tenant_id, rule_id):
         if resp.status_code == 200:
             flash("规则更新成功", "success")
         else:
-            flash(resp.json().get("error", "更新失败"), "error")
+            flash(_safe_api_error(resp, "更新失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
@@ -615,7 +615,7 @@ def admin_tenant_rule_delete(tenant_id, rule_id):
         if resp.status_code == 200:
             flash("规则已删除", "success")
         else:
-            flash(resp.json().get("error", "删除失败"), "error")
+            flash(_safe_api_error(resp, "删除失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
@@ -746,7 +746,7 @@ def admin_tenant_blacklist_add(tenant_id):
         if resp.status_code in (200, 201):
             flash("黑名单添加成功", "success")
         else:
-            flash(resp.json().get("error", "添加失败"), "error")
+            flash(_safe_api_error(resp, "添加失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_blacklist", tenant_id=tenant_id))
@@ -769,7 +769,7 @@ def admin_tenant_blacklist_edit(tenant_id, blacklist_id):
         if resp.status_code == 200:
             flash("黑名单更新成功", "success")
         else:
-            flash(resp.json().get("error", "更新失败"), "error")
+            flash(_safe_api_error(resp, "更新失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_blacklist", tenant_id=tenant_id))
@@ -785,7 +785,7 @@ def admin_tenant_blacklist_delete(tenant_id, blacklist_id):
         if resp.status_code == 200:
             flash("黑名单已删除", "success")
         else:
-            flash(resp.json().get("error", "删除失败"), "error")
+            flash(_safe_api_error(resp, "删除失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_blacklist", tenant_id=tenant_id))
@@ -801,7 +801,7 @@ def admin_tenant_blacklist_clear(tenant_id):
         if resp.status_code == 200:
             flash("已清空所有黑名单", "success")
         else:
-            flash(resp.json().get("error", "清空失败"), "error")
+            flash(_safe_api_error(resp, "清空失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_blacklist", tenant_id=tenant_id))
@@ -890,7 +890,7 @@ def admin_tenant_model_add(tenant_id):
         if resp.status_code in (200, 201):
             flash("模型配置添加成功", "success")
         else:
-            flash(resp.json().get("error", "添加失败"), "error")
+            flash(_safe_api_error(resp, "添加失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_models", tenant_id=tenant_id))
@@ -917,7 +917,7 @@ def admin_tenant_model_edit(tenant_id, model_id):
         if resp.status_code == 200:
             flash("模型配置更新成功", "success")
         else:
-            flash(resp.json().get("error", "更新失败"), "error")
+            flash(_safe_api_error(resp, "更新失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_models", tenant_id=tenant_id))
@@ -933,7 +933,7 @@ def admin_tenant_model_delete(tenant_id, model_id):
         if resp.status_code == 200:
             flash("模型配置已删除", "success")
         else:
-            flash(resp.json().get("error", "删除失败"), "error")
+            flash(_safe_api_error(resp, "删除失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_tenant_models", tenant_id=tenant_id))
@@ -1082,7 +1082,7 @@ def admin_admins_add():
         if resp.status_code in (200, 201):
             flash("管理员创建成功", "success")
         else:
-            flash(resp.json().get("error", "创建失败"), "error")
+            flash(_safe_api_error(resp, "创建失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_admins"))
@@ -1112,7 +1112,7 @@ def admin_admins_edit(admin_id):
         if resp.status_code == 200:
             flash("管理员信息已更新", "success")
         else:
-            flash(resp.json().get("error", "更新失败"), "error")
+            flash(_safe_api_error(resp, "更新失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_admins"))
@@ -1128,7 +1128,7 @@ def admin_admins_delete(admin_id):
         if resp.status_code == 200:
             flash("管理员已删除", "success")
         else:
-            flash(resp.json().get("error", "删除失败"), "error")
+            flash(_safe_api_error(resp, "删除失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
     return redirect(url_for("admin_admins"))
@@ -1157,7 +1157,7 @@ def profile():
             if resp.status_code == 200:
                 return render_template("profile.html", admin_phone=session.get("admin_phone"), error=None, success="密码修改成功")
             else:
-                error = resp.json().get("error", "修改失败")
+                error = _safe_api_error(resp, "修改失败")
                 return render_template("profile.html", admin_phone=session.get("admin_phone"), error=error, success=None)
         except Exception as e:
             return render_template("profile.html", admin_phone=session.get("admin_phone"), error=f"网络错误: {e}", success=None)
