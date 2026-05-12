@@ -15,7 +15,9 @@ import com.csbaby.kefu.data.model.OtaUpdate
 import com.csbaby.kefu.data.model.UpdateStatus
 import com.csbaby.kefu.data.repository.OtaRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,6 +53,7 @@ class OtaManager @Inject constructor(
     private var downloadReceiver: BroadcastReceiver? = null
     private var progressUpdateJob: kotlinx.coroutines.Job? = null
     private var pendingApkFile: File? = null  // 保存APK路径，供权限授权后重试
+    private val otaScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
     
     companion object {
         private const val TAG = "OtaManager"
@@ -127,7 +130,8 @@ class OtaManager @Inject constructor(
                 request.setRequiresCharging(false)
             }
             
-            downloadId = downloadManager!!.enqueue(request)
+            val dm = downloadManager ?: return false
+            downloadId = dm.enqueue(request)
             
             // 注册下载完成广播接收器
             registerDownloadReceiver()
@@ -380,7 +384,7 @@ class OtaManager @Inject constructor(
      * 启动下载进度监控
      */
     private fun startProgressMonitoring() {
-        progressUpdateJob = kotlinx.coroutines.GlobalScope.launch {
+        progressUpdateJob = otaScope.launch {
             while (downloadId != -1L) {
                 try {
                     val query = DownloadManager.Query()
@@ -418,6 +422,7 @@ class OtaManager @Inject constructor(
      */
     fun cleanup() {
         cancelDownload()
+        otaScope.cancel()
         _updateStatus.value = UpdateStatus.IDLE
         _availableUpdate.value = null
         _errorMessage.value = null

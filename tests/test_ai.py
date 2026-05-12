@@ -95,6 +95,14 @@ class TestGenerateReply:
         data = resp.get_json()
         assert data["reply"] == "房间号已记录"
 
+    def test_generate_empty_message(self, client, auth_headers):
+        resp = client.post("/api/ai/generate", json={"message": ""}, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_generate_message_too_long(self, client, auth_headers):
+        resp = client.post("/api/ai/generate", json={"message": "x" * 10001}, headers=auth_headers)
+        assert resp.status_code == 400
+
     def test_generate_unauthorized(self, client):
         resp = client.post("/api/ai/generate", json={"message": "hello"})
         assert resp.status_code == 401

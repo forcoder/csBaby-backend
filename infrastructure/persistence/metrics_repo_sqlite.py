@@ -21,22 +21,19 @@ class SqliteMetricsRepository(MetricsRepository):
 
     def increment_metric(self, device_id: str, action: str) -> None:
         today = datetime.now().strftime("%Y-%m-%d")
-        db = get_connection()
-        existing = db.execute(
-            "SELECT * FROM optimization_metrics WHERE device_id=? AND date=?", (device_id, today)
-        ).fetchone()
-        if not existing:
-            db.execute(
-                "INSERT INTO optimization_metrics (device_id, date) VALUES (?, ?)",
-                (device_id, today),
-            )
         field_map = {
             "generated": "total_generated", "accepted": "total_accepted",
             "modified": "total_modified", "rejected": "total_rejected",
         }
         field = field_map.get(action)
-        if field:
-            query = f"UPDATE optimization_metrics SET {field} = {field} + 1 WHERE device_id=? AND date=?"
-            db.execute(query, (device_id, today))
+        if not field:
+            return
+        db = get_connection()
+        db.execute(
+            f"""INSERT INTO optimization_metrics (device_id, date, {field})
+                VALUES (?, ?, 1)
+                ON CONFLICT(device_id, date) DO UPDATE SET {field} = {field} + 1""",
+            (device_id, today),
+        )
         db.commit()
         db.close()

@@ -54,9 +54,18 @@ class TestHealthCheck:
 
 class TestCORS:
     def test_cors_headers(self, client):
-        resp = client.get("/health")
+        resp = client.get("/health", headers={"Origin": "http://localhost:3000"})
         assert "Access-Control-Allow-Origin" in resp.headers
-        assert resp.headers["Access-Control-Allow-Origin"] == "*"
+        assert resp.headers["Access-Control-Allow-Origin"] == "http://localhost:3000"
+
+    def test_cors_rejects_unknown_origin(self, client):
+        resp = client.get("/health", headers={"Origin": "http://evil.com"})
+        assert "Access-Control-Allow-Origin" not in resp.headers
+
+    def test_cors_missing_origin_no_header(self, client):
+        resp = client.get("/health")
+        # Without Origin header, CORS header is not set
+        assert "Access-Control-Allow-Origin" not in resp.headers
 
     def test_options_preflight(self, client):
         resp = client.options("/api/rules")

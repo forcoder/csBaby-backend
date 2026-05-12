@@ -73,16 +73,22 @@ class SqliteRuleRepository(RuleRepository):
 
     def batch_create(self, rules: List[KeywordRule], device_id: str, mode: str) -> int:
         db = get_connection()
-        if mode == "override":
-            db.execute("DELETE FROM keyword_rules WHERE device_id=?", (device_id,))
-        for rule in rules:
-            db.execute(
-                """INSERT INTO keyword_rules
-                (device_id, keyword, match_type, reply_template, category, target_type, target_names, priority)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (device_id, rule.keyword, rule.match_type, rule.reply_template,
-                 rule.category, rule.target_type, json.dumps(rule.target_names), rule.priority),
-            )
-        db.commit()
-        db.close()
+        try:
+            db.execute("BEGIN TRANSACTION")
+            if mode == "override":
+                db.execute("DELETE FROM keyword_rules WHERE device_id=?", (device_id,))
+            for rule in rules:
+                db.execute(
+                    """INSERT INTO keyword_rules
+                    (device_id, keyword, match_type, reply_template, category, target_type, target_names, priority)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (device_id, rule.keyword, rule.match_type, rule.reply_template,
+                     rule.category, rule.target_type, json.dumps(rule.target_names), rule.priority),
+                )
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
         return len(rules)

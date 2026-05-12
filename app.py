@@ -31,7 +31,9 @@ from infrastructure.persistence.feedback_repo_sqlite import SqliteFeedbackReposi
 from infrastructure.persistence.metrics_repo_sqlite import SqliteMetricsRepository
 
 # ========== 配置 ==========
-JWT_SECRET = os.environ.get("JWT_SECRET", "csbaby-secret-key-change-in-production")
+JWT_SECRET = os.environ.get("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET environment variable must be set")
 JWT_EXPIRE_DAYS = 30
 
 # ========== Domain Service Instances ==========
@@ -81,9 +83,13 @@ def require_auth(f):
     return decorated
 
 # ========== CORS ==========
+CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")
+
 @app.after_request
 def after_request(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
+    origin = request.headers.get("Origin", "")
+    if origin in CORS_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     return response
@@ -176,12 +182,26 @@ def update_rule(rule_id):
     if not existing:
         return jsonify({"error": "Rule not found"}), 404
     data = request.get_json() or {}
+    keyword = data.get("keyword", "").strip()
+    if not keyword:
+        return jsonify({"error": "keyword is required"}), 400
+    if len(keyword) > 500:
+        return jsonify({"error": "keyword too long (max 500 chars)"}), 400
+    match_type = data.get("match_type", "CONTAINS")
+    if match_type not in ("CONTAINS", "EXACT", "STARTS_WITH", "ENDS_WITH", "REGEX"):
+        return jsonify({"error": "invalid match_type"}), 400
+    priority = data.get("priority", 0)
+    if not isinstance(priority, int) or priority < 0 or priority > 100:
+        return jsonify({"error": "priority must be 0-100"}), 400
+    target_names = data.get("target_names", [])
+    if not isinstance(target_names, list):
+        return jsonify({"error": "target_names must be a list"}), 400
     rule = KeywordRule(
         id=rule_id, device_id=request.device_id,
-        keyword=data.get("keyword", ""), match_type=data.get("match_type", "CONTAINS"),
+        keyword=keyword, match_type=match_type,
         reply_template=data.get("reply_template", ""), category=data.get("category", ""),
-        target_type=data.get("target_type", "ALL"), target_names=data.get("target_names", []),
-        priority=data.get("priority", 0), enabled=data.get("enabled", True),
+        target_type=data.get("target_type", "ALL"), target_names=target_names,
+        priority=priority, enabled=data.get("enabled", True),
     )
     updated = repo.update(rule)
     return jsonify(_rule_to_dict(updated))
@@ -272,12 +292,21 @@ def update_model(model_id):
     if not existing:
         return jsonify({"error": "Model not found"}), 404
     data = request.get_json() or {}
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    temperature = data.get("temperature", 0.7)
+    if not isinstance(temperature, (int, float)) or temperature < 0 or temperature > 2:
+        return jsonify({"error": "temperature must be 0-2"}), 400
+    max_tokens = data.get("max_tokens", 2000)
+    if not isinstance(max_tokens, int) or max_tokens < 1 or max_tokens > 32000:
+        return jsonify({"error": "max_tokens must be 1-32000"}), 400
     config = ModelConfig(
         id=model_id, device_id=request.device_id,
-        name=data.get("name", ""), model_type=data.get("model_type", "OPENAI"),
+        name=name, model_type=data.get("model_type", "OPENAI"),
         model=data.get("model", ""), api_key=data.get("api_key", ""),
-        api_endpoint=data.get("api_endpoint", ""), temperature=data.get("temperature", 0.7),
-        max_tokens=data.get("max_tokens", 2000), is_default=data.get("is_default", False),
+        api_endpoint=data.get("api_endpoint", ""), temperature=temperature,
+        max_tokens=max_tokens, is_default=data.get("is_default", False),
         enabled=data.get("enabled", True),
     )
     updated = repo.update(config)
@@ -316,12 +345,20 @@ def _model_to_dict(m: ModelConfig) -> dict:
         "enabled": int(m.enabled),
     }
 
+def _model_to_ai_config(m: ModelConfig) -> dict:
+    return {
+        "model_type": m.model_type, "model": m.model,
+        "api_key": m.api_key, "api_endpoint": m.api_endpoint,
+    }
+
 # ========== AI 生成 API ==========
 @app.route("/api/ai/generate", methods=["POST"])
 @require_auth
 def generate_reply():
     data = request.get_json() or {}
     message = data.get("message", "")
+    if not message or len(message) > 10000:
+        return jsonify({"error": "message is required and must be <= 10000 chars"}), 400
     context = data.get("context", {})
     style = data.get("style", {})
 
@@ -353,7 +390,7 @@ def generate_reply():
         return jsonify({"error": "No enabled model configured"}), 400
 
     model_config = enabled_models[0]
-    model_dict = _model_to_dict(model_config)
+    ai_config = _model_to_ai_config(model_config)
 
     system_prompt = "你是一个专业的客服助手，请根据用户消息生成合适的回复。"
     if style:
@@ -368,9 +405,9 @@ def generate_reply():
 
     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": message}]
     try:
-        result = call_ai_model(model_dict, messages, model_config.temperature, model_config.max_tokens)
+        result = call_ai_model(ai_config, messages, model_config.temperature, model_config.max_tokens)
     except Exception as e:
-        return jsonify({"error": f"AI generation failed: {str(e)}"}), 500
+        return jsonify({"error": "AI generation failed"}), 500
 
     history = ReplyHistory(
         device_id=request.device_id, original_message=message,
@@ -405,12 +442,12 @@ def chat():
         return jsonify({"error": "No enabled model configured"}), 400
 
     model_config = enabled_models[0]
-    model_dict = _model_to_dict(model_config)
+    ai_config = _model_to_ai_config(model_config)
 
     try:
-        result = call_ai_model(model_dict, messages, model_config.temperature, model_config.max_tokens)
+        result = call_ai_model(ai_config, messages, model_config.temperature, model_config.max_tokens)
     except Exception as e:
-        return jsonify({"error": f"AI chat failed: {str(e)}"}), 500
+        return jsonify({"error": "AI chat failed"}), 500
 
     return jsonify({
         "reply": result["reply"], "model_used": result.get("model_used", ""),
@@ -422,7 +459,7 @@ def chat():
 @app.route("/api/history", methods=["GET"])
 @require_auth
 def get_history():
-    limit = request.args.get("limit", 50, type=int)
+    limit = min(request.args.get("limit", 50, type=int), 200)
     offset = request.args.get("offset", 0, type=int)
     repo = SqliteHistoryRepository()
     items, total = repo.get_by_device(request.device_id, limit, offset)
@@ -475,9 +512,11 @@ def get_feedback():
 def submit_feedback():
     data = request.get_json() or {}
     action = data.get("action", "")
+    allowed_actions = {"generated", "accepted", "modified", "rejected"}
+    if action not in allowed_actions:
+        return jsonify({"error": f"invalid action: {action}"}), 400
 
-    if action in ("generated", "accepted", "modified", "rejected"):
-        SqliteMetricsRepository().increment_metric(request.device_id, action)
+    SqliteMetricsRepository().increment_metric(request.device_id, action)
 
     fb = Feedback(
         device_id=request.device_id,
@@ -569,10 +608,14 @@ def export_backup():
 @require_auth
 def restore_backup():
     data = request.get_json() or {}
-    backup = data.get("backup", {})
+    backup = data.get("backup")
+    if not isinstance(backup, dict):
+        return jsonify({"error": "backup must be a JSON object"}), 400
     device_id = request.device_id
 
     rules_data = backup.get("rules", [])
+    if rules_data and not isinstance(rules_data, list):
+        return jsonify({"error": "rules must be a list"}), 400
     if rules_data:
         rules = [KeywordRule(
             device_id=device_id, keyword=r.get("keyword", ""),
