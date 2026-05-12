@@ -1,5 +1,8 @@
+import logging
 import re
 from typing import Dict, List, Any
+
+logger = logging.getLogger(__name__)
 
 
 class KeywordMatcher:
@@ -21,9 +24,9 @@ class KeywordMatcher:
                     if re.search(keyword, message, re.IGNORECASE | re.DOTALL):
                         matched.append(rule)
                 except re.error:
-                    pass
-                except Exception:
-                    pass
+                    logger.warning("Invalid regex pattern in rule %s: %s", rule.get("id"), keyword)
+                except Exception as e:
+                    logger.error("Regex match error for rule %s: %s", rule.get("id"), e)
             elif match_type == "CONTAINS" and keyword.lower() in msg_lower:
                 matched.append(rule)
         return matched

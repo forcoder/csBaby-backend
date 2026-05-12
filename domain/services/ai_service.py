@@ -16,6 +16,8 @@ class AIService:
         start = time.time()
         model_type = model_config.get("model_type", "OPENAI").upper()
         api_key = model_config.get("api_key", "")
+        if not api_key:
+            raise ValueError("API key is required for AI model calls")
         model = model_config.get("model", "gpt-4o")
         endpoint = model_config.get("api_endpoint", "")
 

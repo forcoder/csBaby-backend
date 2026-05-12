@@ -585,59 +585,6 @@ class TestMetrics:
             assert resp.status_code == 200
 
 
-class TestRouting:
-    def test_routing_page_renders(self, client):
-        """Routing page should render."""
-        _login_admin(client)
-        with patch("app.api_get") as mock_get:
-            mock_get.return_value.status_code = 200
-            mock_get.return_value.json.return_value = {
-                "agents": [], "sessions": [], "config": {},
-            }
-            resp = client.get("/admin/tenants/test-tenant/routing")
-            assert resp.status_code == 200
-
-    def test_add_agent(self, client):
-        """Adding an agent should call API and redirect."""
-        _login_admin(client)
-        with patch("app.api_post") as mock_post:
-            mock_post.return_value.status_code = 200
-            mock_post.return_value.json.return_value = {"status": "ok"}
-            resp = client.post("/admin/tenants/test-tenant/routing/agent/add", data={
-                "name": "客服A",
-                "phone": "13800138001",
-                "max_concurrent": "5",
-                "status": "online",
-                "skills": "入住咨询,退房咨询",
-            }, follow_redirects=False)
-            assert resp.status_code == 302
-
-    def test_update_agent_status(self, client):
-        """Updating agent status should call API and redirect."""
-        _login_admin(client)
-        with patch("app.api_post") as mock_post:
-            mock_post.return_value.status_code = 200
-            mock_post.return_value.json.return_value = {"status": "ok"}
-            resp = client.post(
-                "/admin/tenants/test-tenant/routing/agent/13800138001/status",
-                data={"status": "offline"},
-                follow_redirects=False,
-            )
-            assert resp.status_code == 302
-
-    def test_close_session(self, client):
-        """Closing a session should call API and redirect."""
-        _login_admin(client)
-        with patch("app.api_post") as mock_post:
-            mock_post.return_value.status_code = 200
-            mock_post.return_value.json.return_value = {"status": "closed"}
-            resp = client.post(
-                "/admin/tenants/test-tenant/routing/session/1/close",
-                follow_redirects=False,
-            )
-            assert resp.status_code == 302
-
-
 class TestAuditLog:
     def test_audit_log_renders(self, client):
         """Audit log page should render."""

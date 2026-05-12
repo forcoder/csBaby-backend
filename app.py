@@ -9,12 +9,10 @@ Presentation Layer: app.py (Flask routes)
 import json
 import logging
 import os
-import re
 import time
-import uuid
 from functools import wraps
 from threading import Lock
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify
 
 logger = logging.getLogger(__name__)
 
@@ -1091,6 +1089,7 @@ def admin_create_tenant_rule(tenant_id):
     return jsonify(_rule_to_dict(created)), 201
 
 @app.route("/api/admin/tenants/<tenant_id>/rules/<int:rule_id>", methods=["PUT"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_admin
 def admin_update_tenant_rule(tenant_id, rule_id):
     repo = SqliteRuleRepository()
@@ -1113,6 +1112,7 @@ def admin_update_tenant_rule(tenant_id, rule_id):
     return jsonify(_rule_to_dict(updated))
 
 @app.route("/api/admin/tenants/<tenant_id>/rules/<int:rule_id>", methods=["DELETE"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_admin
 def admin_delete_tenant_rule(tenant_id, rule_id):
     repo = SqliteRuleRepository()
@@ -1122,6 +1122,7 @@ def admin_delete_tenant_rule(tenant_id, rule_id):
     return jsonify({"status": "deleted", "id": rule_id})
 
 @app.route("/api/admin/tenants/<tenant_id>/rules/batch", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
 @require_admin
 def admin_batch_import_tenant_rules(tenant_id):
     data = request.get_json() or {}
@@ -1187,6 +1188,7 @@ def admin_get_blacklist(tenant_id):
         db.close()
 
 @app.route("/api/admin/tenants/<tenant_id>/blacklist", methods=["POST"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_admin
 def admin_add_blacklist(tenant_id):
     data = request.get_json() or {}
@@ -1206,6 +1208,7 @@ def admin_add_blacklist(tenant_id):
         db.close()
 
 @app.route("/api/admin/tenants/<tenant_id>/blacklist/<int:bid>", methods=["PUT"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_admin
 def admin_update_blacklist(tenant_id, bid):
     data = request.get_json() or {}
@@ -1225,6 +1228,7 @@ def admin_update_blacklist(tenant_id, bid):
         db.close()
 
 @app.route("/api/admin/tenants/<tenant_id>/blacklist/<int:bid>", methods=["DELETE"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_admin
 def admin_delete_blacklist(tenant_id, bid):
     db = get_connection()
@@ -1238,6 +1242,7 @@ def admin_delete_blacklist(tenant_id, bid):
         db.close()
 
 @app.route("/api/admin/tenants/<tenant_id>/blacklist/clear", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
 @require_admin
 def admin_clear_blacklist(tenant_id):
     db = get_connection()
@@ -1298,6 +1303,7 @@ def admin_get_tenant_models(tenant_id):
     return jsonify([_model_to_dict(m) for m in models])
 
 @app.route("/api/admin/tenants/<tenant_id>/models", methods=["POST"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_admin
 def admin_create_tenant_model(tenant_id):
     data = request.get_json() or {}
@@ -1327,6 +1333,7 @@ def admin_create_tenant_model(tenant_id):
     return jsonify(_model_to_dict(created)), 201
 
 @app.route("/api/admin/tenants/<tenant_id>/models/<int:model_id>", methods=["PUT"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_admin
 def admin_update_tenant_model(tenant_id, model_id):
     repo = SqliteModelRepository()
@@ -1350,6 +1357,7 @@ def admin_update_tenant_model(tenant_id, model_id):
     return jsonify(_model_to_dict(updated))
 
 @app.route("/api/admin/tenants/<tenant_id>/models/<int:model_id>", methods=["DELETE"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_admin
 def admin_delete_tenant_model(tenant_id, model_id):
     repo = SqliteModelRepository()
@@ -1517,9 +1525,17 @@ def admin_audit_log():
 @app.route("/api/admin/admins", methods=["GET"])
 @require_admin
 def admin_list_admins():
-    return jsonify(list(_admin_accounts.values()))
+    safe_accounts = []
+    for acc in _admin_accounts.values():
+        safe_accounts.append({
+            "phone": acc["phone"],
+            "is_active": acc["is_active"],
+            "created_at": acc["created_at"],
+        })
+    return jsonify(safe_accounts)
 
 @app.route("/api/admin/admins", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
 @require_admin
 def admin_create_admin():
     data = request.get_json() or {}
@@ -1527,6 +1543,8 @@ def admin_create_admin():
     password = data.get("password", "")
     if not phone or not password:
         return jsonify({"error": "phone and password required"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "password must be at least 6 chars"}), 400
     if phone in _admin_accounts:
         return jsonify({"error": "admin already exists"}), 409
     _admin_accounts[phone] = {
@@ -1539,6 +1557,7 @@ def admin_create_admin():
     return jsonify({"status": "created", "phone": phone}), 201
 
 @app.route("/api/admin/admins/<phone>", methods=["PUT"])
+@rate_limit(max_requests=10, window_seconds=60)
 @require_admin
 def admin_update_admin(phone):
     data = request.get_json() or {}
@@ -1548,11 +1567,14 @@ def admin_update_admin(phone):
     if "is_active" in data:
         acc["is_active"] = bool(data["is_active"])
     if "password" in data:
+        if len(data["password"]) < 6:
+            return jsonify({"error": "password must be at least 6 chars"}), 400
         acc["password_hash"] = _hash_password(data["password"])
     _log_audit(request.admin_phone, "update_admin", "admin", phone)
     return jsonify({"status": "updated"})
 
 @app.route("/api/admin/admins/<phone>", methods=["DELETE"])
+@rate_limit(max_requests=10, window_seconds=60)
 @require_admin
 def admin_delete_admin(phone):
     if phone not in _admin_accounts:
@@ -1560,6 +1582,10 @@ def admin_delete_admin(phone):
     if phone == request.admin_phone:
         return jsonify({"error": "Cannot delete yourself"}), 400
     del _admin_accounts[phone]
+    # Clean up tokens belonging to the deleted admin
+    tokens_to_remove = [t for t, p in _admin_tokens.items() if p == phone]
+    for t in tokens_to_remove:
+        del _admin_tokens[t]
     _log_audit(request.admin_phone, "delete_admin", "admin", phone)
     return jsonify({"status": "deleted"})
 
@@ -1570,6 +1596,7 @@ _routing_config = {"strategy": "skill_first", "fallback_to_ai": True, "max_queue
 _sessions = {}  # session_id -> {tenant_id, agent_phone, status, created_at}
 
 @app.route("/api/agent/status", methods=["POST"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_admin
 def admin_set_agent_status():
     data = request.get_json() or {}
@@ -1589,6 +1616,7 @@ def admin_set_agent_status():
     return jsonify({"status": "ok"})
 
 @app.route("/api/agent/skills", methods=["POST"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_admin
 def admin_set_agent_skills():
     data = request.get_json() or {}
@@ -1618,6 +1646,7 @@ def admin_get_tenant_sessions(tenant_id):
     return jsonify({"sessions": sessions, "total": len(sessions)})
 
 @app.route("/api/routing/config", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
 @require_admin
 def admin_update_routing_config():
     data = request.get_json() or {}
@@ -1632,16 +1661,19 @@ def admin_get_routing_config(tenant_id):
     return jsonify(_routing_config)
 
 @app.route("/api/conversation/<int:session_id>/close", methods=["POST"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_admin
 def admin_close_conversation(session_id):
     data = request.get_json() or {}
-    if session_id in _sessions:
-        _sessions[session_id]["status"] = "closed"
-        _sessions[session_id]["closed_at"] = _now_str()
+    if session_id not in _sessions:
+        return jsonify({"error": "Session not found"}), 404
+    _sessions[session_id]["status"] = "closed"
+    _sessions[session_id]["closed_at"] = _now_str()
     return jsonify({"status": "ok"})
 
 # ========== Admin API: Change Password ==========
 @app.route("/api/auth/change_password", methods=["POST"])
+@rate_limit(max_requests=5, window_seconds=300)
 @require_admin
 def admin_change_password():
     data = request.get_json() or {}

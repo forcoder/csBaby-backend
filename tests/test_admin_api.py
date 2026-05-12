@@ -628,10 +628,18 @@ class TestAdminAgentRouting:
 
     def test_close_conversation(self, admin_client):
         client, headers, app_module = admin_client
+        # Add a session to close
+        app_module._sessions[1] = {
+            "tenant_id": "test-tenant",
+            "agent_phone": "13700137000",
+            "status": "active",
+            "created_at": "2026-01-01 00:00:00",
+        }
         resp = client.post("/api/conversation/1/close", headers=headers, json={
             "agent_phone": "13700137000",
         })
         assert resp.status_code == 200
+        assert app_module._sessions[1]["status"] == "closed"
 
 
 class TestAdminChangePassword:
