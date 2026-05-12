@@ -36,9 +36,7 @@ class SqliteMetricsRepository(MetricsRepository):
         }
         field = field_map.get(action)
         if field:
-            db.execute(
-                f"UPDATE optimization_metrics SET {field} = {field} + 1 WHERE device_id=? AND date=?",
-                (device_id, today),
-            )
+            query = f"UPDATE optimization_metrics SET {field} = {field} + 1 WHERE device_id=? AND date=?"
+            db.execute(query, (device_id, today))
         db.commit()
         db.close()
