@@ -106,6 +106,28 @@ class TestTenants:
             resp = client.get("/admin/tenants?page_size=0")
             assert resp.status_code == 200
 
+    def test_tenants_negative_page_defaults_to_1(self, client):
+        """Negative page number should be handled gracefully."""
+        _login_admin(client)
+        with patch("app.api_get") as mock_get:
+            mock_get.return_value.status_code = 200
+            mock_get.return_value.json.return_value = {
+                "items": [], "total": 0, "page": 1, "page_size": 20,
+            }
+            resp = client.get("/admin/tenants?page=-1")
+            assert resp.status_code == 200
+
+    def test_tenants_very_large_page(self, client):
+        """Very large page number should not cause errors."""
+        _login_admin(client)
+        with patch("app.api_get") as mock_get:
+            mock_get.return_value.status_code = 200
+            mock_get.return_value.json.return_value = {
+                "items": [], "total": 0, "page": 9999, "page_size": 20,
+            }
+            resp = client.get("/admin/tenants?page=9999")
+            assert resp.status_code == 200
+
 
 class TestTenantDetail:
     def test_tenant_detail_renders(self, client):
@@ -671,6 +693,15 @@ class TestAdmins:
         with patch("app.api_delete") as mock_delete:
             mock_delete.return_value.status_code = 200
             mock_delete.return_value.json.return_value = {"status": "deleted"}
+            resp = client.post("/admin/admins/1/delete", follow_redirects=False)
+            assert resp.status_code == 302
+
+    def test_delete_admin_redirects_on_error(self, client):
+        """When backend returns error, should redirect with error flash."""
+        _login_admin(client)
+        with patch("app.api_delete") as mock_delete:
+            mock_delete.return_value.status_code = 400
+            mock_delete.return_value.json.return_value = {"error": "Cannot delete yourself"}
             resp = client.post("/admin/admins/1/delete", follow_redirects=False)
             assert resp.status_code == 302
 
