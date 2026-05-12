@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -36,7 +37,7 @@ class EmbeddingService @Inject constructor(
     }
     
     // Cache for embeddings (simple in-memory cache)
-    private val embeddingCache = mutableMapOf<String, FloatArray>()
+    private val embeddingCache = ConcurrentHashMap<String, FloatArray>()
     
     /**
      * Generate embedding for a single text.
@@ -86,7 +87,7 @@ class EmbeddingService @Inject constructor(
         
         if (uncached.isEmpty()) {
             Log.d(TAG, "All ${texts.size} embeddings from cache")
-            return@withContext Result.success(texts.indices.map { cached[it]!! })
+            return@withContext Result.success(texts.indices.map { i -> cached[i] ?: FloatArray(DEFAULT_EMBEDDING_DIM) })
         }
         
         Log.d(TAG, "Generating embeddings for ${uncached.size} texts (${cached.size} from cache)")

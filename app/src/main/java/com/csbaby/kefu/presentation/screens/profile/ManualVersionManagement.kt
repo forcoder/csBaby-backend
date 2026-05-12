@@ -277,10 +277,12 @@ fun ManualVersionManagementCard(
             confirmButton = {
                 Button(
                     onClick = {
+                        val file = selectedFile
+                        if (file == null) return@Button
                         try {
                             val code = uploadVersionCode.toIntOrNull() ?: 2
                             viewModel.uploadToOss(
-                                uri = selectedFile!!,
+                                uri = file,
                                 versionCode = code,
                                 versionName = uploadVersionName,
                                 releaseNotes = uploadReleaseNotes,

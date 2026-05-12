@@ -92,6 +92,36 @@ class TestUpdateRule:
         resp = client.put("/api/rules/99999", json={"keyword": "x"}, headers=auth_headers)
         assert resp.status_code == 404
 
+    def test_update_rule_empty_keyword(self, client, auth_headers):
+        created = client.post("/api/rules", json={
+            "keyword": "valid", "reply_template": "r"
+        }, headers=auth_headers)
+        rule_id = created.get_json()["id"]
+        resp = client.put(f"/api/rules/{rule_id}", json={
+            "keyword": "", "reply_template": "r"
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_update_rule_invalid_match_type(self, client, auth_headers):
+        created = client.post("/api/rules", json={
+            "keyword": "valid", "reply_template": "r"
+        }, headers=auth_headers)
+        rule_id = created.get_json()["id"]
+        resp = client.put(f"/api/rules/{rule_id}", json={
+            "keyword": "valid", "match_type": "INVALID", "reply_template": "r"
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_update_rule_priority_out_of_range(self, client, auth_headers):
+        created = client.post("/api/rules", json={
+            "keyword": "valid", "reply_template": "r"
+        }, headers=auth_headers)
+        rule_id = created.get_json()["id"]
+        resp = client.put(f"/api/rules/{rule_id}", json={
+            "keyword": "valid", "priority": 200, "reply_template": "r"
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
 
 class TestDeleteRule:
     def test_delete_rule(self, client, auth_headers):
