@@ -64,20 +64,24 @@ class AIClientImpl @Inject constructor(
     /**
      * Check if request is allowed based on rate limiting
      */
+    private val rateLimitLock = Any()
+
     private fun isRequestAllowed(apiKey: String): Boolean {
         val now = System.currentTimeMillis()
         val timestamps = requestTimestamps.getOrPut(apiKey) { mutableListOf() }
-        
-        // Remove timestamps outside the window
-        timestamps.removeIf { now - it > REQUEST_WINDOW_MS }
-        
-        if (timestamps.size >= MAX_REQUESTS_PER_MINUTE) {
-            Timber.w("Rate limit reached for API key")
-            return false
+
+        synchronized(rateLimitLock) {
+            // Remove timestamps outside the window
+            timestamps.removeIf { now - it > REQUEST_WINDOW_MS }
+
+            if (timestamps.size >= MAX_REQUESTS_PER_MINUTE) {
+                Timber.w("Rate limit reached for API key")
+                return false
+            }
+
+            timestamps.add(now)
+            return true
         }
-        
-        timestamps.add(now)
-        return true
     }
     
     /**

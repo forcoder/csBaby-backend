@@ -39,11 +39,23 @@ class ChatAutomationAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     // 防抖：记录上次检测时间（按应用分组）
-    private val lastCheckTimes = mutableMapOf<String, Long>()
+    private val lastCheckTimes: MutableMap<String, Long> = object : LinkedHashMap<String, Long>(MAX_CACHE_ENTRIES + 1, 0.75f, false) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean {
+            return size > MAX_CACHE_ENTRIES
+        }
+    }
     private val CHECK_DEBOUNCE_MS = 1000L // 1秒防抖
 
     // 缓存上次检测到的消息列表，用于判断是否有新消息（按应用和会话分组）
-    private val lastMessageCache = mutableMapOf<String, String>()
+    private val lastMessageCache: MutableMap<String, String> = object : LinkedHashMap<String, String>(MAX_CACHE_ENTRIES + 1, 0.75f, false) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean {
+            return size > MAX_CACHE_ENTRIES
+        }
+    }
+
+    companion object {
+        private const val MAX_CACHE_ENTRIES = 200
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()

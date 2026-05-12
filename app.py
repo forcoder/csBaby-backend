@@ -954,6 +954,15 @@ def admin_get_global_default_model():
 @require_admin
 def admin_save_global_default_model():
     data = request.get_json() or {}
+    # Ensure the _global pseudo-device exists
+    db = get_connection()
+    row = db.execute("SELECT id FROM devices WHERE id='_global'").fetchone()
+    if not row:
+        db.execute(
+            "INSERT INTO devices (id, token, name, platform) VALUES ('_global', '_global_token', 'Global', 'system')"
+        )
+        db.commit()
+    db.close()
     config = ModelConfig(
         device_id="_global",
         name=data.get("name", "global-default"),
@@ -1405,16 +1414,16 @@ def _audit_hook():
     _ensure_audit_table()
 
 def _log_audit(admin_phone, action, target_type="", target_id="", detail=""):
-    db = get_connection()
-    db.execute("PRAGMA busy_timeout=3000")
     try:
+        db = get_connection()
         db.execute(
             "INSERT INTO audit_log (admin_phone, action, target_type, target_id, detail) VALUES (?, ?, ?, ?, ?)",
             (admin_phone, action, target_type, target_id, detail)
         )
         db.commit()
-    finally:
         db.close()
+    except Exception:
+        pass  # Audit logging is best-effort
 
 @app.route("/api/admin/audit-log", methods=["GET"])
 @require_admin

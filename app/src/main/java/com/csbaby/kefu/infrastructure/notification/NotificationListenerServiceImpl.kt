@@ -105,6 +105,14 @@ class NotificationListenerServiceImpl : NotificationListenerService() {
         }
     }
 
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        Log.w(TAG, "Notification listener disconnected - attempting reconnection")
+        // Request reconnection via ComponentName
+        val componentName = ComponentName(this, NotificationListenerServiceImpl::class.java)
+        requestReconnect(componentName)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()

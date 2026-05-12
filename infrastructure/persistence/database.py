@@ -6,10 +6,11 @@ DATABASE_PATH = os.environ.get("DATABASE_PATH", "csBaby.db")
 
 
 def get_connection() -> sqlite3.Connection:
-    db = sqlite3.connect(DATABASE_PATH)
+    db = sqlite3.connect(DATABASE_PATH, timeout=10)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA foreign_keys=ON")
+    db.execute("PRAGMA busy_timeout=3000")
     return db
 
 

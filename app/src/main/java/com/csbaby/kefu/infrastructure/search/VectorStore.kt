@@ -36,7 +36,9 @@ class VectorStore @Inject constructor(
     // Flag to track if index is initialized
     @Volatile
     private var isInitialized = false
-    
+
+    private val initLock = Any()
+
     /**
      * Initialize the vector store by loading all rules and generating embeddings.
      * This should be called when the app starts or when rules change.
@@ -46,46 +48,52 @@ class VectorStore @Inject constructor(
             Log.d(TAG, "Vector store already initialized")
             return@withContext true
         }
-        
-        try {
-            Log.d(TAG, "Initializing vector store...")
-            
-            val rules = keywordRuleRepository.getEnabledRules().first()
-            Log.d(TAG, "Found ${rules.size} enabled rules to index")
-            
-            if (rules.isEmpty()) {
-                isInitialized = true
+
+        synchronized(initLock) {
+            if (isInitialized) {
                 return@withContext true
             }
-            
-            // Generate embeddings for all rules
-            val texts = rules.map { rule ->
-                "${rule.keyword} ${rule.replyTemplate}"
-            }
-            
-            val embeddingsResult = embeddingService.embedBatch(texts)
-            
-            embeddingsResult.fold(
-                onSuccess = { embeddings ->
-                    rules.forEachIndexed { index, rule ->
-                        if (index < embeddings.size) {
-                            vectorIndex[rule.id] = rule to embeddings[index]
-                        }
-                    }
-                    Log.d(TAG, "Vector store initialized with ${vectorIndex.size} rules")
+
+            try {
+                Log.d(TAG, "Initializing vector store...")
+
+                val rules = keywordRuleRepository.getEnabledRules().first()
+                Log.d(TAG, "Found ${rules.size} enabled rules to index")
+
+                if (rules.isEmpty()) {
                     isInitialized = true
-                },
-                onFailure = { error ->
-                    Log.e(TAG, "Failed to generate embeddings: ${error.message}")
-                    // Fall back to keyword-only mode
-                    isInitialized = true
+                    return@withContext true
                 }
-            )
-            
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize vector store", e)
-            false
+
+                // Generate embeddings for all rules
+                val texts = rules.map { rule ->
+                    "${rule.keyword} ${rule.replyTemplate}"
+                }
+
+                val embeddingsResult = embeddingService.embedBatch(texts)
+
+                embeddingsResult.fold(
+                    onSuccess = { embeddings ->
+                        rules.forEachIndexed { index, rule ->
+                            if (index < embeddings.size) {
+                                vectorIndex[rule.id] = rule to embeddings[index]
+                            }
+                        }
+                        Log.d(TAG, "Vector store initialized with ${vectorIndex.size} rules")
+                        isInitialized = true
+                    },
+                    onFailure = { error ->
+                        Log.e(TAG, "Failed to generate embeddings: ${error.message}")
+                        // Fall back to keyword-only mode
+                        isInitialized = true
+                    }
+                )
+
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize vector store", e)
+                false
+            }
         }
     }
     

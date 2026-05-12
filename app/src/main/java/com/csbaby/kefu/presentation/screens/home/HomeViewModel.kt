@@ -1,5 +1,6 @@
 package com.csbaby.kefu.presentation.screens.home
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.csbaby.kefu.data.local.PreferencesManager
@@ -45,39 +46,59 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun loadData() {
+        // Collect preferences in a single coroutine
         viewModelScope.launch {
-            preferencesManager.userPreferencesFlow.collect { prefs ->
-                _uiState.update {
-                    it.copy(
-                        isMonitoringEnabled = prefs.monitoringEnabled,
-                        isFloatingIconEnabled = prefs.floatingIconEnabled,
-                        monitoredApps = buildMonitoredApps(prefs.selectedApps)
-                    )
+            try {
+                preferencesManager.userPreferencesFlow.collect { prefs ->
+                    _uiState.update {
+                        it.copy(
+                            isMonitoringEnabled = prefs.monitoringEnabled,
+                            isFloatingIconEnabled = prefs.floatingIconEnabled,
+                            monitoredApps = buildMonitoredApps(prefs.selectedApps)
+                        )
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "Error collecting preferences", e)
             }
         }
 
+        // Load total count once
         viewModelScope.launch {
-            val totalCount = replyHistoryRepository.getTotalCount()
-            _uiState.update { it.copy(totalReplies = totalCount) }
-        }
-
-        viewModelScope.launch {
-            replyHistoryRepository.getRecentReplies(10).collect { replies ->
-                _uiState.update { state ->
-                    state.copy(
-                        recentReplies = replies,
-                        todayReplies = replies.count {
-                            isToday(it.sendTime)
-                        }
-                    )
-                }
+            try {
+                val totalCount = replyHistoryRepository.getTotalCount()
+                _uiState.update { it.copy(totalReplies = totalCount) }
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "Error loading total count", e)
             }
         }
 
+        // Collect recent replies
         viewModelScope.launch {
-            keywordRuleRepository.getRuleCountFlow().collect { count ->
-                _uiState.update { it.copy(knowledgeBaseCount = count) }
+            try {
+                replyHistoryRepository.getRecentReplies(10).collect { replies ->
+                    _uiState.update { state ->
+                        state.copy(
+                            recentReplies = replies,
+                            todayReplies = replies.count {
+                                isToday(it.sendTime)
+                            }
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "Error collecting recent replies", e)
+            }
+        }
+
+        // Collect knowledge base count
+        viewModelScope.launch {
+            try {
+                keywordRuleRepository.getRuleCountFlow().collect { count ->
+                    _uiState.update { it.copy(knowledgeBaseCount = count) }
+                }
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "Error collecting rule count", e)
             }
         }
     }
