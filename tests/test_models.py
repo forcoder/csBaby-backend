@@ -85,6 +85,36 @@ class TestUpdateModel:
         resp = client.put("/api/models/99999", json={"name": "x"}, headers=auth_headers)
         assert resp.status_code == 404
 
+    def test_update_model_empty_name(self, client, auth_headers):
+        created = client.post("/api/models", json={
+            "name": "TestModel", "model_type": "OPENAI"
+        }, headers=auth_headers)
+        model_id = created.get_json()["id"]
+        resp = client.put(f"/api/models/{model_id}", json={
+            "name": "", "model_type": "OPENAI"
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_update_model_invalid_temperature(self, client, auth_headers):
+        created = client.post("/api/models", json={
+            "name": "TestModel", "model_type": "OPENAI"
+        }, headers=auth_headers)
+        model_id = created.get_json()["id"]
+        resp = client.put(f"/api/models/{model_id}", json={
+            "name": "TestModel", "temperature": 5.0
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_update_model_invalid_max_tokens(self, client, auth_headers):
+        created = client.post("/api/models", json={
+            "name": "TestModel", "model_type": "OPENAI"
+        }, headers=auth_headers)
+        model_id = created.get_json()["id"]
+        resp = client.put(f"/api/models/{model_id}", json={
+            "name": "TestModel", "max_tokens": -1
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
 
 class TestDeleteModel:
     def test_delete_model(self, client, auth_headers):

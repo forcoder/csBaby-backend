@@ -20,6 +20,16 @@ class TestGetHistory:
         assert len(data["items"]) == 2
         assert data["total"] == 3
 
+    def test_get_history_limit_capped(self, client, auth_headers):
+        for i in range(5):
+            client.post("/api/history", json={
+                "original_message": f"msg{i}",
+                "reply_content": f"reply{i}"
+            }, headers=auth_headers)
+        resp = client.get("/api/history?limit=9999", headers=auth_headers)
+        data = resp.get_json()
+        assert data["limit"] <= 200
+
     def test_get_history_unauthorized(self, client):
         resp = client.get("/api/history")
         assert resp.status_code == 401

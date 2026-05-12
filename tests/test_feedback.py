@@ -29,6 +29,12 @@ class TestSubmitFeedback:
         assert resp.status_code == 200
         assert resp.get_json()["modified_text"] == "修改后的回复"
 
+    def test_submit_feedback_invalid_action(self, client, auth_headers):
+        resp = client.post("/api/feedback", json={
+            "action": "invalid_action"
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
     def test_submit_feedback_unauthorized(self, client):
         resp = client.post("/api/feedback", json={"action": "accepted"})
         assert resp.status_code == 401

@@ -85,6 +85,18 @@ class TestRestoreBackup:
         }, headers=auth_headers)
         assert resp.status_code == 200
 
+    def test_restore_invalid_backup_type(self, client, auth_headers):
+        resp = client.post("/api/backup/restore", json={
+            "backup": "not_an_object"
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_restore_invalid_rules_type(self, client, auth_headers):
+        resp = client.post("/api/backup/restore", json={
+            "backup": {"rules": "not_a_list", "models": []}
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
     def test_restore_unauthorized(self, client):
         resp = client.post("/api/backup/restore", json={"backup": {}})
         assert resp.status_code == 401
