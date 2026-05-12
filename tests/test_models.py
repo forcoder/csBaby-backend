@@ -81,6 +81,10 @@ class TestUpdateModel:
         assert data["name"] == "Updated"
         assert data["temperature"] == 0.9
 
+    def test_update_nonexistent_model(self, client, auth_headers):
+        resp = client.put("/api/models/99999", json={"name": "x"}, headers=auth_headers)
+        assert resp.status_code == 404
+
 
 class TestDeleteModel:
     def test_delete_model(self, client, auth_headers):
@@ -91,6 +95,54 @@ class TestDeleteModel:
         resp = client.delete(f"/api/models/{model_id}", headers=auth_headers)
         assert resp.status_code == 200
         assert resp.get_json()["status"] == "deleted"
+
+    def test_delete_model_not_found(self, client, auth_headers):
+        resp = client.delete("/api/models/99999", headers=auth_headers)
+        assert resp.status_code == 404
+
+
+class TestModelInputValidation:
+    def test_create_model_empty_name(self, client, auth_headers):
+        resp = client.post("/api/models", json={
+            "name": "", "model_type": "OPENAI"
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_create_model_name_whitespace_only(self, client, auth_headers):
+        resp = client.post("/api/models", json={
+            "name": "   ", "model_type": "OPENAI"
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_create_model_temperature_too_high(self, client, auth_headers):
+        resp = client.post("/api/models", json={
+            "name": "test", "temperature": 3.0
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_create_model_temperature_negative(self, client, auth_headers):
+        resp = client.post("/api/models", json={
+            "name": "test", "temperature": -0.5
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_create_model_max_tokens_zero(self, client, auth_headers):
+        resp = client.post("/api/models", json={
+            "name": "test", "max_tokens": 0
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_create_model_max_tokens_too_large(self, client, auth_headers):
+        resp = client.post("/api/models", json={
+            "name": "test", "max_tokens": 50000
+        }, headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_create_model_max_tokens_negative(self, client, auth_headers):
+        resp = client.post("/api/models", json={
+            "name": "test", "max_tokens": -100
+        }, headers=auth_headers)
+        assert resp.status_code == 400
 
 
 class TestModelTest:
@@ -108,3 +160,34 @@ class TestModelTest:
     def test_test_model_not_found(self, client, auth_headers):
         resp = client.post("/api/models/99999/test", headers=auth_headers)
         assert resp.status_code == 404
+
+
+class TestModelApiKeyMasking:
+    def test_model_api_key_masked_in_list(self, client, auth_headers):
+        client.post("/api/models", json={
+            "name": "test", "model_type": "OPENAI",
+            "api_key": "sk-1234567890abcdef"
+        }, headers=auth_headers)
+        resp = client.get("/api/models", headers=auth_headers)
+        data = resp.get_json()
+        assert len(data) == 1
+        assert data[0]["api_key"].startswith("*")
+        assert data[0]["api_key"].endswith("cdef")
+        assert "1234567890" not in data[0]["api_key"]
+
+    def test_model_api_key_short_fully_masked(self, client, auth_headers):
+        resp = client.post("/api/models", json={
+            "name": "test", "model_type": "OPENAI",
+            "api_key": "short"
+        }, headers=auth_headers)
+        model_id = resp.get_json()["id"]
+        resp = client.get(f"/api/models/{model_id}", headers=auth_headers)
+        data = resp.get_json()
+        assert data["api_key"] == "****"
+
+    def test_model_no_api_key_not_masked(self, client, auth_headers):
+        resp = client.post("/api/models", json={
+            "name": "test", "model_type": "OPENAI"
+        }, headers=auth_headers)
+        data = resp.get_json()
+        assert data["api_key"] == ""
