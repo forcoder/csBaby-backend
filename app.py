@@ -585,8 +585,6 @@ def restore_backup():
 
     models_data = backup.get("models", [])
     if models_data:
-        SqliteModelRepository().delete(0, device_id)  # Delete all for device
-        # Actually we need to delete all models for device - use direct SQL approach
         db = get_connection()
         db.execute("DELETE FROM model_configs WHERE device_id=?", (device_id,))
         db.commit()
