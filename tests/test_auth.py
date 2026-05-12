@@ -26,6 +26,28 @@ class TestRegister:
         resp = client.post("/api/auth/register", json={"platform": "ios"})
         assert resp.status_code == 200
 
+    def test_register_invalid_platform(self, client):
+        resp = client.post("/api/auth/register", json={"platform": "windows"})
+        assert resp.status_code == 400
+        assert "platform" in resp.get_json()["error"].lower() or "invalid" in resp.get_json()["error"].lower()
+
+    def test_register_invalid_platform_type(self, client):
+        resp = client.post("/api/auth/register", json={"platform": 123})
+        assert resp.status_code == 400
+
+    def test_register_app_version_too_long(self, client):
+        resp = client.post("/api/auth/register", json={"app_version": "1" * 51})
+        assert resp.status_code == 400
+        assert "app_version" in resp.get_json()["error"].lower()
+
+    def test_register_app_version_max_length(self, client):
+        resp = client.post("/api/auth/register", json={"app_version": "1" * 50})
+        assert resp.status_code == 200
+
+    def test_register_invalid_app_version_type(self, client):
+        resp = client.post("/api/auth/register", json={"app_version": 123})
+        assert resp.status_code == 400
+
 
 class TestHeartbeat:
     def test_heartbeat_ok(self, client, auth_headers):

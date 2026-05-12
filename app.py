@@ -62,10 +62,6 @@ def ensure_db():
         init_db()
         _db_initialized = True
 
-@app.before_request
-def before_request_hook():
-    ensure_db()
-
 def dict_from_row(row):
     if row is None:
         return None
@@ -140,11 +136,6 @@ def after_request(response):
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     return response
 
-@app.route("/", methods=["OPTIONS"])
-@app.route("/<path:path>", methods=["OPTIONS"])
-def options_handler(path=""):
-    return "", 204
-
 # ========== 健康检查 ==========
 @app.route("/health", methods=["GET"])
 def health_check():
@@ -155,10 +146,18 @@ def health_check():
 @rate_limit(max_requests=10, window_seconds=60)
 def register():
     data = request.get_json() or {}
+    platform = data.get("platform", "android")
+    if platform not in ("android", "ios", "web"):
+        return jsonify({"error": "invalid platform: must be android, ios, or web"}), 400
+    app_version = data.get("app_version", "")
+    if not isinstance(app_version, str):
+        return jsonify({"error": "app_version must be a string"}), 400
+    if len(app_version) > 50:
+        return jsonify({"error": "app_version too long (max 50 chars)"}), 400
     device = Device.create(
         name=data.get("name", ""),
-        platform=data.get("platform", "android"),
-        app_version=data.get("app_version", ""),
+        platform=platform,
+        app_version=app_version,
     )
     device.token = auth_service.generate_token(device.id)
     repo = SqliteDeviceRepository()
@@ -224,6 +223,7 @@ def get_rule(rule_id):
     return jsonify(_rule_to_dict(rule))
 
 @app.route("/api/rules/<int:rule_id>", methods=["PUT"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_auth
 def update_rule(rule_id):
     repo = SqliteRuleRepository()
@@ -256,6 +256,7 @@ def update_rule(rule_id):
     return jsonify(_rule_to_dict(updated))
 
 @app.route("/api/rules/<int:rule_id>", methods=["DELETE"])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_auth
 def delete_rule(rule_id):
     repo = SqliteRuleRepository()
@@ -807,6 +808,7 @@ def require_admin(f):
 
 @app.before_request
 def _init_admin_hook():
+    ensure_db()
     _init_admin()
 
 # ========== Admin API: Auth ==========
@@ -922,18 +924,27 @@ def admin_get_tenant(tenant_id):
 @require_admin
 def admin_update_tenant(tenant_id):
     data = request.get_json() or {}
+    name = data.get("name")
     is_active = data.get("is_active")
     db = get_connection()
     try:
         row = db.execute("SELECT id FROM devices WHERE id=?", (tenant_id,)).fetchone()
         if not row:
-            db.close()
             return jsonify({"error": "Tenant not found"}), 404
+        # Ensure is_active column exists (added via schema migration)
+        try:
+            db.execute("SELECT is_active FROM devices WHERE id=?", (tenant_id,)).fetchone()
+        except Exception:
+            db.execute("ALTER TABLE devices ADD COLUMN is_active INTEGER DEFAULT 1")
+        if name is not None:
+            name = str(name).strip()
+            if len(name) > 200:
+                return jsonify({"error": "name too long (max 200 chars)"}), 400
+            db.execute("UPDATE devices SET name=? WHERE id=?", (name, tenant_id))
         if is_active is not None:
-            # Store active status in name field prefix or use a note field
-            # For simplicity, we just acknowledge the toggle
-            pass
+            db.execute("UPDATE devices SET is_active=? WHERE id=?", (1 if is_active else 0, tenant_id))
         db.commit()
+        _log_audit(request.admin_phone, "update_tenant", "tenant", tenant_id)
     finally:
         db.close()
     return jsonify({"status": "ok"})

@@ -174,6 +174,29 @@ class TestAdminTenants:
                           headers=headers, json={"is_active": 1})
         assert resp.status_code == 200
 
+    def test_update_tenant_name(self, admin_client, registered_device):
+        client, headers, app_module = admin_client
+        device_id = registered_device["device_id"]
+        resp = client.put(f"/api/admin/tenants/{device_id}",
+                          headers=headers, json={"name": "Updated Name"})
+        assert resp.status_code == 200
+        # Verify the name was actually updated
+        resp2 = client.get(f"/api/admin/tenants/{device_id}", headers=headers)
+        assert resp2.get_json()["name"] == "Updated Name"
+
+    def test_update_tenant_not_found(self, admin_client, registered_device):
+        client, headers, app_module = admin_client
+        resp = client.put("/api/admin/tenants/nonexistent-id",
+                          headers=headers, json={"is_active": 1})
+        assert resp.status_code == 404
+
+    def test_update_tenant_name_too_long(self, admin_client, registered_device):
+        client, headers, app_module = admin_client
+        device_id = registered_device["device_id"]
+        resp = client.put(f"/api/admin/tenants/{device_id}",
+                          headers=headers, json={"name": "x" * 201})
+        assert resp.status_code == 400
+
 
 class TestAdminTenantRules:
     def test_get_rules_empty(self, admin_client, registered_device):

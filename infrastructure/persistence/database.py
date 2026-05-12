@@ -24,6 +24,7 @@ def init_db():
             platform TEXT DEFAULT 'android',
             app_version TEXT,
             last_heartbeat DATETIME,
+            is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
