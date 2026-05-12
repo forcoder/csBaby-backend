@@ -27,12 +27,18 @@ class SqliteRuleRepository(RuleRepository):
             (device_id,),
         ).fetchall()
         db.close()
-        return [KeywordRule(id=r["id"], device_id=r["device_id"], keyword=r["keyword"],
-                            match_type=r["match_type"], reply_template=r["reply_template"],
-                            category=r["category"], target_type=r["target_type"],
-                            target_names=json.loads(r["target_names"]), priority=r["priority"],
-                            enabled=bool(r["enabled"]))
-                for r in rows]
+        rules = []
+        for r in rows:
+            try:
+                target_names = json.loads(r["target_names"]) if r["target_names"] else []
+            except (json.JSONDecodeError, TypeError):
+                target_names = []
+            rules.append(KeywordRule(id=r["id"], device_id=r["device_id"], keyword=r["keyword"],
+                                     match_type=r["match_type"], reply_template=r["reply_template"],
+                                     category=r["category"], target_type=r["target_type"],
+                                     target_names=target_names, priority=r["priority"],
+                                     enabled=bool(r["enabled"])))
+        return rules
 
     def get_by_id(self, rule_id: int, device_id: str) -> Optional[KeywordRule]:
         db = get_connection()
@@ -42,11 +48,15 @@ class SqliteRuleRepository(RuleRepository):
         db.close()
         if not row:
             return None
+        try:
+            target_names = json.loads(row["target_names"]) if row["target_names"] else []
+        except (json.JSONDecodeError, TypeError):
+            target_names = []
         return KeywordRule(
             id=row["id"], device_id=row["device_id"], keyword=row["keyword"],
             match_type=row["match_type"], reply_template=row["reply_template"],
             category=row["category"], target_type=row["target_type"],
-            target_names=json.loads(row["target_names"]), priority=row["priority"],
+            target_names=target_names, priority=row["priority"],
             enabled=bool(row["enabled"]),
         )
 

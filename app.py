@@ -757,7 +757,9 @@ def _init_admin():
     """Create default admin if none exists."""
     if not _admin_accounts:
         phone = os.environ.get("ADMIN_PHONE", "13800138000")
-        password = os.environ.get("ADMIN_PASSWORD", "admin123456")
+        password = os.environ.get("ADMIN_PASSWORD")
+        if not password:
+            raise RuntimeError("ADMIN_PASSWORD environment variable must be set")
         _admin_accounts[phone] = {
             "phone": phone,
             "password_hash": _hash_password(password),
@@ -1041,15 +1043,29 @@ def admin_get_tenant_rules(tenant_id):
 @require_admin
 def admin_create_tenant_rule(tenant_id):
     data = request.get_json() or {}
+    keyword = data.get("keyword", "").strip()
+    if not keyword:
+        return jsonify({"error": "keyword is required"}), 400
+    if len(keyword) > 500:
+        return jsonify({"error": "keyword too long (max 500 chars)"}), 400
+    match_type = data.get("match_type", "CONTAINS")
+    if match_type not in ("CONTAINS", "EXACT", "STARTS_WITH", "ENDS_WITH", "REGEX"):
+        return jsonify({"error": "invalid match_type"}), 400
+    priority = data.get("priority", 0)
+    if not isinstance(priority, int) or priority < 0 or priority > 100:
+        return jsonify({"error": "priority must be 0-100"}), 400
+    target_names = data.get("target_names", [])
+    if not isinstance(target_names, list):
+        return jsonify({"error": "target_names must be a list"}), 400
     rule = KeywordRule(
         device_id=tenant_id,
-        keyword=data.get("keyword", "").strip(),
-        match_type=data.get("match_type", "CONTAINS"),
+        keyword=keyword,
+        match_type=match_type,
         reply_template=data.get("reply_template", ""),
         category=data.get("category", ""),
         target_type=data.get("target_type", "ALL"),
-        target_names=data.get("target_names", []),
-        priority=data.get("priority", 0),
+        target_names=target_names,
+        priority=priority,
         enabled=data.get("enabled", True),
     )
     repo = SqliteRuleRepository()
@@ -1267,15 +1283,24 @@ def admin_get_tenant_models(tenant_id):
 @require_admin
 def admin_create_tenant_model(tenant_id):
     data = request.get_json() or {}
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    temperature = data.get("temperature", 0.7)
+    if not isinstance(temperature, (int, float)) or temperature < 0 or temperature > 2:
+        return jsonify({"error": "temperature must be 0-2"}), 400
+    max_tokens = data.get("max_tokens", 2000)
+    if not isinstance(max_tokens, int) or max_tokens < 1 or max_tokens > 32000:
+        return jsonify({"error": "max_tokens must be 1-32000"}), 400
     config = ModelConfig(
         device_id=tenant_id,
-        name=data.get("name", "").strip(),
+        name=name,
         model_type=data.get("model_type", "OPENAI"),
         model=data.get("model", "gpt-4o"),
         api_key=data.get("api_key", ""),
         api_endpoint=data.get("api_endpoint", ""),
-        temperature=data.get("temperature", 0.7),
-        max_tokens=data.get("max_tokens", 2000),
+        temperature=temperature,
+        max_tokens=max_tokens,
         is_default=data.get("is_default", False),
         enabled=data.get("enabled", True),
     )
@@ -1414,6 +1439,7 @@ def _audit_hook():
     _ensure_audit_table()
 
 def _log_audit(admin_phone, action, target_type="", target_id="", detail=""):
+    db = None
     try:
         db = get_connection()
         db.execute(
@@ -1421,9 +1447,14 @@ def _log_audit(admin_phone, action, target_type="", target_id="", detail=""):
             (admin_phone, action, target_type, target_id, detail)
         )
         db.commit()
-        db.close()
-    except Exception:
-        pass  # Audit logging is best-effort
+    except Exception as e:
+        logger.error("Audit log failed: %s", e, exc_info=True)
+    finally:
+        if db:
+            try:
+                db.close()
+            except Exception:
+                pass
 
 @app.route("/api/admin/audit-log", methods=["GET"])
 @require_admin
@@ -1489,12 +1520,10 @@ def admin_create_admin():
     _log_audit(request.admin_phone, "create_admin", "admin", phone)
     return jsonify({"status": "created", "phone": phone}), 201
 
-@app.route("/api/admin/admins/<int:admin_id>", methods=["PUT"])
+@app.route("/api/admin/admins/<phone>", methods=["PUT"])
 @require_admin
-def admin_update_admin(admin_id):
-    # admin_id is actually phone in this implementation
+def admin_update_admin(phone):
     data = request.get_json() or {}
-    phone = str(admin_id)
     acc = _admin_accounts.get(phone)
     if not acc:
         return jsonify({"error": "Admin not found"}), 404
@@ -1505,10 +1534,9 @@ def admin_update_admin(admin_id):
     _log_audit(request.admin_phone, "update_admin", "admin", phone)
     return jsonify({"status": "updated"})
 
-@app.route("/api/admin/admins/<int:admin_id>", methods=["DELETE"])
+@app.route("/api/admin/admins/<phone>", methods=["DELETE"])
 @require_admin
-def admin_delete_admin(admin_id):
-    phone = str(admin_id)
+def admin_delete_admin(phone):
     if phone not in _admin_accounts:
         return jsonify({"error": "Admin not found"}), 404
     if phone == request.admin_phone:

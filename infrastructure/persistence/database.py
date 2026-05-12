@@ -110,6 +110,9 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_feedback_history ON feedback(reply_history_id);
         CREATE INDEX IF NOT EXISTS idx_metrics_device_date ON optimization_metrics(device_id, date);
         CREATE INDEX IF NOT EXISTS idx_models_device_enabled ON model_configs(device_id, enabled);
+        CREATE INDEX IF NOT EXISTS idx_devices_heartbeat ON devices(last_heartbeat DESC);
+        CREATE INDEX IF NOT EXISTS idx_history_source ON reply_history(source);
+        CREATE INDEX IF NOT EXISTS idx_feedback_action ON feedback(action);
     """)
     db.commit()
     db.close()

@@ -410,12 +410,14 @@ class OtaManager @Inject constructor(
                     
                     val cursor = downloadManager?.query(query)
                     if (cursor?.moveToFirst() == true) {
-                        val status = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS))
-                        
+                        val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                        if (statusIndex < 0) break
+                        val status = cursor.getInt(statusIndex)
+
                         if (status == DownloadManager.STATUS_SUCCESSFUL || status == DownloadManager.STATUS_FAILED) {
                             break
                         }
-                        
+
                         val totalBytes = cursor.getLong(cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
                         val downloadedBytes = cursor.getLong(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
                         
