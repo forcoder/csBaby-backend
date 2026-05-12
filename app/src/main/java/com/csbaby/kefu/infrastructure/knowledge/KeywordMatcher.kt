@@ -22,6 +22,7 @@ class KeywordMatcher @Inject constructor() {
     private val matchCache = ConcurrentHashMap<String, List<MatchedResult>>()
     private val CACHE_SIZE = 1000
     private val CACHE_THRESHOLD = 50
+    private val trieLock = Any()
 
     /**
      * Initialize the matcher with a list of rules.

@@ -6,6 +6,7 @@ import com.csbaby.kefu.domain.repository.KeywordRuleRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.sqrt
@@ -30,7 +31,7 @@ class VectorStore @Inject constructor(
     }
     
     // In-memory vector index: ruleId -> (rule, embedding)
-    private val vectorIndex = mutableMapOf<Long, Pair<KeywordRule, FloatArray>>()
+    private val vectorIndex = ConcurrentHashMap<Long, Pair<KeywordRule, FloatArray>>()
     
     // Flag to track if index is initialized
     @Volatile
@@ -177,11 +178,11 @@ class VectorStore @Inject constructor(
     /**
      * Search with hybrid scoring (semantic + keyword overlap).
      */
-    fun searchHybrid(
+    suspend fun searchHybrid(
         query: String,
         keywordMatches: List<Long>,
         semanticWeight: Float = 0.5f
-    ): List<VectorSearchResult> {
+    ): List<VectorSearchResult> = withContext(Dispatchers.IO) {
         if (!isInitialized || vectorIndex.isEmpty()) {
             return emptyList()
         }

@@ -176,15 +176,43 @@ class OtaManager @Inject constructor(
                                         _updateStatus.value = UpdateStatus.DOWNLOADED
 
                                         var apkFile: File? = null
-                                        val localFilenameIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_FILENAME)
-                                        if (localFilenameIndex != -1) {
-                                            val localFilename = cursor.getString(localFilenameIndex)
-                                            if (!localFilename.isNullOrEmpty()) {
-                                                val file = File(localFilename)
-                                                if (file.exists()) apkFile = file
+                                        // Try COLUMN_LOCAL_URI first (recommended for Android 10+)
+                                        val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                                        if (localUriIndex != -1) {
+                                            val localUri = cursor.getString(localUriIndex)
+                                            if (!localUri.isNullOrEmpty()) {
+                                                try {
+                                                    val uri = Uri.parse(localUri)
+                                                    if (uri.scheme == "file") {
+                                                        val file = File(uri.path ?: "")
+                                                        if (file.exists()) apkFile = file
+                                                            else {
+                                                                // File path from URI may be encoded; try the constructed path
+                                                                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                                                                val appDir = File(downloadsDir, "KefuUpdates")
+                                                                _availableUpdate.value?.let { update ->
+                                                                    val fileName = "kefu_v${update.versionName}_${update.versionCode}.apk"
+                                                                    apkFile = File(appDir, fileName)
+                                                                }
+                                                            }
+                                                        } catch (_: Exception) {}
+                                                    }
+                                                } catch (_: Exception) {}
                                             }
                                         }
+                                        // Fallback: try COLUMN_LOCAL_FILENAME for older Android
                                         if (apkFile == null) {
+                                            val localFilenameIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_FILENAME)
+                                            if (localFilenameIndex != -1) {
+                                                val localFilename = cursor.getString(localFilenameIndex)
+                                                if (!localFilename.isNullOrEmpty()) {
+                                                    val file = File(localFilename)
+                                                    if (file.exists()) apkFile = file
+                                                }
+                                            }
+                                        }
+                                        // Final fallback: construct path from known download location
+                                        if (apkFile == null || !apkFile.exists()) {
                                             val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                                             val appDir = File(downloadsDir, "KefuUpdates")
                                             _availableUpdate.value?.let { update ->

@@ -87,11 +87,27 @@ def require_auth(f):
 # ========== Rate Limiting ==========
 _rate_limit_store = {}
 
+def _cleanup_rate_limit_store():
+    """Remove expired entries to prevent memory leak."""
+    now = time.time()
+    keys_to_remove = []
+    for key, timestamps in _rate_limit_store.items():
+        active = [t for t in timestamps if now - t < 3600]  # Keep max 1 hour
+        if not active:
+            keys_to_remove.append(key)
+        else:
+            _rate_limit_store[key] = active
+    for key in keys_to_remove:
+        del _rate_limit_store[key]
+
 def rate_limit(max_requests: int, window_seconds: int):
     """Decorator: limit requests per IP within a time window."""
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
+            # Periodic cleanup (1% of requests to avoid overhead)
+            if hash(f"{request.remote_addr}{time.time()}") % 100 == 0:
+                _cleanup_rate_limit_store()
             key = f"{request.remote_addr}:{request.endpoint}"
             now = time.time()
             window = _rate_limit_store.get(key, [])

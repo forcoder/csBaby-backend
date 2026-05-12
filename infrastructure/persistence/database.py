@@ -39,7 +39,7 @@ def init_db():
             enabled INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (device_id) REFERENCES devices(id)
+            FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS model_configs (
@@ -56,7 +56,7 @@ def init_db():
             enabled INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (device_id) REFERENCES devices(id)
+            FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS reply_history (
@@ -72,7 +72,7 @@ def init_db():
             customer_name TEXT,
             house_name TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (device_id) REFERENCES devices(id)
+            FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS feedback (
@@ -84,7 +84,7 @@ def init_db():
             rating INTEGER,
             comment TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (device_id) REFERENCES devices(id),
+            FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE,
             FOREIGN KEY (reply_history_id) REFERENCES reply_history(id) ON DELETE CASCADE
         );
 
@@ -99,7 +99,7 @@ def init_db():
             avg_confidence REAL DEFAULT 0,
             avg_response_time_ms INTEGER DEFAULT 0,
             UNIQUE(device_id, date),
-            FOREIGN KEY (device_id) REFERENCES devices(id)
+            FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
         );
 
         CREATE INDEX IF NOT EXISTS idx_rules_device ON keyword_rules(device_id);

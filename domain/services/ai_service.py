@@ -56,11 +56,9 @@ class AIService:
             result = json.loads(resp.read())
         except urllib.error.HTTPError as e:
             error_body = e.read().decode("utf-8", errors="replace")
-            elapsed = int((time.time() - start) * 1000)
-            return {"reply": "", "tokens_used": 0, "response_time_ms": elapsed, "model_used": model, "error": f"HTTP {e.code}: {error_body}"}
+            raise Exception(f"AI API HTTP {e.code}: {error_body}") from e
         except (urllib.error.URLError, OSError) as e:
-            elapsed = int((time.time() - start) * 1000)
-            return {"reply": "", "tokens_used": 0, "response_time_ms": elapsed, "model_used": model, "error": str(e)}
+            raise Exception(f"AI API request failed: {e}") from e
 
         if model_type == "CLAUDE":
             content = result.get("content", [])
