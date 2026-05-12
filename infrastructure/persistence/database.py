@@ -107,6 +107,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_history_created ON reply_history(created_at);
         CREATE INDEX IF NOT EXISTS idx_feedback_device ON feedback(device_id);
         CREATE INDEX IF NOT EXISTS idx_metrics_device_date ON optimization_metrics(device_id, date);
+        CREATE INDEX IF NOT EXISTS idx_models_device ON model_configs(device_id);
     """)
     db.commit()
     db.close()
