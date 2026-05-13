@@ -20,6 +20,9 @@ class AIService:
             raise ValueError("API key is required for AI model calls")
         model = model_config.get("model", "gpt-4o")
         endpoint = model_config.get("api_endpoint", "")
+        timeout = model_config.get("timeout_seconds", 60)
+        if not isinstance(timeout, (int, float)) or timeout < 1 or timeout > 300:
+            timeout = 60
 
         if model_type == "CLAUDE":
             url = endpoint or "https://api.anthropic.com/v1/messages"
@@ -54,7 +57,7 @@ class AIService:
             )
 
         try:
-            resp = urllib.request.urlopen(req, timeout=60)
+            resp = urllib.request.urlopen(req, timeout=timeout)
             result = json.loads(resp.read())
         except urllib.error.HTTPError as e:
             error_body = e.read().decode("utf-8", errors="replace")

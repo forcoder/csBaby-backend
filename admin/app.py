@@ -1413,7 +1413,7 @@ def _inject_csrf_token(response):
         # Skip forms that already have a _csrf_token field
         if '_csrf_token' not in html:
             html = re.sub(
-                r'(<form\s[^>]*method=["\']POST["\'][^>]*>)',
+                r'(<form\b[^>]*method=["\']POST["\'][^>]*>)',
                 r'\1' + hidden,
                 html,
                 flags=re.IGNORECASE

@@ -114,8 +114,11 @@ class ChatAutomationAccessibilityService : AccessibilityService() {
         // 检查是否在监控列表中
         if (packageName !in preferences.selectedApps) return
 
-        val root = rootInActiveWindow ?: return
-        if (root.packageName?.toString() != packageName) return
+        var root = rootInActiveWindow
+        if (root == null || root.packageName?.toString() != packageName) {
+            root?.recycle()
+            return
+        }
 
         // 提取当前聊天窗口的最新消息
         val latestMessage = extractLatestMessage(root, packageName)

@@ -6,9 +6,12 @@ Application Layer: application/services
 Infrastructure Layer: infrastructure/persistence
 Presentation Layer: app.py (Flask routes)
 """
+import hashlib
+import hmac
 import json
 import logging
 import os
+import secrets
 import time
 from functools import wraps
 from threading import Lock
@@ -123,7 +126,7 @@ def rate_limit(max_requests: int, window_seconds: int):
     return decorator
 
 # ========== CORS ==========
-CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")]
+CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",") if o.strip()]
 
 @app.after_request
 def after_request(response):
@@ -1650,6 +1653,17 @@ def admin_get_tenant_sessions(tenant_id):
 @require_admin
 def admin_update_routing_config():
     data = request.get_json() or {}
+    VALID_STRATEGIES = {"skill_first", "round_robin", "least_busy", "ai_first"}
+    if "strategy" in data and data["strategy"] not in VALID_STRATEGIES:
+        return jsonify({"error": f"invalid strategy: must be one of {VALID_STRATEGIES}"}), 400
+    if "max_queue_size" in data:
+        mq = data["max_queue_size"]
+        if not isinstance(mq, int) or mq < 1 or mq > 10000:
+            return jsonify({"error": "max_queue_size must be 1-10000"}), 400
+    if "timeout_seconds" in data:
+        ts = data["timeout_seconds"]
+        if not isinstance(ts, int) or ts < 1 or ts > 3600:
+            return jsonify({"error": "timeout_seconds must be 1-3600"}), 400
     for key in ("strategy", "fallback_to_ai", "max_queue_size", "timeout_seconds"):
         if key in data:
             _routing_config[key] = data[key]

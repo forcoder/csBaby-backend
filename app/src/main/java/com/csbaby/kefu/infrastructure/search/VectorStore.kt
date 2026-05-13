@@ -5,6 +5,8 @@ import com.csbaby.kefu.domain.model.KeywordRule
 import com.csbaby.kefu.domain.repository.KeywordRuleRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -37,7 +39,7 @@ class VectorStore @Inject constructor(
     @Volatile
     private var isInitialized = false
 
-    private val initLock = Any()
+    private val initMutex = Mutex()
 
     /**
      * Initialize the vector store by loading all rules and generating embeddings.
@@ -49,7 +51,7 @@ class VectorStore @Inject constructor(
             return@withContext true
         }
 
-        synchronized(initLock) {
+        initMutex.withLock {
             if (isInitialized) {
                 return@withContext true
             }
@@ -192,11 +194,11 @@ class VectorStore @Inject constructor(
         semanticWeight: Float = 0.5f
     ): List<VectorSearchResult> = withContext(Dispatchers.IO) {
         if (!isInitialized || vectorIndex.isEmpty()) {
-            return emptyList()
+            return@withContext emptyList()
         }
-        
+
         // For rules that matched keywords, boost their scores
-        return vectorIndex.mapNotNull { (ruleId, pair) ->
+        return@withContext vectorIndex.mapNotNull { (ruleId, pair) ->
             val (rule, _) = pair
             val isKeywordMatch = ruleId in keywordMatches
             
