@@ -5,7 +5,7 @@
         <h1>应用配置</h1>
         <span class="page-subtitle">{{ tenant.phone }}</span>
     </div>
-    <a href="/admin/tenants/{{ tenant.tenant_id }}" class="btn btn-back">← 返回详情</a>
+    <a href="/tenants/{{ tenant.tenant_id }}" class="btn btn-back">← 返回详情</a>
 </div>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -23,7 +23,7 @@
 <div class="alert alert-success">{{ success }}</div>
 {% endif %}
 
-<form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/app-config" class="form-card form-card-lg">
+<form method="POST" action="/tenants/{{ tenant.tenant_id }}/app-config" class="form-card form-card-lg">
     <div class="form-group">
         <label>应用名称</label>
         <input type="text" name="app_name" value="{{ app_config.get('app_name', '客服小秘') if app_config else '客服小秘' }}" placeholder="客服小秘">

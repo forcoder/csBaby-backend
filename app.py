@@ -16,6 +16,7 @@ import time
 from functools import wraps
 from threading import Lock
 from flask import Flask, request, jsonify
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -2122,6 +2123,39 @@ def method_not_allowed(e):
 @app.errorhandler(500)
 def internal_error(e):
     return jsonify({"error": "Internal server error"}), 500
+
+# ========== Admin Panel (mounted at /admin) ==========
+def _mount_admin():
+    """Mount the admin Flask app at /admin using DispatcherMiddleware."""
+    import sys
+    _admin_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin")
+    # Temporarily add admin dir to sys.path so admin/app.py can import config/utils
+    # We use a unique module name to avoid conflicting with root app.py
+    _added = False
+    if _admin_dir not in sys.path:
+        sys.path.insert(0, _admin_dir)
+        _added = True
+    try:
+        import importlib.util
+        # Invalidate any cached 'app' module from admin dir
+        for key in list(sys.modules.keys()):
+            if key.startswith('admin.') or key == 'app' and sys.modules[key].__file__ and 'admin' in sys.modules[key].__file__:
+                del sys.modules[key]
+        # Load admin/app.py as _admin_app to avoid name conflict with root app.py
+        _spec = importlib.util.spec_from_file_location(
+            "_admin_app", os.path.join(_admin_dir, "app.py"))
+        _admin_mod = importlib.util.module_from_spec(_spec)
+        sys.modules["_admin_app"] = _admin_mod
+        _spec.loader.exec_module(_admin_mod)
+        return DispatcherMiddleware(app, {"/admin": _admin_mod.app})
+    except Exception as e:
+        logger.warning("Admin panel not mounted: %s", e, exc_info=True)
+        return None
+    finally:
+        if _added:
+            sys.path.remove(_admin_dir)
+
+application = _mount_admin() or app
 
 # ========== 启动 ==========
 if __name__ == "__main__":

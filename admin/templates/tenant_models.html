@@ -5,7 +5,7 @@
         <h1>模型配置管理</h1>
         <span class="page-subtitle">{{ tenant.phone }}</span>
     </div>
-    <a href="/admin/tenants/{{ tenant.tenant_id }}" class="btn btn-back">← 返回详情</a>
+    <a href="/tenants/{{ tenant.tenant_id }}" class="btn btn-back">← 返回详情</a>
 </div>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -18,7 +18,7 @@
 
 <div class="section">
     <h2>新增模型配置</h2>
-    <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/models/add" class="form-card form-card-lg">
+    <form method="POST" action="/tenants/{{ tenant.tenant_id }}/models/add" class="form-card form-card-lg">
         <div class="form-row">
             <div class="form-group">
                 <label>名称</label>
@@ -109,14 +109,14 @@
                 </td>
                 <td>
                     <button class="btn btn-sm btn-primary" onclick="document.getElementById('edit-{{ model.id }}').style.display='block'">编辑</button>
-                    <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/models/{{ model.id }}/delete" style="display:inline;">
+                    <form method="POST" action="/tenants/{{ tenant.tenant_id }}/models/{{ model.id }}/delete" style="display:inline;">
                         <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('确定删除这条模型配置？')">删除</button>
                     </form>
                 </td>
             </tr>
             <tr id="edit-{{ model.id }}" style="display:none;">
                 <td colspan="7">
-                    <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/models/{{ model.id }}/edit" class="form-card">
+                    <form method="POST" action="/tenants/{{ tenant.tenant_id }}/models/{{ model.id }}/edit" class="form-card">
                         <div class="form-row">
                             <div class="form-group">
                                 <label>名称</label>

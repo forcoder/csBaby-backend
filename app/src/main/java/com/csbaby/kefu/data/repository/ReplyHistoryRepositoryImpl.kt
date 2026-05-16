@@ -3,16 +3,23 @@ package com.csbaby.kefu.data.repository
 import com.csbaby.kefu.data.local.EntityMapper.toDomain
 import com.csbaby.kefu.data.local.EntityMapper.toEntity
 import com.csbaby.kefu.data.local.dao.ReplyHistoryDao
+import com.csbaby.kefu.data.remote.CsbabyApiService
+import com.csbaby.kefu.data.remote.DeviceManager
+import com.csbaby.kefu.data.remote.dto.toDomain as dtoToDomain
+import com.csbaby.kefu.data.remote.dto.toDto as domainToDto
 import com.csbaby.kefu.domain.model.ReplyHistory
 import com.csbaby.kefu.domain.repository.ReplyHistoryRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class ReplyHistoryRepositoryImpl @Inject constructor(
-    private val replyHistoryDao: ReplyHistoryDao
+    private val replyHistoryDao: ReplyHistoryDao,
+    private val apiService: CsbabyApiService,
+    private val deviceManager: DeviceManager
 ) : ReplyHistoryRepository {
 
     override fun getRecentReplies(limit: Int): Flow<List<ReplyHistory>> {
@@ -32,7 +39,16 @@ class ReplyHistoryRepositoryImpl @Inject constructor(
     }
 
     override suspend fun insertReply(reply: ReplyHistory): Long {
-        return replyHistoryDao.insertReply(reply.toEntity())
+        val localId = replyHistoryDao.insertReply(reply.toEntity())
+        // Also record on server (best-effort, don't fail if server is unreachable)
+        try {
+            deviceManager.ensureRegistered()
+            apiService.recordHistory(reply.domainToDto())
+            Timber.d("History recorded on server")
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to record history on server, saved locally")
+        }
+        return localId
     }
 
     override suspend fun updateFinalReply(id: Long, finalReply: String) {
@@ -50,4 +66,28 @@ class ReplyHistoryRepositoryImpl @Inject constructor(
     override suspend fun getTotalCount(): Int = replyHistoryDao.getTotalCount()
 
     override suspend fun getModifiedCount(): Int = replyHistoryDao.getModifiedCount()
+
+    /**
+     * Sync history from server (incremental, based on local count).
+     */
+    suspend fun syncFromServer(): Result<Int> {
+        return try {
+            deviceManager.ensureRegistered()
+            val localCount = replyHistoryDao.getTotalCount()
+            val response = apiService.getHistory(limit = 100, offset = localCount)
+            var count = 0
+            for (dto in response.items) {
+                val history = dto.dtoToDomain()
+                replyHistoryDao.insertReply(history.toEntity())
+                count++
+            }
+            Timber.i("History synced from server: $count new entries")
+            Result.success(count)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to sync history from server")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun forceRefresh(): Result<Int> = syncFromServer()
 }

@@ -1,6 +1,10 @@
 package com.csbaby.kefu.infrastructure.ai
 
 import com.csbaby.kefu.data.remote.AIClient
+import com.csbaby.kefu.data.remote.CsbabyApiService
+import com.csbaby.kefu.data.remote.DeviceManager
+import com.csbaby.kefu.data.remote.dto.GenerateRequest
+import com.csbaby.kefu.data.remote.dto.GenerateResponse
 import com.csbaby.kefu.domain.model.AIModelConfig
 import com.csbaby.kefu.domain.model.ModelType
 import com.csbaby.kefu.domain.model.UserStyleProfile
@@ -17,7 +21,9 @@ import javax.inject.Singleton
 @Singleton
 class AIService @Inject constructor(
     private val aiClient: AIClient,
-    private val aiModelRepository: AIModelRepository
+    private val aiModelRepository: AIModelRepository,
+    private val apiService: CsbabyApiService,
+    private val deviceManager: DeviceManager
 ) {
     
     // AI response cache
@@ -331,6 +337,32 @@ class AIService @Inject constructor(
         return totalTokens / 1000.0 * costPer1kTokens
     }
 
+
+    /**
+     * Generate reply via backend API.
+     * Backend will try keyword matching first, then AI generation.
+     * Falls back to local AIClient if backend is unreachable.
+     */
+    suspend fun generateViaBackend(
+        message: String,
+        context: Map<String, String> = emptyMap(),
+        style: Map<String, Any> = emptyMap()
+    ): Result<String> {
+        return try {
+            deviceManager.ensureRegistered()
+            val request = GenerateRequest(
+                message = message,
+                context = context,
+                style = style
+            )
+            val response: GenerateResponse = apiService.generateReply(request)
+            Timber.d("Backend generated reply: source=${response.source}, confidence=${response.confidence}")
+            Result.success(response.reply)
+        } catch (e: Exception) {
+            Timber.w(e, "Backend AI generation failed, will fall back to local")
+            Result.failure(e)
+        }
+    }
 
     private fun parseStyleAnalysis(response: String): TextStyleAnalysis {
         return try {

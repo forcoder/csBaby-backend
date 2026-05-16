@@ -7,6 +7,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.io.IOException
 import javax.inject.Inject
@@ -57,6 +58,7 @@ class PreferencesManager @Inject constructor(
         // Auth / Device
         val AUTH_TOKEN = stringPreferencesKey("auth_token")
         val DEVICE_ID = stringPreferencesKey("device_id")
+        val LAST_SYNC_TIMESTAMP = longPreferencesKey("last_sync_timestamp")
     }
 
     // Data class for user preferences
@@ -248,6 +250,23 @@ class PreferencesManager @Inject constructor(
     suspend fun clearAuthToken() {
         dataStore.edit { preferences ->
             preferences.remove(PreferencesKeys.AUTH_TOKEN)
+        }
+    }
+
+    // Sync timestamp
+    val lastSyncTimestampFlow: Flow<Long> = dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { preferences ->
+            preferences[PreferencesKeys.LAST_SYNC_TIMESTAMP] ?: 0L
+        }
+
+    suspend fun getLastSyncTimestamp(): Long {
+        return lastSyncTimestampFlow.first()
+    }
+
+    suspend fun updateLastSyncTimestamp(timestamp: Long) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LAST_SYNC_TIMESTAMP] = timestamp
         }
     }
 }

@@ -126,6 +126,7 @@ class ReplyGenerator @Inject constructor(
 
     /**
      * Try to generate reply using AI.
+     * Priority: 1) Backend API (keyword match + AI), 2) Local AI fallback
      */
     private suspend fun tryAIGeneration(
         message: String,
@@ -142,50 +143,75 @@ class ReplyGenerator @Inject constructor(
             )
         }
 
-        // Build system prompt
-        val systemPrompt = buildSystemPrompt(context, styleProfile)
+        // Build context map for backend
+        val contextMap = mutableMapOf<String, String>()
+        context.scenarioId?.let { contextMap["scenario"] = it }
+        context.conversationTitle?.let { contextMap["conversation"] = it }
+        context.propertyName?.let { contextMap["property"] = it }
+        contextMap["app"] = context.appPackage
 
-        // Build user prompt
-        val userPrompt = buildUserPrompt(message, context)
+        // Build style map for backend
+        val styleMap = mutableMapOf<String, Any>()
+        if (styleProfile != null) {
+            styleMap["formality"] = styleProfile.formalityLevel.toDouble()
+            styleMap["enthusiasm"] = styleProfile.enthusiasmLevel.toDouble()
+            styleMap["professionalism"] = styleProfile.professionalismLevel.toDouble()
+        }
 
-        // Generate reply
-        val result = aiService.generateCompletion(
-            prompt = userPrompt,
-            systemPrompt = systemPrompt,
-            temperature = 0.7f,
-            maxTokens = 500
+        // Step 1: Try backend API first (keyword match + AI)
+        val backendResult = aiService.generateViaBackend(
+            message = message,
+            context = contextMap,
+            style = styleMap
         )
 
-        return result.fold(
-            onSuccess = { reply ->
-                // Apply style adjustment if enabled
-                val finalReply = if (preferences.styleLearningEnabled && styleProfile != null) {
-                    styleLearningEngine.applyStyle(reply, context.userId).getOrDefault(reply)
-                } else {
-                    reply
-                }
-
-                if (isBaijuyiContext(context)) {
-                    Log.d(
-                        TAG,
-                        "Baijuyi AI reply generated. modelId=${preferences.defaultModelId.takeIf { it > 0 } ?: -1}, styleApplied=${preferences.styleLearningEnabled && styleProfile != null}, reply=${previewForLog(finalReply)}"
-                    )
-                }
-
-                ReplyResult(
-                    reply = finalReply,
-                    source = ReplySource.AI_GENERATED,
-                    confidence = 0.8f,
-                    ruleId = null,
-                    modelId = preferences.defaultModelId.takeIf { it > 0 }
-                )
-            },
-            onFailure = { error ->
-                if (isBaijuyiContext(context)) {
-                    Log.w(TAG, "Baijuyi AI generation failed: ${error.message}")
-                }
-                null
+        val reply = if (backendResult.isSuccess) {
+            backendResult.getOrThrow()
+        } else {
+            // Step 2: Fallback to local AI
+            if (isBaijuyiContext(context)) {
+                Log.d(TAG, "Baijuyi backend AI unavailable, falling back to local AI")
             }
+
+            val systemPrompt = buildSystemPrompt(context, styleProfile)
+            val userPrompt = buildUserPrompt(message, context)
+
+            val localResult = aiService.generateCompletion(
+                prompt = userPrompt,
+                systemPrompt = systemPrompt,
+                temperature = 0.7f,
+                maxTokens = 500
+            )
+
+            if (localResult.isFailure) {
+                if (isBaijuyiContext(context)) {
+                    Log.w(TAG, "Baijuyi local AI also failed: ${localResult.exceptionOrNull()?.message}")
+                }
+                return null
+            }
+            localResult.getOrThrow()
+        }
+
+        // Apply style adjustment if enabled
+        val finalReply = if (preferences.styleLearningEnabled && styleProfile != null) {
+            styleLearningEngine.applyStyle(reply, context.userId).getOrDefault(reply)
+        } else {
+            reply
+        }
+
+        if (isBaijuyiContext(context)) {
+            Log.d(
+                TAG,
+                "Baijuyi AI reply generated. modelId=${preferences.defaultModelId.takeIf { it > 0 } ?: -1}, styleApplied=${preferences.styleLearningEnabled && styleProfile != null}, reply=${previewForLog(finalReply)}"
+            )
+        }
+
+        return ReplyResult(
+            reply = finalReply,
+            source = ReplySource.AI_GENERATED,
+            confidence = 0.8f,
+            ruleId = null,
+            modelId = preferences.defaultModelId.takeIf { it > 0 }
         )
     }
 

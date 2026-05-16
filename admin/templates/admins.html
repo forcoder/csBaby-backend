@@ -13,7 +13,7 @@
 <!-- 新增管理员表单 -->
 <div class="form-card" style="margin-bottom:24px;">
     <h2 style="margin-bottom:16px;">新增管理员</h2>
-    <form method="POST" action="/admin/admins/add">
+    <form method="POST" action="/admins/add">
         <div class="form-group">
             <label>手机号</label>
             <input type="text" name="phone" placeholder="请输入11位手机号" required>
@@ -59,7 +59,7 @@
             <td>
                 <button class="btn btn-sm btn-primary" onclick='showEditModal({{ a.id }}, {{ a.phone | tojson }}, {{ a.get('is_active', 1) }})' >编辑</button>
                 {% if a.phone != admin_phone %}
-                <form method="POST" action="/admin/admins/{{ a.id }}/delete" style="display:inline;" onsubmit="return confirm('确定要删除该管理员吗？');">
+                <form method="POST" action="/admins/{{ a.id }}/delete" style="display:inline;" onsubmit="return confirm('确定要删除该管理员吗？');">
                     <button type="submit" class="btn btn-sm btn-danger">删除</button>
                 </form>
                 {% endif %}

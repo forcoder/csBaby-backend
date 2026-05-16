@@ -5,17 +5,24 @@ import com.csbaby.kefu.data.local.EntityMapper.toEntity
 import com.csbaby.kefu.data.local.dao.KeywordRuleDao
 import com.csbaby.kefu.data.local.dao.ScenarioDao
 import com.csbaby.kefu.data.local.entity.RuleScenarioCrossRef
+import com.csbaby.kefu.data.remote.CsbabyApiService
+import com.csbaby.kefu.data.remote.DeviceManager
+import com.csbaby.kefu.data.remote.dto.toDomain as dtoToDomain
+import com.csbaby.kefu.data.remote.dto.toDto as domainToDto
 import com.csbaby.kefu.domain.model.KeywordRule
 import com.csbaby.kefu.domain.repository.KeywordRuleRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class KeywordRuleRepositoryImpl @Inject constructor(
     private val keywordRuleDao: KeywordRuleDao,
-    private val scenarioDao: ScenarioDao
+    private val scenarioDao: ScenarioDao,
+    private val apiService: CsbabyApiService,
+    private val deviceManager: DeviceManager
 ) : KeywordRuleRepository {
 
     override fun getAllRules(): Flow<List<KeywordRule>> {
@@ -62,19 +69,43 @@ class KeywordRuleRepositoryImpl @Inject constructor(
     }
 
     override suspend fun insertRule(rule: KeywordRule): Long {
-        val id = keywordRuleDao.insertRule(rule.toEntity())
-        // Update scenario relations
-        if (rule.applicableScenarios.isNotEmpty()) {
-            rule.applicableScenarios.forEach { scenarioId ->
-                scenarioDao.insertRuleScenarioRelation(RuleScenarioCrossRef(id, scenarioId))
+        // Remote-first: try API first
+        return try {
+            deviceManager.ensureRegistered()
+            val dto = rule.domainToDto()
+            val response = apiService.createRule(dto)
+            val serverId = response.id.toLong()
+            // Insert locally with server-assigned ID
+            val id = keywordRuleDao.insertRule(rule.copy(id = serverId).toEntity())
+            // Update scenario relations
+            if (rule.applicableScenarios.isNotEmpty()) {
+                rule.applicableScenarios.forEach { scenarioId ->
+                    scenarioDao.insertRuleScenarioRelation(RuleScenarioCrossRef(id, scenarioId))
+                }
             }
+            Timber.d("Rule created on server: id=$serverId")
+            id
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to create rule on server, inserting locally")
+            val id = keywordRuleDao.insertRule(rule.toEntity())
+            if (rule.applicableScenarios.isNotEmpty()) {
+                rule.applicableScenarios.forEach { scenarioId ->
+                    scenarioDao.insertRuleScenarioRelation(RuleScenarioCrossRef(id, scenarioId))
+                }
+            }
+            id
         }
-        return id
     }
 
     override suspend fun updateRule(rule: KeywordRule) {
+        try {
+            deviceManager.ensureRegistered()
+            apiService.updateRule(rule.id.toInt(), rule.domainToDto())
+            Timber.d("Rule updated on server: id=${rule.id}")
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to update rule on server, updating locally")
+        }
         keywordRuleDao.updateRule(rule.toEntity())
-        // Update scenario relations
         scenarioDao.deleteRelationsForRule(rule.id)
         rule.applicableScenarios.forEach { scenarioId ->
             scenarioDao.insertRuleScenarioRelation(RuleScenarioCrossRef(rule.id, scenarioId))
@@ -82,6 +113,13 @@ class KeywordRuleRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteRule(id: Long) {
+        try {
+            deviceManager.ensureRegistered()
+            apiService.deleteRule(id.toInt())
+            Timber.d("Rule deleted on server: id=$id")
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to delete rule on server, deleting locally")
+        }
         scenarioDao.deleteRelationsForRule(id)
         keywordRuleDao.deleteById(id)
     }
@@ -89,6 +127,7 @@ class KeywordRuleRepositoryImpl @Inject constructor(
     override suspend fun deleteAllRules() {
         scenarioDao.deleteAllRelations()
         keywordRuleDao.deleteAllRules()
+        // Note: server-side bulk delete would need a separate endpoint
     }
 
     override suspend fun getRuleCount(): Int = keywordRuleDao.getRuleCount()
@@ -96,7 +135,6 @@ class KeywordRuleRepositoryImpl @Inject constructor(
     override fun getRuleCountFlow(): Flow<Int> = keywordRuleDao.getRuleCountFlow()
 
     override suspend fun getScenariosForRule(ruleId: Long): List<Long> {
-
         return scenarioDao.getScenarioIdsForRule(ruleId)
     }
 
@@ -106,4 +144,35 @@ class KeywordRuleRepositoryImpl @Inject constructor(
             scenarioDao.insertRuleScenarioRelation(RuleScenarioCrossRef(ruleId, scenarioId))
         }
     }
+
+    /**
+     * Sync rules from server to local cache.
+     * Replaces all local rules with server data.
+     */
+    suspend fun syncFromServer(): Result<Int> {
+        return try {
+            deviceManager.ensureRegistered()
+            val remoteRules = apiService.getRules()
+            // Clear local and repopulate
+            scenarioDao.deleteAllRelations()
+            keywordRuleDao.deleteAllRules()
+            var count = 0
+            for (dto in remoteRules) {
+                val rule = dto.dtoToDomain()
+                val id = keywordRuleDao.insertRule(rule.toEntity())
+                count++
+                Timber.d("Synced rule from server: id=$id, keyword=${rule.keyword}")
+            }
+            Timber.i("Rules synced from server: $count rules")
+            Result.success(count)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to sync rules from server")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Force refresh: fetch from server and update local cache.
+     */
+    suspend fun forceRefresh(): Result<Int> = syncFromServer()
 }

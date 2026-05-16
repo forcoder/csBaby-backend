@@ -97,41 +97,96 @@ def login_required(f):
 
 
 
+def _get_api_client():
+    """Get a Flask test client for in-process API calls.
+
+    When ADMIN_API_MODE is set to 'internal', use the Flask test client
+    to call the API directly without HTTP. Otherwise, use HTTP requests.
+    """
+    if os.environ.get("ADMIN_API_MODE") == "internal":
+        # We'll set this after the main app is available
+        return getattr(app, "_api_test_client", None)
+    return None
+
+
+def _call_api(method, path, token=None, json_data=None, data=None, timeout=10):
+    """Unify API calls: use internal client or HTTP."""
+    client = _get_api_client()
+    if client is not None:
+        headers = {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        if method == "GET":
+            resp = client.get(path, headers=headers)
+        elif method == "POST":
+            if json_data:
+                resp = client.post(path, json=json_data,
+                                   headers={**headers, "Content-Type": "application/json"})
+            elif data is not None:
+                resp = client.post(path, data=data,
+                                   headers={**headers, "Content-Type": "application/json"})
+            else:
+                resp = client.post(path, headers=headers)
+        elif method == "PUT":
+            resp = client.put(path, data=json.dumps(data) if data else None,
+                              headers={**headers, "Content-Type": "application/json"})
+        elif method == "DELETE":
+            resp = client.delete(path, headers=headers)
+        else:
+            raise ValueError(f"Unknown method: {method}")
+
+        # Wrap the response to look like requests.Response
+        _api_response_cache["last"] = resp
+        return _ApiResponseProxy(resp)
+    else:
+        # HTTP fallback
+        url = f"{API_BASE_URL}{path}"
+        if method == "GET":
+            return http_requests.get(url, headers={"Authorization": f"Bearer {token}"} if token else {}, timeout=timeout)
+        elif method == "POST":
+            hdrs = {"Content-Type": "application/json"}
+            if token:
+                hdrs["Authorization"] = f"Bearer {token}"
+            if json_data:
+                return http_requests.post(url, json=json_data, headers=hdrs, timeout=timeout)
+            return http_requests.post(url, data=data, headers=hdrs, timeout=timeout)
+        elif method == "PUT":
+            hdrs = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+            return http_requests.put(url, data=json.dumps(data) if data else None, headers=hdrs, timeout=timeout)
+        elif method == "DELETE":
+            return http_requests.delete(url, headers={"Authorization": f"Bearer {token}"} if token else {}, timeout=timeout)
+
+
+class _ApiResponseProxy:
+    """Wrap a Flask test response to look like requests.Response."""
+    def __init__(self, flask_resp):
+        self._resp = flask_resp
+        self.status_code = flask_resp.status_code
+        self.text = flask_resp.data.decode("utf-8", errors="replace")
+        self.headers = dict(flask_resp.headers)
+
+    def json(self):
+        import json
+        return json.loads(self.text)
+
+
+_api_response_cache = {}
+
+
 def api_get(path, token):
-    return http_requests.get(
-        f"{API_BASE_URL}{path}",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=10
-    )
+    return _call_api("GET", path, token=token)
 
 
 def api_post(path, json_data=None, token=None, timeout=10):
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return http_requests.post(
-        f"{API_BASE_URL}{path}",
-        json=json_data,
-        headers=headers,
-        timeout=timeout
-    )
+    return _call_api("POST", path, token=token, json_data=json_data)
 
 
 def api_put(path, token, data):
-    return http_requests.put(
-        f"{API_BASE_URL}{path}",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        data=json.dumps(data),
-        timeout=10
-    )
+    return _call_api("PUT", path, token=token, data=data)
 
 
 def api_delete(path, token):
-    return http_requests.delete(
-        f"{API_BASE_URL}{path}",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=10
-    )
+    return _call_api("DELETE", path, token=token)
 
 
 def _safe_api_error(resp, default=None):
@@ -284,7 +339,7 @@ def parse_excel_content(file_bytes):
     return all_rules
 
 
-@app.route("/admin/login", methods=["GET", "POST"])
+@app.route("/login", methods=["GET", "POST"])
 def login():
     if session.get("admin_phone"):
         return redirect(url_for("dashboard"))
@@ -328,18 +383,18 @@ def login():
     return render_template("login.html", error=None)
 
 
-@app.route("/admin/logout")
+@app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
 
-@app.route("/admin")
+@app.route("/")
 def admin_index():
     return redirect(url_for("dashboard"))
 
 
-@app.route("/admin/dashboard")
+@app.route("/dashboard")
 @login_required
 def dashboard():
     token = session.get("admin_token", "")
@@ -361,7 +416,7 @@ def dashboard():
                            admin_phone=session.get("admin_phone"))
 
 
-@app.route("/admin/tenants")
+@app.route("/tenants")
 @login_required
 def tenants():
     token = session.get("admin_token", "")
@@ -393,7 +448,7 @@ def tenants():
     )
 
 
-@app.route("/admin/tenants/<tenant_id>", methods=["GET", "POST"])
+@app.route("/tenants/<tenant_id>", methods=["GET", "POST"])
 @login_required
 def tenant_detail(tenant_id):
     token = session.get("admin_token", "")
@@ -475,7 +530,7 @@ def _get_default_model(tenant_id, token):
     return None
 
 
-@app.route("/admin/default-model", methods=["GET", "POST"])
+@app.route("/default-model", methods=["GET", "POST"])
 @login_required
 def default_model():
     token = session.get("admin_token", "")
@@ -552,7 +607,7 @@ def default_model():
                            admin_phone=session.get("admin_phone"), error=error, success=success)
 
 
-@app.route("/admin/tenants/<tenant_id>/rules")
+@app.route("/tenants/<tenant_id>/rules")
 @login_required
 def admin_tenant_rules(tenant_id):
     """租户知识库规则管理页面"""
@@ -573,7 +628,7 @@ def admin_tenant_rules(tenant_id):
     )
 
 
-@app.route("/admin/tenants/<tenant_id>/rules/add", methods=["POST"])
+@app.route("/tenants/<tenant_id>/rules/add", methods=["POST"])
 @login_required
 def admin_tenant_rule_add(tenant_id):
     """管理员为租户新增规则"""
@@ -599,7 +654,7 @@ def admin_tenant_rule_add(tenant_id):
     return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/rules/<int:rule_id>/edit", methods=["POST"])
+@app.route("/tenants/<tenant_id>/rules/<int:rule_id>/edit", methods=["POST"])
 @login_required
 def admin_tenant_rule_edit(tenant_id, rule_id):
     """管理员编辑租户规则"""
@@ -625,7 +680,7 @@ def admin_tenant_rule_edit(tenant_id, rule_id):
     return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/rules/<int:rule_id>/delete", methods=["POST"])
+@app.route("/tenants/<tenant_id>/rules/<int:rule_id>/delete", methods=["POST"])
 @login_required
 def admin_tenant_rule_delete(tenant_id, rule_id):
     """管理员删除租户规则"""
@@ -641,7 +696,7 @@ def admin_tenant_rule_delete(tenant_id, rule_id):
     return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/rules/batch", methods=["POST"])
+@app.route("/tenants/<tenant_id>/rules/batch", methods=["POST"])
 @login_required
 def admin_tenant_rules_batch(tenant_id):
     """批量导入规则，支持文件上传（JSON/CSV/Excel）和 JSON 文本粘贴"""
@@ -728,7 +783,7 @@ def admin_tenant_rules_batch(tenant_id):
     return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/blacklist")
+@app.route("/tenants/<tenant_id>/blacklist")
 @login_required
 def admin_tenant_blacklist(tenant_id):
     """租户黑名单管理页面"""
@@ -749,7 +804,7 @@ def admin_tenant_blacklist(tenant_id):
     )
 
 
-@app.route("/admin/tenants/<tenant_id>/blacklist/add", methods=["POST"])
+@app.route("/tenants/<tenant_id>/blacklist/add", methods=["POST"])
 @login_required
 def admin_tenant_blacklist_add(tenant_id):
     """管理员为租户新增黑名单条目"""
@@ -772,7 +827,7 @@ def admin_tenant_blacklist_add(tenant_id):
     return redirect(url_for("admin_tenant_blacklist", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/blacklist/<int:blacklist_id>/edit", methods=["POST"])
+@app.route("/tenants/<tenant_id>/blacklist/<int:blacklist_id>/edit", methods=["POST"])
 @login_required
 def admin_tenant_blacklist_edit(tenant_id, blacklist_id):
     """管理员编辑租户黑名单条目"""
@@ -795,7 +850,7 @@ def admin_tenant_blacklist_edit(tenant_id, blacklist_id):
     return redirect(url_for("admin_tenant_blacklist", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/blacklist/<int:blacklist_id>/delete", methods=["POST"])
+@app.route("/tenants/<tenant_id>/blacklist/<int:blacklist_id>/delete", methods=["POST"])
 @login_required
 def admin_tenant_blacklist_delete(tenant_id, blacklist_id):
     """管理员删除租户黑名单条目"""
@@ -811,7 +866,7 @@ def admin_tenant_blacklist_delete(tenant_id, blacklist_id):
     return redirect(url_for("admin_tenant_blacklist", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/blacklist/clear", methods=["POST"])
+@app.route("/tenants/<tenant_id>/blacklist/clear", methods=["POST"])
 @login_required
 def admin_tenant_blacklist_clear(tenant_id):
     """管理员清空租户所有黑名单"""
@@ -827,7 +882,7 @@ def admin_tenant_blacklist_clear(tenant_id):
     return redirect(url_for("admin_tenant_blacklist", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/history")
+@app.route("/tenants/<tenant_id>/history")
 @login_required
 def admin_tenant_history(tenant_id):
     """租户回复历史查看页面"""
@@ -868,7 +923,7 @@ def admin_tenant_history(tenant_id):
     )
 
 
-@app.route("/admin/tenants/<tenant_id>/models")
+@app.route("/tenants/<tenant_id>/models")
 @login_required
 def admin_tenant_models(tenant_id):
     """租户模型配置管理页面"""
@@ -889,7 +944,7 @@ def admin_tenant_models(tenant_id):
     )
 
 
-@app.route("/admin/tenants/<tenant_id>/models/add", methods=["POST"])
+@app.route("/tenants/<tenant_id>/models/add", methods=["POST"])
 @login_required
 def admin_tenant_model_add(tenant_id):
     """管理员为租户新增模型配置"""
@@ -916,7 +971,7 @@ def admin_tenant_model_add(tenant_id):
     return redirect(url_for("admin_tenant_models", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/models/<int:model_id>/edit", methods=["POST"])
+@app.route("/tenants/<tenant_id>/models/<int:model_id>/edit", methods=["POST"])
 @login_required
 def admin_tenant_model_edit(tenant_id, model_id):
     """管理员编辑租户模型配置"""
@@ -943,7 +998,7 @@ def admin_tenant_model_edit(tenant_id, model_id):
     return redirect(url_for("admin_tenant_models", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/models/<int:model_id>/delete", methods=["POST"])
+@app.route("/tenants/<tenant_id>/models/<int:model_id>/delete", methods=["POST"])
 @login_required
 def admin_tenant_model_delete(tenant_id, model_id):
     """管理员删除租户模型配置"""
@@ -959,7 +1014,7 @@ def admin_tenant_model_delete(tenant_id, model_id):
     return redirect(url_for("admin_tenant_models", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/feedback")
+@app.route("/tenants/<tenant_id>/feedback")
 @login_required
 def admin_tenant_feedback(tenant_id):
     """租户用户反馈查看页面"""
@@ -992,7 +1047,7 @@ def admin_tenant_feedback(tenant_id):
     )
 
 
-@app.route("/admin/tenants/<tenant_id>/metrics")
+@app.route("/tenants/<tenant_id>/metrics")
 @login_required
 def admin_tenant_metrics(tenant_id):
     """租户优化指标查看页面"""
@@ -1030,7 +1085,7 @@ def admin_tenant_metrics(tenant_id):
     )
 
 
-@app.route("/admin/audit-log")
+@app.route("/audit-log")
 @login_required
 def admin_audit_log():
     """平台操作日志页面"""
@@ -1068,7 +1123,7 @@ def admin_audit_log():
     )
 
 
-@app.route("/admin/admins")
+@app.route("/admins")
 @login_required
 def admin_admins():
     """管理员账户管理页面"""
@@ -1087,7 +1142,7 @@ def admin_admins():
     )
 
 
-@app.route("/admin/admins/add", methods=["POST"])
+@app.route("/admins/add", methods=["POST"])
 @login_required
 def admin_admins_add():
     """创建管理员"""
@@ -1108,7 +1163,7 @@ def admin_admins_add():
     return redirect(url_for("admin_admins"))
 
 
-@app.route("/admin/admins/<int:admin_id>/edit", methods=["POST"])
+@app.route("/admins/<int:admin_id>/edit", methods=["POST"])
 @login_required
 def admin_admins_edit(admin_id):
     """编辑管理员"""
@@ -1138,7 +1193,7 @@ def admin_admins_edit(admin_id):
     return redirect(url_for("admin_admins"))
 
 
-@app.route("/admin/admins/<int:admin_id>/delete", methods=["POST"])
+@app.route("/admins/<int:admin_id>/delete", methods=["POST"])
 @login_required
 def admin_admins_delete(admin_id):
     """删除管理员"""
@@ -1154,7 +1209,7 @@ def admin_admins_delete(admin_id):
     return redirect(url_for("admin_admins"))
 
 
-@app.route("/admin/profile", methods=["GET", "POST"])
+@app.route("/profile", methods=["GET", "POST"])
 @login_required
 def profile():
     token = session.get("admin_token", "")
@@ -1189,7 +1244,7 @@ import re
 # ========== Smart Routing Admin Pages ==========
 
 
-@app.route("/admin/tenants/<tenant_id>/routing")
+@app.route("/tenants/<tenant_id>/routing")
 @login_required
 def admin_tenant_routing(tenant_id):
     """智能路由管理页面：客服状态 + 会话列表 + 路由配置"""
@@ -1237,7 +1292,7 @@ def admin_tenant_routing(tenant_id):
     )
 
 
-@app.route("/admin/tenants/<tenant_id>/routing/agent/add", methods=["POST"])
+@app.route("/tenants/<tenant_id>/routing/agent/add", methods=["POST"])
 @login_required
 def admin_tenant_routing_agent_add(tenant_id):
     """添加客服并设置状态"""
@@ -1254,7 +1309,7 @@ def admin_tenant_routing_agent_add(tenant_id):
 
 # ========== Admin Panel: Backup Management ==========
 
-@app.route("/admin/tenants/<tenant_id>/backup")
+@app.route("/tenants/<tenant_id>/backup")
 @login_required
 def admin_tenant_backup(tenant_id):
     """租户备份管理页面"""
@@ -1280,7 +1335,7 @@ def admin_tenant_backup(tenant_id):
     )
 
 
-@app.route("/admin/tenants/<tenant_id>/backup/export", methods=["POST"])
+@app.route("/tenants/<tenant_id>/backup/export", methods=["POST"])
 @login_required
 def admin_tenant_backup_export(tenant_id):
     """触发备份下载"""
@@ -1305,7 +1360,7 @@ def admin_tenant_backup_export(tenant_id):
     return redirect(url_for("admin_tenant_backup", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/backup/restore", methods=["POST"])
+@app.route("/tenants/<tenant_id>/backup/restore", methods=["POST"])
 @login_required
 def admin_tenant_backup_restore(tenant_id):
     """从上传的 JSON 文件恢复备份"""
@@ -1350,7 +1405,7 @@ def admin_tenant_backup_restore(tenant_id):
 
 # ========== Admin Panel: Style Config ==========
 
-@app.route("/admin/tenants/<tenant_id>/style", methods=["GET", "POST"])
+@app.route("/tenants/<tenant_id>/style", methods=["GET", "POST"])
 @login_required
 def admin_tenant_style(tenant_id):
     """租户样式配置页面"""
@@ -1394,7 +1449,7 @@ def admin_tenant_style(tenant_id):
 
 # ========== Admin Panel: App Config ==========
 
-@app.route("/admin/tenants/<tenant_id>/app-config", methods=["GET", "POST"])
+@app.route("/tenants/<tenant_id>/app-config", methods=["GET", "POST"])
 @login_required
 def admin_tenant_app_config(tenant_id):
     """租户应用配置页面"""
@@ -1459,7 +1514,7 @@ def admin_tenant_app_config(tenant_id):
     return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/routing/agent/<agent_phone>/status", methods=["POST"])
+@app.route("/tenants/<tenant_id>/routing/agent/<agent_phone>/status", methods=["POST"])
 @login_required
 def admin_tenant_routing_agent_status(tenant_id, agent_phone):
     """更新客服状态"""
@@ -1481,7 +1536,7 @@ def admin_tenant_routing_agent_status(tenant_id, agent_phone):
     return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/routing/agent/<agent_phone>/skills", methods=["POST"])
+@app.route("/tenants/<tenant_id>/routing/agent/<agent_phone>/skills", methods=["POST"])
 @login_required
 def admin_tenant_routing_agent_skills(tenant_id, agent_phone):
     """设置客服技能"""
@@ -1515,7 +1570,7 @@ def admin_tenant_routing_agent_skills(tenant_id, agent_phone):
     return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/routing/config", methods=["POST"])
+@app.route("/tenants/<tenant_id>/routing/config", methods=["POST"])
 @login_required
 def admin_tenant_routing_config(tenant_id):
     """更新路由配置"""
@@ -1551,7 +1606,7 @@ def admin_tenant_routing_config(tenant_id):
     return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
 
 
-@app.route("/admin/tenants/<tenant_id>/routing/session/<int:session_id>/close", methods=["POST"])
+@app.route("/tenants/<tenant_id>/routing/session/<int:session_id>/close", methods=["POST"])
 @login_required
 def admin_tenant_routing_session_close(tenant_id, session_id):
     """关闭会话"""

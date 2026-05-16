@@ -5,7 +5,7 @@
         <h1>知识库管理</h1>
         <span class="page-subtitle">{{ tenant.phone }}</span>
     </div>
-    <a href="/admin/tenants/{{ tenant.tenant_id }}" class="btn btn-back">← 返回详情</a>
+    <a href="/tenants/{{ tenant.tenant_id }}" class="btn btn-back">← 返回详情</a>
 </div>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -18,7 +18,7 @@
 
 <div class="section">
     <h2>新增规则</h2>
-    <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/rules/add" class="form-card form-card-lg">
+    <form method="POST" action="/tenants/{{ tenant.tenant_id }}/rules/add" class="form-card form-card-lg">
         <div class="form-row">
             <div class="form-group">
                 <label>关键词</label>
@@ -65,7 +65,7 @@
 
 <div class="section">
     <h2>批量导入</h2>
-    <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/rules/batch"
+    <form method="POST" action="/tenants/{{ tenant.tenant_id }}/rules/batch"
           enctype="multipart/form-data" id="batch-import-form" class="form-card">
 
         <div class="form-group">
@@ -148,14 +148,14 @@
                 </td>
                 <td>
                     <button class="btn btn-sm btn-primary" onclick="document.getElementById('edit-{{ rule.id }}').style.display='block'">编辑</button>
-                    <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/rules/{{ rule.id }}/delete" style="display:inline;">
+                    <form method="POST" action="/tenants/{{ tenant.tenant_id }}/rules/{{ rule.id }}/delete" style="display:inline;">
                         <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('确定删除这条规则？')">删除</button>
                     </form>
                 </td>
             </tr>
             <tr id="edit-{{ rule.id }}" style="display:none;">
                 <td colspan="8">
-                    <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/rules/{{ rule.id }}/edit" class="form-card">
+                    <form method="POST" action="/tenants/{{ tenant.tenant_id }}/rules/{{ rule.id }}/edit" class="form-card">
                         <div class="form-row">
                             <div class="form-group">
                                 <label>关键词</label>

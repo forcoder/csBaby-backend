@@ -41,4 +41,7 @@ interface AIModelConfigDao {
 
     @Query("UPDATE ai_model_configs SET monthlyCost = monthlyCost + :cost WHERE id = :id")
     suspend fun addCost(id: Long, cost: Double)
+
+    @Query("DELETE FROM ai_model_configs")
+    suspend fun deleteAllModels()
 }
