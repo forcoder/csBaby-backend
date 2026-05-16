@@ -2162,6 +2162,20 @@ def _mount_admin():
 
 application = _mount_admin() or app
 
+@app.route("/_debug/admin-status")
+def _debug_admin_status():
+    """Debug endpoint to check if admin panel is mounted."""
+    is_dm = type(application).__name__ == "DispatcherMiddleware"
+    admin_mounted = False
+    if is_dm:
+        dm = application
+        admin_mounted = "/admin" in getattr(dm, "mounts", {})
+    return jsonify({
+        "application_type": type(application).__name__,
+        "admin_mounted": admin_mounted,
+        "admin_mode": os.environ.get("ADMIN_API_MODE", "not set"),
+    })
+
 # ========== 启动 ==========
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
