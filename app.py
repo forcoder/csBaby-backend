@@ -7,7 +7,6 @@ Infrastructure Layer: infrastructure/persistence
 Presentation Layer: app.py (Flask routes)
 """
 import hashlib
-import hmac
 import json
 import logging
 import os
@@ -136,12 +135,16 @@ def after_request(response):
         response.headers["Access-Control-Allow-Origin"] = origin
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Vary"] = "Origin"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
 
 # ========== 健康检查 ==========
 @app.route("/health", methods=["GET"])
 def health_check():
-    return jsonify({"status": "ok", "service": "csBaby-api", "version": "admin-v2"})
+    return jsonify({"status": "ok", "service": "csBaby-api"})
 
 # ========== 认证 API ==========
 @app.route("/api/auth/register", methods=["POST"])
@@ -794,7 +797,7 @@ def _init_admin():
     finally:
         db.close()
 
-def _hash_password(pw):
+def _hash_password(pw: str) -> str:
     import hashlib
     return hashlib.sha256(f"{pw}{JWT_SECRET}".encode()).hexdigest()
 
@@ -824,16 +827,10 @@ def _get_all_admins():
     finally:
         db.close()
 
-def _admin_token_key(phone):
-    return f"admin:{phone}"
+_ADMIN_SESSION_EXPIRY_HOURS = 24
 
-def _generate_admin_token(phone):
-    token = _hash_password(phone + str(time.time()))
-    return token
 
-_admin_tokens = {}  # token -> phone (kept in-memory for session validation)
-
-def _admin_exists_in_db(phone):
+def _admin_exists_in_db(phone: str) -> bool:
     """Check if an admin account exists in the SQLite database."""
     db = get_connection()
     try:
@@ -844,25 +841,89 @@ def _admin_exists_in_db(phone):
     finally:
         db.close()
 
+
+def _create_admin_session(phone: str) -> str:
+    """Create a persistent admin session token with expiry."""
+    import datetime
+    token = secrets.token_hex(32)
+    expires_at = datetime.datetime.utcnow() + datetime.timedelta(hours=_ADMIN_SESSION_EXPIRY_HOURS)
+    db = get_connection()
+    try:
+        db.execute(
+            "INSERT INTO admin_sessions (token, phone, expires_at) VALUES (?, ?, ?)",
+            (token, phone, expires_at.strftime("%Y-%m-%d %H:%M:%S"))
+        )
+        db.commit()
+    finally:
+        db.close()
+    return token
+
+
+def _validate_admin_session(token: str) -> Optional[str]:
+    """Validate admin session token. Returns phone if valid, None otherwise."""
+    import datetime
+    db = get_connection()
+    try:
+        row = db.execute(
+            "SELECT phone, expires_at FROM admin_sessions WHERE token=?", (token,)
+        ).fetchone()
+        if not row:
+            return None
+        expires_at = datetime.datetime.strptime(row["expires_at"], "%Y-%m-%d %H:%M:%S")
+        if expires_at < datetime.datetime.utcnow():
+            db.execute("DELETE FROM admin_sessions WHERE token=?", (token,))
+            db.commit()
+            return None
+        return row["phone"]
+    except Exception:
+        return None
+    finally:
+        db.close()
+
+
+def _cleanup_expired_sessions():
+    """Remove expired admin sessions."""
+    import datetime
+    db = get_connection()
+    try:
+        db.execute(
+            "DELETE FROM admin_sessions WHERE expires_at < ?",
+            (datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),)
+        )
+        db.commit()
+    except Exception:
+        pass
+    finally:
+        db.close()
+
+
 def require_admin(f):
-    """Decorator: require admin JWT token."""
+    """Decorator: require admin session token."""
     @wraps(f)
     def decorated(*args, **kwargs):
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
             return jsonify({"error": "Unauthorized"}), 401
         token = auth_header[7:]
-        phone = _admin_tokens.get(token)
+        phone = _validate_admin_session(token)
         if not phone or not _admin_exists_in_db(phone):
             return jsonify({"error": "Invalid admin token"}), 401
         request.admin_phone = phone
         return f(*args, **kwargs)
     return decorated
 
+_tables_initialized = False
+
+
 @app.before_request
-def _init_admin_hook():
+def _startup_hook():
+    global _tables_initialized
     ensure_db()
     _init_admin()
+    if not _tables_initialized:
+        _ensure_blacklist_table()
+        _ensure_audit_table()
+        _tables_initialized = True
 
 # ========== Admin API: Auth ==========
 @app.route("/api/admin/login", methods=["POST"])
@@ -873,8 +934,8 @@ def admin_login():
     password = data.get("password", "")
     if not _verify_admin(phone, password):
         return jsonify({"error": "Invalid credentials"}), 401
-    token = _generate_admin_token(phone)
-    _admin_tokens[token] = phone
+    _cleanup_expired_sessions()
+    token = _create_admin_session(phone)
     return jsonify({"token": token, "phone": phone, "is_admin": True})
 
 # ========== Admin API: Stats ==========
@@ -1219,7 +1280,7 @@ def _ensure_blacklist_table():
         db.close()
         _blacklist_initialized = True
 
-@app.before_request
+
 def _blacklist_hook():
     _ensure_blacklist_table()
 
@@ -1513,9 +1574,6 @@ def _ensure_audit_table():
         db.close()
         _audit_log_initialized = True
 
-@app.before_request
-def _audit_hook():
-    _ensure_audit_table()
 
 def _log_audit(admin_phone, action, target_type="", target_id="", detail=""):
     db = None
@@ -2116,6 +2174,10 @@ def admin_restore_tenant_backup(tenant_id):
 def not_found(e):
     return jsonify({"error": "Not found"}), 404
 
+@app.errorhandler(403)
+def forbidden(e):
+    return jsonify({"error": "Forbidden"}), 403
+
 @app.errorhandler(405)
 def method_not_allowed(e):
     return jsonify({"error": "Method not allowed"}), 405
@@ -2174,7 +2236,6 @@ def _debug_admin_status():
         "application_type": type(application).__name__,
         "admin_mounted": admin_mounted,
         "admin_mode": os.environ.get("ADMIN_API_MODE", "not set"),
-        "app_routes": [str(r) for r in app.url_map.iter_rules()][-10:],
     })
 
 # ========== 启动 ==========
