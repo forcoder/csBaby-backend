@@ -141,7 +141,7 @@ def after_request(response):
 # ========== 健康检查 ==========
 @app.route("/health", methods=["GET"])
 def health_check():
-    return jsonify({"status": "ok", "service": "csBaby-api"})
+    return jsonify({"status": "ok", "service": "csBaby-api", "version": "admin-v2"})
 
 # ========== 认证 API ==========
 @app.route("/api/auth/register", methods=["POST"])
@@ -2165,15 +2165,16 @@ application = _mount_admin() or app
 @app.route("/_debug/admin-status")
 def _debug_admin_status():
     """Debug endpoint to check if admin panel is mounted."""
-    is_dm = type(application).__name__ == "DispatcherMiddleware"
+    from werkzeug.middleware.dispatcher import DispatcherMiddleware
+    is_dm = isinstance(application, DispatcherMiddleware)
     admin_mounted = False
     if is_dm:
-        dm = application
-        admin_mounted = "/admin" in getattr(dm, "mounts", {})
+        admin_mounted = "/admin" in getattr(application, "mounts", {})
     return jsonify({
         "application_type": type(application).__name__,
         "admin_mounted": admin_mounted,
         "admin_mode": os.environ.get("ADMIN_API_MODE", "not set"),
+        "app_routes": [str(r) for r in app.url_map.iter_rules()][-10:],
     })
 
 # ========== 启动 ==========
