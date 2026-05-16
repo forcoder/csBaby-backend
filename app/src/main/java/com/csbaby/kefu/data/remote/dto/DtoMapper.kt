@@ -5,7 +5,7 @@ import com.csbaby.kefu.domain.model.*
 // ========== Rule DTO ↔ Domain ==========
 
 fun RuleDto.toDomain(): KeywordRule = KeywordRule(
-    id = id,
+    id = id.toLong(),
     keyword = keyword,
     matchType = enumValueOrDefault(matchType, MatchType.CONTAINS),
     replyTemplate = replyTemplate,
@@ -15,8 +15,8 @@ fun RuleDto.toDomain(): KeywordRule = KeywordRule(
     targetNames = parseTargetNames(targetNames),
     priority = priority,
     enabled = enabled,
-    createdAt = createdAt,
-    updatedAt = updatedAt
+    createdAt = createdAt.toLongOrNull() ?: 0L,
+    updatedAt = updatedAt.toLongOrNull() ?: 0L
 )
 
 fun KeywordRule.toDto(): RuleDto = RuleDto(
@@ -30,14 +30,14 @@ fun KeywordRule.toDto(): RuleDto = RuleDto(
     targetNames = com.google.gson.Gson().toJson(targetNames),
     priority = priority,
     enabled = enabled,
-    createdAt = createdAt,
-    updatedAt = updatedAt
+    createdAt = createdAt.toString(),
+    updatedAt = updatedAt.toString()
 )
 
 // ========== Model DTO ↔ Domain ==========
 
 fun ModelConfigDto.toDomain(): AIModelConfig = AIModelConfig(
-    id = id,
+    id = id.toLong(),
     modelType = enumValueOrDefault(modelType, ModelType.OPENAI),
     modelName = name,
     model = model,
@@ -49,7 +49,7 @@ fun ModelConfigDto.toDomain(): AIModelConfig = AIModelConfig(
     isEnabled = enabled,
     monthlyCost = 0.0,
     lastUsed = 0L,
-    createdAt = createdAt
+    createdAt = createdAt.toLongOrNull() ?: 0L
 )
 
 fun AIModelConfig.toDto(): ModelConfigDto = ModelConfigDto(
@@ -64,14 +64,14 @@ fun AIModelConfig.toDto(): ModelConfigDto = ModelConfigDto(
     maxTokens = maxTokens,
     isDefault = isDefault,
     enabled = isEnabled,
-    createdAt = createdAt,
+    createdAt = createdAt.toString(),
     updatedAt = ""
 )
 
 // ========== History DTO ↔ Domain ==========
 
 fun HistoryEntryDto.toDomain(): ReplyHistory = ReplyHistory(
-    id = id,
+    id = id.toLong(),
     sourceApp = platform,
     originalMessage = originalMessage,
     generatedReply = replyContent,

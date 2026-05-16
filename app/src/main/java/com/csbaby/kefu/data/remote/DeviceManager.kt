@@ -4,6 +4,7 @@ import android.provider.Settings
 import com.csbaby.kefu.data.local.PreferencesManager
 import com.csbaby.kefu.data.remote.dto.RegisterRequest
 import com.csbaby.kefu.data.remote.dto.RegisterResponse
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import timber.log.Timber

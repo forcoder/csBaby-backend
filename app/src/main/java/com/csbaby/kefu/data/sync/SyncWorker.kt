@@ -1,19 +1,15 @@
 package com.csbaby.kefu.data.sync
 
 import android.content.Context
-import androidx.hilt.work.HiltWorker
 import androidx.work.*
-import dagger.assisted.Assisted
-import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
-@HiltWorker
-class SyncWorker @AssistedInject constructor(
-    @Assisted context: Context,
-    @Assisted workerParams: WorkerParameters,
+class SyncWorker(
+    context: Context,
+    workerParams: WorkerParameters,
     private val syncManager: SyncManager
 ) : CoroutineWorker(context, workerParams) {
 
@@ -35,6 +31,21 @@ class SyncWorker @AssistedInject constructor(
         } catch (e: Exception) {
             Timber.e(e, "Periodic sync failed")
             Result.retry()
+        }
+    }
+
+    class Factory(
+        private val syncManager: SyncManager
+    ) : WorkerFactory() {
+        override fun createWorker(
+            appContext: Context,
+            workerClassName: String,
+            workerParameters: WorkerParameters
+        ): ListenableWorker? {
+            return when (workerClassName) {
+                SyncWorker::class.java.name -> SyncWorker(appContext, workerParameters, syncManager)
+                else -> null
+            }
         }
     }
 

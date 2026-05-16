@@ -2,7 +2,6 @@ package com.csbaby.kefu
 
 import android.app.Application
 import android.util.Log
-import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.csbaby.kefu.data.sync.SyncWorker
 import com.csbaby.kefu.infrastructure.monitoring.PerformanceMonitor
@@ -15,22 +14,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import javax.inject.Inject
 
-/**
- * Application class — uses standard @HiltAndroidApp for full Hilt initialization.
- * This enables @AndroidEntryPoint on Activity / Service / BroadcastReceiver components.
- */
 @HiltAndroidApp
 class KefuApplication : Application(), Configuration.Provider {
 
-    @Inject
-    lateinit var workerFactory: HiltWorkerFactory
-
-    override val workManagerConfiguration: Configuration
-        get() = Configuration.Builder()
-            .setWorkerFactory(workerFactory)
-            .build()
+    private val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     override fun onCreate() {
         super.onCreate()
@@ -66,7 +54,7 @@ class KefuApplication : Application(), Configuration.Provider {
                 Timber.e(e, "Failed to schedule OTA updates")
                 Log.e(TAG, "Failed to schedule OTA updates", e)
             }
-            
+
             try {
                 val performanceMonitor = entryPoint.performanceMonitor()
                 performanceMonitor.startMonitoring()
@@ -78,7 +66,7 @@ class KefuApplication : Application(), Configuration.Provider {
             }
 
             // 启动数据同步：设备注册 + 全量同步 + 定期同步 Worker
-            CoroutineScope(Dispatchers.Default + SupervisorJob()).launch {
+            appScope.launch {
                 try {
                     val syncManager = entryPoint.syncManager()
                     Timber.d("Starting initial data sync...")
@@ -103,6 +91,20 @@ class KefuApplication : Application(), Configuration.Provider {
             Log.e(TAG, "Hilt EntryPoint bootstrap failed — app will run without auto-reply", e)
         }
     }
+
+    override val workManagerConfiguration: Configuration
+        get() = try {
+            val entryPoint = EntryPointAccessors.fromApplication(
+                this,
+                AppEntryPoint::class.java
+            )
+            Configuration.Builder()
+                .setWorkerFactory(entryPoint.appWorkerFactory())
+                .build()
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to create custom WorkerFactory, using default")
+            Configuration.Builder().build()
+        }
 
     companion object {
         private const val TAG = "KefuApp"

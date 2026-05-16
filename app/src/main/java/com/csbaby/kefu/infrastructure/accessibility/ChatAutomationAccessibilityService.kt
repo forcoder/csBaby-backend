@@ -53,10 +53,6 @@ class ChatAutomationAccessibilityService : AccessibilityService() {
         }
     }
 
-    companion object {
-        private const val MAX_CACHE_ENTRIES = 200
-    }
-
     override fun onServiceConnected() {
         super.onServiceConnected()
         serviceInfo = serviceInfo.apply {
@@ -743,9 +739,9 @@ class ChatAutomationAccessibilityService : AccessibilityService() {
         return score
     }
 
-    private fun matchesSendLabel(text: String, description: String, viewId: String, activePackage: String): Boolean {
+    private fun matchesSendLabel(text: String?, description: String?, viewId: String?, activePackage: String): Boolean {
         val profile = getChatAppProfile(activePackage)
-        val candidates = listOf(text, description, viewId)
+        val candidates = listOfNotNull(text, description, viewId)
         return candidates.any { candidate ->
             SEND_LABELS.any { label ->
                 candidate.contains(label, ignoreCase = true)
@@ -923,10 +919,10 @@ class ChatAutomationAccessibilityService : AccessibilityService() {
     }
 
     companion object {
-
         @Volatile
         private var instance: ChatAutomationAccessibilityService? = null
 
+        private const val MAX_CACHE_ENTRIES = 200
         private const val TAG = "ChatAutomationA11y"
         private val SEND_LABELS = listOf("发送", "發送", "send", "提交", "发出")
         private val INPUT_VIEW_ID_KEYWORDS = listOf(

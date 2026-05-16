@@ -105,21 +105,13 @@ object OtaAndOssModule {
     
     /**
      * 提供OTA Worker工厂
-     * WorkManager使用AssistedInject，这里提供工厂
      */
     @Provides
     @Singleton
     fun provideOtaUpdateWorkerFactory(
         repository: OtaRepository
     ): OtaUpdateWorker.Factory {
-        return object : OtaUpdateWorker.Factory {
-            override fun create(
-                context: Context,
-                params: WorkerParameters
-            ): OtaUpdateWorker {
-                return OtaUpdateWorker(context, params, repository)
-            }
-        }
+        return OtaUpdateWorker.Factory(repository)
     }
     
     // ========== 阿里云OSS功能 ==========

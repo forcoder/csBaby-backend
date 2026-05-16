@@ -8,8 +8,6 @@ import com.csbaby.kefu.data.remote.AIClientImpl
 import com.csbaby.kefu.data.remote.AuthInterceptor
 import com.csbaby.kefu.data.remote.CsbabyApiService
 import com.csbaby.kefu.data.remote.DeviceManager
-import com.csbaby.kefu.data.remote.OtaApiService
-import com.csbaby.kefu.data.remote.ShzlApiService
 import com.csbaby.kefu.infrastructure.error.ErrorHandler
 import dagger.Module
 import dagger.Provides
@@ -17,12 +15,16 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
-import okhttp3.ResponseBody
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
+import javax.inject.Qualifier
 import javax.inject.Singleton
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class CsbabyOkHttpClient
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -40,11 +42,6 @@ object NetworkModule {
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
-            .addInterceptor {
-                val request = it.request()
-                val response = it.proceed(request)
-                response
-            }
             .build()
     }
 
@@ -52,7 +49,7 @@ object NetworkModule {
     @Singleton
     fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
         return Retrofit.Builder()
-            .baseUrl("https://api.openai.com/") // Default base URL
+            .baseUrl("https://api.openai.com/")
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
@@ -63,13 +60,13 @@ object NetworkModule {
     fun provideAIClient(okHttpClient: OkHttpClient): AIClient {
         return AIClientImpl(okHttpClient)
     }
-    
+
     @Provides
     @Singleton
     fun provideErrorHandler(@ApplicationContext context: Context): ErrorHandler {
         return ErrorHandler(context)
     }
-    
+
     @Provides
     @Singleton
     fun providePerformanceMonitor(@ApplicationContext context: Context): com.csbaby.kefu.infrastructure.monitoring.PerformanceMonitor {
@@ -86,6 +83,7 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    @CsbabyOkHttpClient
     fun provideCsbabyOkHttpClient(
         authInterceptor: AuthInterceptor
     ): OkHttpClient {
@@ -104,7 +102,7 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideCsbabyApiService(
-        csbabyOkHttpClient: OkHttpClient
+        @CsbabyOkHttpClient csbabyOkHttpClient: OkHttpClient
     ): CsbabyApiService {
         return Retrofit.Builder()
             .baseUrl(BuildConfig.API_BASE_URL)

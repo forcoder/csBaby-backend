@@ -108,9 +108,18 @@ class NotificationListenerServiceImpl : NotificationListenerService() {
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         Log.w(TAG, "Notification listener disconnected - attempting reconnection")
-        // Request reconnection via ComponentName
-        val componentName = ComponentName(this, NotificationListenerServiceImpl::class.java)
-        requestReconnect(componentName)
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            val componentName = ComponentName(this, NotificationListenerServiceImpl::class.java)
+            // requestReconnect is API 33+, called via reflection for compile safety
+            try {
+                val method = NotificationListenerService::class.java.getMethod(
+                    "requestReconnect", ComponentName::class.java
+                )
+                method.invoke(this, componentName)
+            } catch (_: Exception) {
+                Log.w(TAG, "requestReconnect not available")
+            }
+        }
     }
 
     override fun onDestroy() {

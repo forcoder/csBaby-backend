@@ -5,8 +5,8 @@ import com.csbaby.kefu.data.repository.AIModelRepositoryImpl
 import com.csbaby.kefu.data.repository.KeywordRuleRepositoryImpl
 import com.csbaby.kefu.data.repository.ReplyHistoryRepositoryImpl
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,19 +27,35 @@ class SyncManager @Inject constructor(
     private val preferencesManager: PreferencesManager
 ) {
     /**
-     * 全量同步：从后端拉取所有数据覆盖本地缓存
+     * 全量同步：验证本地数据可访问，并返回各仓库的数据计数。
+     * 当前仓库层暂无服务端同步接口，此处作为本地数据完整性检查。
      */
     suspend fun fullSync(): SyncResult = coroutineScope {
-        Timber.i("Starting full sync from server")
+        Timber.i("Starting full sync")
 
         val rulesResult = async {
-            try { ruleRepo.syncFromServer() } catch (e: Exception) { Result.failure<Int>(e) }
+            try {
+                val count = ruleRepo.getRuleCount()
+                Result.success(count)
+            } catch (e: Exception) {
+                Result.failure<Int>(e)
+            }
         }
         val modelsResult = async {
-            try { modelRepo.syncFromServer() } catch (e: Exception) { Result.failure<Int>(e) }
+            try {
+                val models = modelRepo.getAllModels().first()
+                Result.success(models.size)
+            } catch (e: Exception) {
+                Result.failure<Int>(e)
+            }
         }
         val historyResult = async {
-            try { historyRepo.syncFromServer() } catch (e: Exception) { Result.failure<Int>(e) }
+            try {
+                val count = historyRepo.getTotalCount()
+                Result.success(count)
+            } catch (e: Exception) {
+                Result.failure<Int>(e)
+            }
         }
 
         val rules = rulesResult.await()
@@ -51,11 +67,7 @@ class SyncManager @Inject constructor(
         models.exceptionOrNull()?.let { errors.add("Models sync failed: ${it.message}") }
         history.exceptionOrNull()?.let { errors.add("History sync failed: ${it.message}") }
 
-        val success = rules.isSuccess || models.isSuccess || history.isSuccess
-
-        if (success) {
-            preferencesManager.updateLastSyncTimestamp(System.currentTimeMillis())
-        }
+        val success = rules.isSuccess && models.isSuccess && history.isSuccess
 
         val result = SyncResult(
             success = success,
@@ -75,9 +87,9 @@ class SyncManager @Inject constructor(
     suspend fun incrementalSync(): SyncResult = fullSync()
 
     /**
-     * 获取上次同步时间
+     * 获取上次同步时间（暂返回 0，待 PreferencesManager 添加时间戳支持后扩展）
      */
     suspend fun getLastSyncTime(): Long {
-        return preferencesManager.lastSyncTimestampFlow.first()
+        return 0L
     }
 }

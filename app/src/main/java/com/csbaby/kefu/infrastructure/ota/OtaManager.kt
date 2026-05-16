@@ -214,7 +214,7 @@ class OtaManager @Inject constructor(
                                             }
                                         }
                                         // Final fallback: construct path from known download location
-                                        if (apkFile == null || !apkFile.exists()) {
+                                        if (apkFile == null) {
                                             val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                                             val appDir = File(downloadsDir, "KefuUpdates")
                                             _availableUpdate.value?.let { update ->
@@ -225,11 +225,12 @@ class OtaManager @Inject constructor(
                                                 }
                                             }
                                         }
-                                        apkFile?.let {
-                                            pendingApkFile = it
-                                            Log.d(TAG, "下载完成，APK路径: ${it.absolutePath}")
-                                            prepareInstallation(it)
-                                        } ?: run {
+                                        val resolvedApk = apkFile
+                                        if (resolvedApk != null && resolvedApk.exists()) {
+                                            pendingApkFile = resolvedApk
+                                            Log.d(TAG, "下载完成，APK路径: ${resolvedApk.absolutePath}")
+                                            prepareInstallation(resolvedApk)
+                                        } else {
                                             _errorMessage.value = "无法找到下载文件"
                                             _updateStatus.value = UpdateStatus.FAILED
                                         }
