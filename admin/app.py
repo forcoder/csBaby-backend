@@ -5,16 +5,10 @@ import time
 import urllib.parse
 import requests as http_requests
 from functools import wraps
-from flask import Flask, request, render_template, redirect, url_for, session, flash, jsonify
+from flask import Blueprint, request, render_template, redirect, url_for, session, flash, jsonify, current_app
 from config import API_BASE_URL, SESSION_SECRET
 
-app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB upload limit
-app.secret_key = SESSION_SECRET
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["PERMANENT_SESSION_LIFETIME"] = 1800  # 30 minutes
-app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_ENV") != "development"
+admin_bp = Blueprint("admin", __name__, url_prefix="/admin", template_folder="templates")
 
 import hashlib
 import hmac
@@ -63,13 +57,13 @@ def _cleanup_login_attempts():
         for ip in stale_ips:
             del _login_attempts[ip]
 
-@app.before_request
+@admin_bp.before_request
 def _check_csrf():
     """Validate CSRF token for POST requests."""
     if request.method != "POST":
         return
     # Skip CSRF check in testing mode (tests obtain token via GET or session_transaction)
-    if app.config.get("TESTING"):
+    if current_app.config.get("TESTING"):
         return
     # Skip CSRF for login endpoint (user has no session yet)
     if request.endpoint == "login":
@@ -82,7 +76,7 @@ def _check_csrf():
     if not form_token or not session_token or not hmac.compare_digest(form_token, session_token):
         session.clear()
         flash("安全验证失败，请重新登录", "error")
-        return redirect(url_for("login"))
+        return redirect(url_for("admin.login"))
 
 
 
@@ -91,7 +85,7 @@ def login_required(f):
     def decorated(*args, **kwargs):
         if not session.get("admin_phone") or not session.get("is_admin"):
             session.clear()
-            return redirect(url_for("login"))
+            return redirect(url_for("admin.login"))
         # Refresh session lifetime on each request (sliding expiration)
         session.permanent = True
         session.modified = True
@@ -107,7 +101,7 @@ def _get_api_client():
     to call the API directly without HTTP. Otherwise, use HTTP requests.
     """
     if os.environ.get("ADMIN_API_MODE") == "internal":
-        return getattr(app, "_api_test_client", None)
+        return getattr(current_app, "_api_test_client", None)
     return None
 
 
@@ -341,10 +335,10 @@ def parse_excel_content(file_bytes):
     return all_rules
 
 
-@app.route("/login", methods=["GET", "POST"])
+@admin_bp.route("/login", methods=["GET", "POST"])
 def login():
     if session.get("admin_phone"):
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("admin.dashboard"))
     if request.method == "POST":
         phone = request.form.get("phone", "").strip()
         password = request.form.get("password", "")
@@ -376,7 +370,7 @@ def login():
                 session.permanent = True
                 with _login_lock:
                     _login_attempts.pop(client_ip, None)
-                return redirect(url_for("dashboard"))
+                return redirect(url_for("admin.dashboard"))
             else:
                 error = _safe_api_error(resp)
         except http_requests.exceptions.RequestException:
@@ -385,18 +379,18 @@ def login():
     return render_template("login.html", error=None)
 
 
-@app.route("/logout")
+@admin_bp.route("/logout")
 def logout():
     session.clear()
-    return redirect(url_for("login"))
+    return redirect(url_for("admin.login"))
 
 
-@app.route("/")
+@admin_bp.route("/")
 def admin_index():
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("admin.dashboard"))
 
 
-@app.route("/dashboard")
+@admin_bp.route("/dashboard")
 @login_required
 def dashboard():
     token = session.get("admin_token", "")
@@ -418,7 +412,7 @@ def dashboard():
                            admin_phone=session.get("admin_phone"))
 
 
-@app.route("/tenants")
+@admin_bp.route("/tenants")
 @login_required
 def tenants():
     token = session.get("admin_token", "")
@@ -450,7 +444,7 @@ def tenants():
     )
 
 
-@app.route("/tenants/<tenant_id>", methods=["GET", "POST"])
+@admin_bp.route("/tenants/<tenant_id>", methods=["GET", "POST"])
 @login_required
 def tenant_detail(tenant_id):
     token = session.get("admin_token", "")
@@ -470,7 +464,7 @@ def tenant_detail(tenant_id):
                         flash(_safe_api_error(resp), "error")
                 except Exception as e:
                     flash(f"网络错误: {e}", "error")
-            return redirect(url_for("tenant_detail", tenant_id=tenant_id))
+            return redirect(url_for("admin.tenant_detail", tenant_id=tenant_id))
         elif action == "save_default_model":
             model_data = {
                 "name": request.form.get("name", "").strip(),
@@ -532,7 +526,7 @@ def _get_default_model(tenant_id, token):
     return None
 
 
-@app.route("/default-model", methods=["GET", "POST"])
+@admin_bp.route("/default-model", methods=["GET", "POST"])
 @login_required
 def default_model():
     token = session.get("admin_token", "")
@@ -609,7 +603,7 @@ def default_model():
                            admin_phone=session.get("admin_phone"), error=error, success=success)
 
 
-@app.route("/tenants/<tenant_id>/rules")
+@admin_bp.route("/tenants/<tenant_id>/rules")
 @login_required
 def admin_tenant_rules(tenant_id):
     """租户知识库规则管理页面"""
@@ -630,7 +624,7 @@ def admin_tenant_rules(tenant_id):
     )
 
 
-@app.route("/tenants/<tenant_id>/rules/add", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/rules/add", methods=["POST"])
 @login_required
 def admin_tenant_rule_add(tenant_id):
     """管理员为租户新增规则"""
@@ -653,10 +647,10 @@ def admin_tenant_rule_add(tenant_id):
             flash(_safe_api_error(resp, "添加失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_rules", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/rules/<int:rule_id>/edit", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/rules/<int:rule_id>/edit", methods=["POST"])
 @login_required
 def admin_tenant_rule_edit(tenant_id, rule_id):
     """管理员编辑租户规则"""
@@ -679,10 +673,10 @@ def admin_tenant_rule_edit(tenant_id, rule_id):
             flash(_safe_api_error(resp, "更新失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_rules", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/rules/<int:rule_id>/delete", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/rules/<int:rule_id>/delete", methods=["POST"])
 @login_required
 def admin_tenant_rule_delete(tenant_id, rule_id):
     """管理员删除租户规则"""
@@ -695,10 +689,10 @@ def admin_tenant_rule_delete(tenant_id, rule_id):
             flash(_safe_api_error(resp, "删除失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_rules", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/rules/batch", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/rules/batch", methods=["POST"])
 @login_required
 def admin_tenant_rules_batch(tenant_id):
     """批量导入规则，支持文件上传（JSON/CSV/Excel）和 JSON 文本粘贴"""
@@ -717,12 +711,12 @@ def admin_tenant_rules_batch(tenant_id):
         ALLOWED_EXTENSIONS = {".json", ".csv", ".xlsx"}
         if not any(filename.endswith(ext) for ext in ALLOWED_EXTENSIONS):
             flash("不支持的文件格式，请上传 .json、.csv 或 .xlsx 文件", "error")
-            return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+            return redirect(url_for("admin.admin_tenant_rules", tenant_id=tenant_id))
         file_bytes = uploaded_file.read()
         # Validate file size (already limited by MAX_CONTENT_LENGTH, but double-check)
         if len(file_bytes) > 10 * 1024 * 1024:
             flash("文件大小超过 10MB 限制", "error")
-            return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+            return redirect(url_for("admin.admin_tenant_rules", tenant_id=tenant_id))
         try:
             if filename.endswith(".csv"):
                 rules = parse_csv_content(file_bytes.decode("utf-8-sig"))
@@ -736,27 +730,27 @@ def admin_tenant_rules_batch(tenant_id):
 
         except Exception as e:
             flash(f"文件解析失败: {e}", "error")
-            return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+            return redirect(url_for("admin.admin_tenant_rules", tenant_id=tenant_id))
     else:
         # 回退到文本粘贴
         import_data = request.form.get("import_data", "").strip()
         if not import_data:
             flash("请上传文件或粘贴 JSON 数据", "error")
-            return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+            return redirect(url_for("admin.admin_tenant_rules", tenant_id=tenant_id))
         try:
             rules = parse_json_content(import_data)
             source_desc = "JSON 文本"
         except json.JSONDecodeError as e:
             flash(f"JSON 格式错误: {e}", "error")
-            return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+            return redirect(url_for("admin.admin_tenant_rules", tenant_id=tenant_id))
 
     if not rules:
         flash(f"{source_desc} 中没有可导入的规则", "error")
-        return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+        return redirect(url_for("admin.admin_tenant_rules", tenant_id=tenant_id))
 
     if len(rules) > 1000:
         flash(f"规则数量超过上限（1000条），当前 {len(rules)} 条", "error")
-        return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+        return redirect(url_for("admin.admin_tenant_rules", tenant_id=tenant_id))
 
     try:
         resp = api_post(
@@ -782,10 +776,10 @@ def admin_tenant_rules_batch(tenant_id):
             flash(_safe_api_error(resp), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_rules", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_rules", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/blacklist")
+@admin_bp.route("/tenants/<tenant_id>/blacklist")
 @login_required
 def admin_tenant_blacklist(tenant_id):
     """租户黑名单管理页面"""
@@ -806,7 +800,7 @@ def admin_tenant_blacklist(tenant_id):
     )
 
 
-@app.route("/tenants/<tenant_id>/blacklist/add", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/blacklist/add", methods=["POST"])
 @login_required
 def admin_tenant_blacklist_add(tenant_id):
     """管理员为租户新增黑名单条目"""
@@ -826,10 +820,10 @@ def admin_tenant_blacklist_add(tenant_id):
             flash(_safe_api_error(resp, "添加失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_blacklist", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_blacklist", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/blacklist/<int:blacklist_id>/edit", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/blacklist/<int:blacklist_id>/edit", methods=["POST"])
 @login_required
 def admin_tenant_blacklist_edit(tenant_id, blacklist_id):
     """管理员编辑租户黑名单条目"""
@@ -849,10 +843,10 @@ def admin_tenant_blacklist_edit(tenant_id, blacklist_id):
             flash(_safe_api_error(resp, "更新失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_blacklist", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_blacklist", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/blacklist/<int:blacklist_id>/delete", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/blacklist/<int:blacklist_id>/delete", methods=["POST"])
 @login_required
 def admin_tenant_blacklist_delete(tenant_id, blacklist_id):
     """管理员删除租户黑名单条目"""
@@ -865,10 +859,10 @@ def admin_tenant_blacklist_delete(tenant_id, blacklist_id):
             flash(_safe_api_error(resp, "删除失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_blacklist", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_blacklist", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/blacklist/clear", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/blacklist/clear", methods=["POST"])
 @login_required
 def admin_tenant_blacklist_clear(tenant_id):
     """管理员清空租户所有黑名单"""
@@ -881,10 +875,10 @@ def admin_tenant_blacklist_clear(tenant_id):
             flash(_safe_api_error(resp, "清空失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_blacklist", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_blacklist", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/history")
+@admin_bp.route("/tenants/<tenant_id>/history")
 @login_required
 def admin_tenant_history(tenant_id):
     """租户回复历史查看页面"""
@@ -925,7 +919,7 @@ def admin_tenant_history(tenant_id):
     )
 
 
-@app.route("/tenants/<tenant_id>/models")
+@admin_bp.route("/tenants/<tenant_id>/models")
 @login_required
 def admin_tenant_models(tenant_id):
     """租户模型配置管理页面"""
@@ -946,7 +940,7 @@ def admin_tenant_models(tenant_id):
     )
 
 
-@app.route("/tenants/<tenant_id>/models/add", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/models/add", methods=["POST"])
 @login_required
 def admin_tenant_model_add(tenant_id):
     """管理员为租户新增模型配置"""
@@ -970,10 +964,10 @@ def admin_tenant_model_add(tenant_id):
             flash(_safe_api_error(resp, "添加失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_models", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_models", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/models/<int:model_id>/edit", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/models/<int:model_id>/edit", methods=["POST"])
 @login_required
 def admin_tenant_model_edit(tenant_id, model_id):
     """管理员编辑租户模型配置"""
@@ -997,10 +991,10 @@ def admin_tenant_model_edit(tenant_id, model_id):
             flash(_safe_api_error(resp, "更新失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_models", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_models", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/models/<int:model_id>/delete", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/models/<int:model_id>/delete", methods=["POST"])
 @login_required
 def admin_tenant_model_delete(tenant_id, model_id):
     """管理员删除租户模型配置"""
@@ -1013,10 +1007,10 @@ def admin_tenant_model_delete(tenant_id, model_id):
             flash(_safe_api_error(resp, "删除失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_models", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_models", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/feedback")
+@admin_bp.route("/tenants/<tenant_id>/feedback")
 @login_required
 def admin_tenant_feedback(tenant_id):
     """租户用户反馈查看页面"""
@@ -1049,7 +1043,7 @@ def admin_tenant_feedback(tenant_id):
     )
 
 
-@app.route("/tenants/<tenant_id>/metrics")
+@admin_bp.route("/tenants/<tenant_id>/metrics")
 @login_required
 def admin_tenant_metrics(tenant_id):
     """租户优化指标查看页面"""
@@ -1087,7 +1081,7 @@ def admin_tenant_metrics(tenant_id):
     )
 
 
-@app.route("/audit-log")
+@admin_bp.route("/audit-log")
 @login_required
 def admin_audit_log():
     """平台操作日志页面"""
@@ -1125,7 +1119,7 @@ def admin_audit_log():
     )
 
 
-@app.route("/admins")
+@admin_bp.route("/admins")
 @login_required
 def admin_admins():
     """管理员账户管理页面"""
@@ -1144,7 +1138,7 @@ def admin_admins():
     )
 
 
-@app.route("/admins/add", methods=["POST"])
+@admin_bp.route("/admins/add", methods=["POST"])
 @login_required
 def admin_admins_add():
     """创建管理员"""
@@ -1162,10 +1156,10 @@ def admin_admins_add():
             flash(_safe_api_error(resp, "创建失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_admins"))
+    return redirect(url_for("admin.admin_admins"))
 
 
-@app.route("/admins/<int:admin_id>/edit", methods=["POST"])
+@admin_bp.route("/admins/<int:admin_id>/edit", methods=["POST"])
 @login_required
 def admin_admins_edit(admin_id):
     """编辑管理员"""
@@ -1179,10 +1173,10 @@ def admin_admins_edit(admin_id):
     if password:
         if password != confirm_password:
             flash("两次密码不一致", "error")
-            return redirect(url_for("admin_admins"))
+            return redirect(url_for("admin.admin_admins"))
         if len(password) < 6:
             flash("密码至少6位", "error")
-            return redirect(url_for("admin_admins"))
+            return redirect(url_for("admin.admin_admins"))
         data["password"] = password
     try:
         resp = api_put(f"/api/admin/admins/{admin_id}", token, data)
@@ -1192,10 +1186,10 @@ def admin_admins_edit(admin_id):
             flash(_safe_api_error(resp, "更新失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_admins"))
+    return redirect(url_for("admin.admin_admins"))
 
 
-@app.route("/admins/<int:admin_id>/delete", methods=["POST"])
+@admin_bp.route("/admins/<int:admin_id>/delete", methods=["POST"])
 @login_required
 def admin_admins_delete(admin_id):
     """删除管理员"""
@@ -1208,10 +1202,10 @@ def admin_admins_delete(admin_id):
             flash(_safe_api_error(resp, "删除失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_admins"))
+    return redirect(url_for("admin.admin_admins"))
 
 
-@app.route("/profile", methods=["GET", "POST"])
+@admin_bp.route("/profile", methods=["GET", "POST"])
 @login_required
 def profile():
     token = session.get("admin_token", "")
@@ -1246,7 +1240,7 @@ import re
 # ========== Smart Routing Admin Pages ==========
 
 
-@app.route("/tenants/<tenant_id>/routing")
+@admin_bp.route("/tenants/<tenant_id>/routing")
 @login_required
 def admin_tenant_routing(tenant_id):
     """智能路由管理页面：客服状态 + 会话列表 + 路由配置"""
@@ -1294,7 +1288,7 @@ def admin_tenant_routing(tenant_id):
     )
 
 
-@app.route("/tenants/<tenant_id>/routing/agent/add", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/routing/agent/add", methods=["POST"])
 @login_required
 def admin_tenant_routing_agent_add(tenant_id):
     """添加客服并设置状态"""
@@ -1306,12 +1300,12 @@ def admin_tenant_routing_agent_add(tenant_id):
 
     if not agent_phone:
         flash("客服手机号不能为空", "error")
-        return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
+        return redirect(url_for("admin.admin_tenant_routing", tenant_id=tenant_id))
 
 
 # ========== Admin Panel: Backup Management ==========
 
-@app.route("/tenants/<tenant_id>/backup")
+@admin_bp.route("/tenants/<tenant_id>/backup")
 @login_required
 def admin_tenant_backup(tenant_id):
     """租户备份管理页面"""
@@ -1337,7 +1331,7 @@ def admin_tenant_backup(tenant_id):
     )
 
 
-@app.route("/tenants/<tenant_id>/backup/export", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/backup/export", methods=["POST"])
 @login_required
 def admin_tenant_backup_export(tenant_id):
     """触发备份下载"""
@@ -1359,10 +1353,10 @@ def admin_tenant_backup_export(tenant_id):
             flash(_safe_api_error(resp, "导出失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_backup", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_backup", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/backup/restore", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/backup/restore", methods=["POST"])
 @login_required
 def admin_tenant_backup_restore(tenant_id):
     """从上传的 JSON 文件恢复备份"""
@@ -1370,19 +1364,19 @@ def admin_tenant_backup_restore(tenant_id):
     uploaded_file = request.files.get("backup_file")
     if not uploaded_file or not uploaded_file.filename:
         flash("请选择备份文件", "error")
-        return redirect(url_for("admin_tenant_backup", tenant_id=tenant_id))
+        return redirect(url_for("admin.admin_tenant_backup", tenant_id=tenant_id))
     if not uploaded_file.filename.endswith(".json"):
         flash("请上传 .json 格式的备份文件", "error")
-        return redirect(url_for("admin_tenant_backup", tenant_id=tenant_id))
+        return redirect(url_for("admin.admin_tenant_backup", tenant_id=tenant_id))
     try:
         file_content = uploaded_file.read().decode("utf-8")
         backup_data = json.loads(file_content)
     except json.JSONDecodeError as e:
         flash(f"JSON 格式错误: {e}", "error")
-        return redirect(url_for("admin_tenant_backup", tenant_id=tenant_id))
+        return redirect(url_for("admin.admin_tenant_backup", tenant_id=tenant_id))
     except Exception as e:
         flash(f"文件读取失败: {e}", "error")
-        return redirect(url_for("admin_tenant_backup", tenant_id=tenant_id))
+        return redirect(url_for("admin.admin_tenant_backup", tenant_id=tenant_id))
     try:
         resp = api_post(
             f"/api/admin/tenants/{tenant_id}/backup/restore",
@@ -1402,12 +1396,12 @@ def admin_tenant_backup_restore(tenant_id):
             flash(_safe_api_error(resp, "恢复失败"), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_backup", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_backup", tenant_id=tenant_id))
 
 
 # ========== Admin Panel: Style Config ==========
 
-@app.route("/tenants/<tenant_id>/style", methods=["GET", "POST"])
+@admin_bp.route("/tenants/<tenant_id>/style", methods=["GET", "POST"])
 @login_required
 def admin_tenant_style(tenant_id):
     """租户样式配置页面"""
@@ -1451,7 +1445,7 @@ def admin_tenant_style(tenant_id):
 
 # ========== Admin Panel: App Config ==========
 
-@app.route("/tenants/<tenant_id>/app-config", methods=["GET", "POST"])
+@admin_bp.route("/tenants/<tenant_id>/app-config", methods=["GET", "POST"])
 @login_required
 def admin_tenant_app_config(tenant_id):
     """租户应用配置页面"""
@@ -1513,10 +1507,10 @@ def admin_tenant_app_config(tenant_id):
             flash(_safe_api_error(resp), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_routing", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/routing/agent/<agent_phone>/status", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/routing/agent/<agent_phone>/status", methods=["POST"])
 @login_required
 def admin_tenant_routing_agent_status(tenant_id, agent_phone):
     """更新客服状态"""
@@ -1524,7 +1518,7 @@ def admin_tenant_routing_agent_status(tenant_id, agent_phone):
     status = request.form.get("status", "").strip()
     if status not in ("online", "offline", "busy", "away"):
         flash("无效的状态值", "error")
-        return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
+        return redirect(url_for("admin.admin_tenant_routing", tenant_id=tenant_id))
 
     data = {"agent_phone": agent_phone, "status": status}
     try:
@@ -1535,10 +1529,10 @@ def admin_tenant_routing_agent_status(tenant_id, agent_phone):
             flash(_safe_api_error(resp), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_routing", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/routing/agent/<agent_phone>/skills", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/routing/agent/<agent_phone>/skills", methods=["POST"])
 @login_required
 def admin_tenant_routing_agent_skills(tenant_id, agent_phone):
     """设置客服技能"""
@@ -1569,10 +1563,10 @@ def admin_tenant_routing_agent_skills(tenant_id, agent_phone):
             flash(_safe_api_error(resp), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_routing", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/routing/config", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/routing/config", methods=["POST"])
 @login_required
 def admin_tenant_routing_config(tenant_id):
     """更新路由配置"""
@@ -1605,10 +1599,10 @@ def admin_tenant_routing_config(tenant_id):
             flash(_safe_api_error(resp), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_routing", tenant_id=tenant_id))
 
 
-@app.route("/tenants/<tenant_id>/routing/session/<int:session_id>/close", methods=["POST"])
+@admin_bp.route("/tenants/<tenant_id>/routing/session/<int:session_id>/close", methods=["POST"])
 @login_required
 def admin_tenant_routing_session_close(tenant_id, session_id):
     """关闭会话"""
@@ -1616,7 +1610,7 @@ def admin_tenant_routing_session_close(tenant_id, session_id):
     agent_phone = request.form.get("agent_phone", "").strip()
     if not agent_phone:
         flash("需要指定客服手机号", "error")
-        return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
+        return redirect(url_for("admin.admin_tenant_routing", tenant_id=tenant_id))
 
     try:
         resp = api_post(f"/api/conversation/{session_id}/close",
@@ -1627,10 +1621,10 @@ def admin_tenant_routing_session_close(tenant_id, session_id):
             flash(_safe_api_error(resp), "error")
     except Exception as e:
         flash(f"网络错误: {e}", "error")
-    return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
+    return redirect(url_for("admin.admin_tenant_routing", tenant_id=tenant_id))
 
 
-@app.after_request
+@admin_bp.after_request
 def _inject_csrf_token(response):
     """Inject CSRF token into all HTML forms and set security headers."""
     # Security headers
@@ -1664,4 +1658,12 @@ def _inject_csrf_token(response):
     return response
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=False)
+    # Standalone mode for development
+    from flask import Flask
+    _standalone = Flask(__name__)
+    _standalone.register_blueprint(admin_bp)
+    _standalone.secret_key = SESSION_SECRET
+    _standalone.config["SESSION_COOKIE_HTTPONLY"] = True
+    _standalone.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    _standalone.config["PERMANENT_SESSION_LIFETIME"] = 1800
+    _standalone.run(host="0.0.0.0", port=8080, debug=False)

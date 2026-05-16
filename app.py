@@ -15,7 +15,6 @@ import time
 from functools import wraps
 from threading import Lock
 from flask import Flask, request, jsonify
-from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +52,7 @@ call_ai_model = ai_service.call_model
 # ========== Flask App ==========
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB max request body
+app.secret_key = JWT_SECRET
 
 # ========== Database ==========
 _db_initialized = False
@@ -2205,56 +2205,55 @@ def method_not_allowed(e):
 def internal_error(e):
     return jsonify({"error": "Internal server error"}), 500
 
-# ========== Admin Panel (mounted at /admin) ==========
-def _mount_admin():
-    """Mount the admin Flask app at /admin using DispatcherMiddleware."""
+# ========== Admin Panel (registered as Blueprint at /admin) ==========
+def _register_admin():
+    """Register the admin Blueprint with the main Flask app."""
     import sys
     _admin_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin")
-    # Temporarily add admin dir to sys.path so admin/app.py can import config/utils
-    # We use a unique module name to avoid conflicting with root app.py
     _added = False
     if _admin_dir not in sys.path:
         sys.path.insert(0, _admin_dir)
         _added = True
     try:
         import importlib.util
-        # Invalidate any cached 'app' module from admin dir
         for key in list(sys.modules.keys()):
             if key.startswith('admin.') or key == 'app' and sys.modules[key].__file__ and 'admin' in sys.modules[key].__file__:
                 del sys.modules[key]
-        # Load admin/app.py as _admin_app to avoid name conflict with root app.py
         _spec = importlib.util.spec_from_file_location(
             "_admin_app", os.path.join(_admin_dir, "app.py"))
         _admin_mod = importlib.util.module_from_spec(_spec)
         sys.modules["_admin_app"] = _admin_mod
         _spec.loader.exec_module(_admin_mod)
-        _admin_flask_app = _admin_mod.app
-        # Wire up internal API client so admin calls API without HTTP
+        _admin_bp = _admin_mod.admin_bp
+        # Configure admin blueprint settings on the main app
+        app.config["SESSION_COOKIE_HTTPONLY"] = True
+        app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+        app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB
+        # Wire up internal API client
         with app.test_request_context():
-            _admin_flask_app._api_test_client = app.test_client()
+            app._api_test_client = app.test_client()
         os.environ["ADMIN_API_MODE"] = "internal"
-        return DispatcherMiddleware(app, {"/admin": _admin_flask_app})
+        app.register_blueprint(_admin_bp)
+        logger.info("Admin panel registered successfully at /admin")
+        return True
     except Exception as e:
-        logger.warning("Admin panel not mounted: %s", e, exc_info=True)
-        return None
+        logger.warning("Admin panel not registered: %s", e, exc_info=True)
+        return False
     finally:
         if _added:
             sys.path.remove(_admin_dir)
 
-application = _mount_admin() or app
+_admin_registered = _register_admin()
+
+application = app
 
 @app.route("/_debug/admin-status")
 def _debug_admin_status():
-    """Debug endpoint to check if admin panel is mounted."""
-    from werkzeug.middleware.dispatcher import DispatcherMiddleware
-    is_dm = isinstance(application, DispatcherMiddleware)
-    admin_mounted = False
-    if is_dm:
-        admin_mounted = "/admin" in getattr(application, "mounts", {})
+    """Debug endpoint to check if admin panel is registered."""
     return jsonify({
-        "application_type": type(application).__name__,
-        "admin_mounted": admin_mounted,
+        "admin_registered": _admin_registered,
         "admin_mode": os.environ.get("ADMIN_API_MODE", "not set"),
+        "admin_routes": [str(r) for r in app.url_map.iter_rules() if "admin" in str(r)],
     })
 
 # ========== 启动 ==========
