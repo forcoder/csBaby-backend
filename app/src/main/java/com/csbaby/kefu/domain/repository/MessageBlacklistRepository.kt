@@ -2,14 +2,19 @@ package com.csbaby.kefu.domain.repository
 
 import com.csbaby.kefu.data.local.dao.MessageBlacklistDao
 import com.csbaby.kefu.data.local.entity.MessageBlacklistEntity
+import com.csbaby.kefu.data.remote.CsbabyApiService
+import com.csbaby.kefu.data.remote.DeviceManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class MessageBlacklistRepository @Inject constructor(
-    private val blacklistDao: MessageBlacklistDao
+    private val blacklistDao: MessageBlacklistDao,
+    private val apiService: CsbabyApiService,
+    private val deviceManager: DeviceManager
 ) {
     fun getAllEnabled(): Flow<List<MessageBlacklistEntity>> {
         return blacklistDao.getAllEnabledFlow()
@@ -25,7 +30,7 @@ class MessageBlacklistRepository @Inject constructor(
         description: String = "",
         packageName: String? = null
     ): Long {
-        return blacklistDao.insert(
+        val id = blacklistDao.insert(
             MessageBlacklistEntity(
                 type = type,
                 value = value,
@@ -33,6 +38,9 @@ class MessageBlacklistRepository @Inject constructor(
                 packageName = packageName
             )
         )
+        // Note: Blacklist admin endpoints are admin-only, not device endpoints.
+        // For now, blacklist stays local-only unless admin manages it.
+        return id
     }
 
     suspend fun removeFromBlacklist(id: Long) {
@@ -62,45 +70,37 @@ class MessageBlacklistRepository @Inject constructor(
         return blacklistDao.isBlacklisted(value)
     }
 
-    /**
-     * 检查消息是否应该被过滤
-     */
     suspend fun shouldFilterMessage(
         content: String,
         sender: String? = null,
         packageName: String? = null
     ): Boolean {
-        // 检查内容关键词
         val blacklists = blacklistDao.getAllEnabledFlow().first()
-        
+
         for (blacklist in blacklists) {
-            // 如果指定了包名且不匹配，跳过
             if (blacklist.packageName != null && blacklist.packageName != packageName) {
                 continue
             }
-            
+
             when (blacklist.type) {
                 MessageBlacklistEntity.TYPE_KEYWORD -> {
-                    // 关键词匹配（支持模糊匹配）
                     if (content.contains(blacklist.value, ignoreCase = true)) {
                         return true
                     }
                 }
                 MessageBlacklistEntity.TYPE_SENDER -> {
-                    // 发送者匹配
                     if (sender != null && sender.contains(blacklist.value, ignoreCase = true)) {
                         return true
                     }
                 }
                 MessageBlacklistEntity.TYPE_CONTENT -> {
-                    // 完整内容匹配
                     if (content.trim() == blacklist.value.trim()) {
                         return true
                     }
                 }
             }
         }
-        
+
         return false
     }
 }
