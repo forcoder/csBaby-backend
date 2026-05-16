@@ -1,8 +1,13 @@
 package com.csbaby.kefu.di
 
 import android.content.Context
+import com.csbaby.kefu.BuildConfig
+import com.csbaby.kefu.data.local.PreferencesManager
 import com.csbaby.kefu.data.remote.AIClient
 import com.csbaby.kefu.data.remote.AIClientImpl
+import com.csbaby.kefu.data.remote.AuthInterceptor
+import com.csbaby.kefu.data.remote.CsbabyApiService
+import com.csbaby.kefu.data.remote.DeviceManager
 import com.csbaby.kefu.data.remote.OtaApiService
 import com.csbaby.kefu.data.remote.ShzlApiService
 import com.csbaby.kefu.infrastructure.error.ErrorHandler
@@ -35,11 +40,6 @@ object NetworkModule {
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
-            .addInterceptor {
-                val request = it.request()
-                val response = it.proceed(request)
-                response
-            }
             .build()
     }
 
@@ -58,16 +58,63 @@ object NetworkModule {
     fun provideAIClient(okHttpClient: OkHttpClient): AIClient {
         return AIClientImpl(okHttpClient)
     }
-    
+
     @Provides
     @Singleton
     fun provideErrorHandler(@ApplicationContext context: Context): ErrorHandler {
         return ErrorHandler(context)
     }
-    
+
     @Provides
     @Singleton
     fun providePerformanceMonitor(@ApplicationContext context: Context): com.csbaby.kefu.infrastructure.monitoring.PerformanceMonitor {
         return com.csbaby.kefu.infrastructure.monitoring.PerformanceMonitor(context)
+    }
+
+    // ========== csBaby API ==========
+
+    @Provides
+    @Singleton
+    fun provideAuthInterceptor(preferencesManager: PreferencesManager): AuthInterceptor {
+        return AuthInterceptor(preferencesManager)
+    }
+
+    @Provides
+    @Singleton
+    fun provideCsbabyOkHttpClient(
+        authInterceptor: AuthInterceptor
+    ): OkHttpClient {
+        val loggingInterceptor = HttpLoggingInterceptor().apply {
+            level = HttpLoggingInterceptor.Level.BASIC
+        }
+        return OkHttpClient.Builder()
+            .addInterceptor(authInterceptor)
+            .addInterceptor(loggingInterceptor)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideCsbabyApiService(
+        csbabyOkHttpClient: OkHttpClient
+    ): CsbabyApiService {
+        return Retrofit.Builder()
+            .baseUrl(BuildConfig.API_BASE_URL)
+            .client(csbabyOkHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(CsbabyApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideDeviceManager(
+        apiService: CsbabyApiService,
+        preferencesManager: PreferencesManager
+    ): DeviceManager {
+        return DeviceManager(apiService, preferencesManager)
     }
 }

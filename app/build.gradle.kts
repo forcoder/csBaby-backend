@@ -26,6 +26,7 @@ android {
     buildTypes {
         debug {
             buildConfigField("String", "SHZL_UPLOAD_PASSWORD", "\"Abc@0987\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://csbaby-api.onrender.com\"")
         }
         release {
             isMinifyEnabled = true
@@ -34,6 +35,7 @@ android {
                 "proguard-rules.pro"
             )
             buildConfigField("String", "SHZL_UPLOAD_PASSWORD", "\"Abc@0987\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://csbaby-api.onrender.com\"")
         }
     }
 
