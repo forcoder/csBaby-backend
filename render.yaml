@@ -8,6 +8,8 @@ services:
     envVars:
       - key: JWT_SECRET
         generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
       - key: CORS_ORIGINS
         value: "*"
       - key: ADMIN_PHONE

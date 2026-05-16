@@ -2147,7 +2147,12 @@ def _mount_admin():
         _admin_mod = importlib.util.module_from_spec(_spec)
         sys.modules["_admin_app"] = _admin_mod
         _spec.loader.exec_module(_admin_mod)
-        return DispatcherMiddleware(app, {"/admin": _admin_mod.app})
+        _admin_flask_app = _admin_mod.app
+        # Wire up internal API client so admin calls API without HTTP
+        with app.test_request_context():
+            _admin_flask_app._api_test_client = app.test_client()
+        os.environ["ADMIN_API_MODE"] = "internal"
+        return DispatcherMiddleware(app, {"/admin": _admin_flask_app})
     except Exception as e:
         logger.warning("Admin panel not mounted: %s", e, exc_info=True)
         return None

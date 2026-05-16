@@ -71,6 +71,9 @@ def _check_csrf():
     # Skip CSRF check in testing mode (tests obtain token via GET or session_transaction)
     if app.config.get("TESTING"):
         return
+    # Skip CSRF for login endpoint (user has no session yet)
+    if request.endpoint == "login":
+        return
     # Periodic cleanup of login rate limiter (1% of requests)
     if secrets.randbelow(100) == 0:
         _cleanup_login_attempts()
@@ -104,7 +107,6 @@ def _get_api_client():
     to call the API directly without HTTP. Otherwise, use HTTP requests.
     """
     if os.environ.get("ADMIN_API_MODE") == "internal":
-        # We'll set this after the main app is available
         return getattr(app, "_api_test_client", None)
     return None
 
