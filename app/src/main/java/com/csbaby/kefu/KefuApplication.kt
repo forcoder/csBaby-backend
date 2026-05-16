@@ -4,11 +4,16 @@ import android.app.Application
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.csbaby.kefu.data.sync.SyncWorker
 import com.csbaby.kefu.infrastructure.monitoring.PerformanceMonitor
 import com.csbaby.kefu.infrastructure.ota.OtaScheduler
 import com.csbaby.kefu.infrastructure.reply.ReplyOrchestrator
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -70,6 +75,29 @@ class KefuApplication : Application(), Configuration.Provider {
             } catch (e: Exception) {
                 Timber.e(e, "Failed to start performance monitoring")
                 Log.e(TAG, "Failed to start performance monitoring", e)
+            }
+
+            // 启动数据同步：设备注册 + 全量同步 + 定期同步 Worker
+            CoroutineScope(Dispatchers.Default + SupervisorJob()).launch {
+                try {
+                    val syncManager = entryPoint.syncManager()
+                    Timber.d("Starting initial data sync...")
+                    val result = syncManager.fullSync()
+                    if (result.success) {
+                        Timber.i("Initial sync completed: rules=${result.rulesSynced}, models=${result.modelsSynced}, history=${result.historySynced}")
+                    } else {
+                        Timber.w("Initial sync partial failure: ${result.errors}")
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Initial sync failed, using local cache")
+                }
+            }
+
+            // 注册定期同步 Worker
+            try {
+                SyncWorker.enqueue(this@KefuApplication)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to enqueue sync worker")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Hilt EntryPoint bootstrap failed — app will run without auto-reply", e)

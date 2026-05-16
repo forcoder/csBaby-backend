@@ -1,6 +1,10 @@
 package com.csbaby.kefu.infrastructure.ai
 
 import com.csbaby.kefu.data.remote.AIClient
+import com.csbaby.kefu.data.remote.CsbabyApiService
+import com.csbaby.kefu.data.remote.DeviceManager
+import com.csbaby.kefu.data.remote.dto.GenerateRequest
+import com.csbaby.kefu.data.remote.dto.GenerateResponse
 import com.csbaby.kefu.domain.model.AIModelConfig
 import com.csbaby.kefu.domain.model.ModelType
 import com.csbaby.kefu.domain.model.UserStyleProfile
@@ -13,11 +17,14 @@ import javax.inject.Singleton
 
 /**
  * AI Service for handling AI model interactions.
+ * Supports both local AI client and backend API for generation.
  */
 @Singleton
 class AIService @Inject constructor(
     private val aiClient: AIClient,
-    private val aiModelRepository: AIModelRepository
+    private val aiModelRepository: AIModelRepository,
+    private val csbabyApi: CsbabyApiService,
+    private val deviceManager: DeviceManager
 ) {
     
     // AI response cache
@@ -366,4 +373,29 @@ class AIService @Inject constructor(
         val professionalism: Float,
         val avgWordsPerSentence: Float
     )
+
+    /**
+     * 通过后端 API 生成回复
+     * 后端会先尝试关键词匹配，无匹配时调用 AI 模型
+     * 网络不可用时回退到本地 AIClient
+     */
+    suspend fun generateViaBackend(
+        message: String,
+        context: Map<String, String> = emptyMap(),
+        style: Map<String, Any> = emptyMap()
+    ): Result<String> {
+        return try {
+            deviceManager.ensureRegistered()
+            val request = GenerateRequest(
+                message = message,
+                context = context,
+                style = style
+            )
+            val response = csbabyApi.generateReply(request)
+            Result.success(response.reply)
+        } catch (e: Exception) {
+            Timber.w(e, "Backend AI generation failed, falling back to local")
+            Result.failure(e)
+        }
+    }
 }
