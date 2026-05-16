@@ -783,7 +783,8 @@ def _init_admin():
             phone = os.environ.get("ADMIN_PHONE", "13800138000")
             password = os.environ.get("ADMIN_PASSWORD")
             if not password:
-                raise RuntimeError("ADMIN_PASSWORD environment variable must be set")
+                logger.warning("ADMIN_PASSWORD not set, skipping default admin creation")
+                return
             db.execute(
                 "INSERT INTO admin_accounts (phone, password_hash, is_active) VALUES (?, ?, 1)",
                 (phone, _hash_password(password))
