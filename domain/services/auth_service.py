@@ -1,9 +1,8 @@
-import hashlib
-import hmac
-import base64
 import json
 import time
 from typing import Optional
+
+import jwt
 
 
 class AuthService:
@@ -12,44 +11,16 @@ class AuthService:
         self._expire_days = jwt_expire_days
 
     def generate_token(self, device_id: str) -> str:
-        header = base64.urlsafe_b64encode(
-            json.dumps({"alg": "HS256", "typ": "JWT"}).encode()
-        ).rstrip(b"=").decode()
-        payload_data = {
+        payload = {
             "device_id": device_id,
             "exp": int(time.time()) + self._expire_days * 86400,
             "iat": int(time.time()),
         }
-        payload = base64.urlsafe_b64encode(
-            json.dumps(payload_data).encode()
-        ).rstrip(b"=").decode()
-        signature = base64.urlsafe_b64encode(
-            hmac.new(self._secret.encode(), f"{header}.{payload}".encode(), hashlib.sha256).digest()
-        ).rstrip(b"=").decode()
-        return f"{header}.{payload}.{signature}"
+        return jwt.encode(payload, self._secret, algorithm="HS256")
 
     def verify_token(self, token: str) -> Optional[str]:
         try:
-            parts = token.split(".")
-            if len(parts) != 3:
-                return None
-            header, payload, signature = parts
-            expected_sig = base64.urlsafe_b64encode(
-                hmac.new(self._secret.encode(), f"{header}.{payload}".encode(), hashlib.sha256).digest()
-            ).rstrip(b"=").decode()
-            if not hmac.compare_digest(signature, expected_sig):
-                return None
-            remainder = len(payload) % 4
-            if remainder == 1:
-                # Invalid base64 length - skip padding, let decode fail
-                payload_padded = payload + "==="
-            elif remainder:
-                payload_padded = payload + "=" * (4 - remainder)
-            else:
-                payload_padded = payload
-            payload_data = json.loads(base64.urlsafe_b64decode(payload_padded.encode()))
-            if payload_data.get("exp", 0) < time.time():
-                return None
-            return payload_data.get("device_id")
-        except Exception:
+            payload = jwt.decode(token, self._secret, algorithms=["HS256"])
+            return payload.get("device_id")
+        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
             return None

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -23,10 +25,18 @@ android {
         }
     }
 
+    val localProperties = Properties()
+    val localPropsFile = rootProject.file("local.properties")
+    if (localPropsFile.exists()) {
+        localProperties.load(localPropsFile.inputStream())
+    }
+    val shzlPassword = localProperties.getProperty("SHZL_UPLOAD_PASSWORD", "")
+    val apiBaseUrl = localProperties.getProperty("API_BASE_URL", "https://csbaby-api.onrender.com")
+
     buildTypes {
         debug {
-            buildConfigField("String", "SHZL_UPLOAD_PASSWORD", "\"Abc@0987\"")
-            buildConfigField("String", "API_BASE_URL", "\"https://csbaby-api2.onrender.com\"")
+            buildConfigField("String", "SHZL_UPLOAD_PASSWORD", "\"$shzlPassword\"")
+            buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         }
         release {
             isMinifyEnabled = true
@@ -34,8 +44,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            buildConfigField("String", "SHZL_UPLOAD_PASSWORD", "\"Abc@0987\"")
-            buildConfigField("String", "API_BASE_URL", "\"https://csbaby-api2.onrender.com\"")
+            buildConfigField("String", "SHZL_UPLOAD_PASSWORD", "\"$shzlPassword\"")
+            buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         }
     }
 

@@ -21,15 +21,15 @@ const PROJECT_ROOT = join(__dirname, '../..');
 const DATA_DIR = join(PROJECT_ROOT, '.claude-flow', 'data');
 const STORE_PATH = join(DATA_DIR, 'auto-memory-store.json');
 
-// Colors
+// Colors - all output goes to stderr to avoid polluting stdout for hook passthrough
 const GREEN = '\x1b[0;32m';
 const CYAN = '\x1b[0;36m';
 const DIM = '\x1b[2m';
 const RESET = '\x1b[0m';
 
-const log = (msg) => console.log(`${CYAN}[AutoMemory] ${msg}${RESET}`);
-const success = (msg) => console.log(`${GREEN}[AutoMemory] ✓ ${msg}${RESET}`);
-const dim = (msg) => console.log(`  ${DIM}${msg}${RESET}`);
+const log = (msg) => console.error(`${CYAN}[AutoMemory] ${msg}${RESET}`);
+const success = (msg) => console.error(`${GREEN}[AutoMemory] ✓ ${msg}${RESET}`);
+const dim = (msg) => console.error(`  ${DIM}${msg}${RESET}`);
 
 // Ensure data dir
 if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
@@ -139,20 +139,19 @@ async function loadMemoryPackage() {
     } catch { /* fall through */ }
   }
 
-  // Strategy 2: Use createRequire for CJS-style resolution (handles nested node_modules
-  // when installed as a transitive dependency via npx ruflo / npx claude-flow)
+  // Strategy 2: Use createRequire for CJS-style resolution
   try {
     const { createRequire } = await import('module');
     const require = createRequire(join(PROJECT_ROOT, 'package.json'));
     return require('@claude-flow/memory');
   } catch { /* fall through */ }
 
-  // Strategy 3: ESM import (works when @claude-flow/memory is a direct dependency)
+  // Strategy 3: ESM import
   try {
     return await import('@claude-flow/memory');
   } catch { /* fall through */ }
 
-  // Strategy 4: Walk up from PROJECT_ROOT looking for @claude-flow/memory in any node_modules
+  // Strategy 4: Walk up from PROJECT_ROOT looking for @claude-flow/memory
   let searchDir = PROJECT_ROOT;
   const { parse } = await import('path');
   while (searchDir !== parse(searchDir).root) {
@@ -184,7 +183,6 @@ function readConfig() {
 
   try {
     const yaml = readFileSync(configPath, 'utf-8');
-    // Simple YAML parser for the memory section
     const getBool = (key) => {
       const match = yaml.match(new RegExp(`${key}:\\s*(true|false)`, 'i'));
       return match ? match[1] === 'true' : undefined;
@@ -227,7 +225,6 @@ async function doImport() {
     syncMode: 'on-session-end',
   };
 
-  // Wire learning if enabled and available
   if (config.learningBridge.enabled && memPkg.LearningBridge) {
     bridgeConfig.learning = {
       sonaMode: config.learningBridge.sonaMode,
@@ -237,7 +234,6 @@ async function doImport() {
     };
   }
 
-  // Wire graph if enabled and available
   if (config.memoryGraph.enabled && memPkg.MemoryGraph) {
     bridgeConfig.graph = {
       pageRankDamping: config.memoryGraph.pageRankDamping,
@@ -310,7 +306,6 @@ async function doSync() {
     dim(`├─ Categories updated: ${syncResult.categories?.join(', ') || 'none'}`);
     dim(`└─ Backend entries: ${entryCount}`);
 
-    // Curate MEMORY.md index with graph-aware ordering
     await bridge.curateIndex();
     success('Curated MEMORY.md index');
   } catch (err) {
@@ -325,25 +320,26 @@ async function doStatus() {
   const memPkg = await loadMemoryPackage();
   const config = readConfig();
 
-  console.log('\n=== Auto Memory Bridge Status ===\n');
-  console.log(`  Package:        ${memPkg ? '✅ Available' : '❌ Not found'}`);
-  console.log(`  Store:          ${existsSync(STORE_PATH) ? '✅ ' + STORE_PATH : '⏸ Not initialized'}`);
-  console.log(`  LearningBridge: ${config.learningBridge.enabled ? '✅ Enabled' : '⏸ Disabled'}`);
-  console.log(`  MemoryGraph:    ${config.memoryGraph.enabled ? '✅ Enabled' : '⏸ Disabled'}`);
-  console.log(`  AgentScopes:    ${config.agentScopes.enabled ? '✅ Enabled' : '⏸ Disabled'}`);
+  // Status output goes to stderr to avoid hook validation issues
+  console.error('\n=== Auto Memory Bridge Status ===\n');
+  console.error(`  Package:        ${memPkg ? '✅ Available' : '❌ Not found'}`);
+  console.error(`  Store:          ${existsSync(STORE_PATH) ? '✅ ' + STORE_PATH : '⏸ Not initialized'}`);
+  console.error(`  LearningBridge: ${config.learningBridge.enabled ? '✅ Enabled' : '⏸ Disabled'}`);
+  console.error(`  MemoryGraph:    ${config.memoryGraph.enabled ? '✅ Enabled' : '⏸ Disabled'}`);
+  console.error(`  AgentScopes:    ${config.agentScopes.enabled ? '✅ Enabled' : '⏸ Disabled'}`);
 
   if (existsSync(STORE_PATH)) {
     try {
       const data = JSON.parse(readFileSync(STORE_PATH, 'utf-8'));
-      console.log(`  Entries:        ${Array.isArray(data) ? data.length : 0}`);
+      console.error(`  Entries:        ${Array.isArray(data) ? data.length : 0}`);
     } catch { /* ignore */ }
   }
 
-  console.log('');
+  console.error('');
 }
 
 // ============================================================================
-// Main
+// Main — reads stdin, executes command, passthrough stdin to stdout
 // ============================================================================
 
 const command = process.argv[2] || 'status';
@@ -351,18 +347,28 @@ const command = process.argv[2] || 'status';
 // Suppress unhandled rejection warnings from dynamic import() failures
 process.on('unhandledRejection', () => {});
 
-try {
-  switch (command) {
-    case 'import': await doImport(); break;
-    case 'sync': await doSync(); break;
-    case 'status': await doStatus(); break;
-    default:
-      console.log('Usage: auto-memory-hook.mjs <import|sync|status>');
-      break;
+// Read all stdin for passthrough
+let stdinData = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', chunk => { stdinData += chunk; });
+process.stdin.on('end', async () => {
+  try {
+    switch (command) {
+      case 'import': await doImport(); break;
+      case 'sync': await doSync(); break;
+      case 'status': await doStatus(); break;
+      default:
+        console.error('Usage: auto-memory-hook.mjs <import|sync|status>');
+        break;
+    }
+  } catch (err) {
+    try { dim(`Error (non-critical): ${err.message}`); } catch (_) {}
   }
-} catch (err) {
-  // Hooks must never crash Claude Code - fail silently
-  try { dim(`Error (non-critical): ${err.message}`); } catch (_) {}
-}
-// Force clean exit — process.exitCode alone isn't enough if async errors override it
-process.exit(0);
+  // Passthrough stdin to stdout so Claude Code hook validation succeeds
+  if (stdinData.trim()) {
+    process.stdout.write(stdinData);
+  } else {
+    process.stdout.write('{}');
+  }
+  process.exit(0);
+});

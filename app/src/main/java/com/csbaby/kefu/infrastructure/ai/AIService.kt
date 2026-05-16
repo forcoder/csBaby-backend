@@ -26,27 +26,36 @@ class AIService @Inject constructor(
     private val deviceManager: DeviceManager
 ) {
     
-    // AI response cache
-    private val responseCache = ConcurrentHashMap<String, CachedResponse>()
+    // AI response cache - LRU with expiry
     private val CACHE_SIZE = 500
     private val CACHE_EXPIRY_MS = 3600000L // 1 hour
-    
+    private val responseCache = object : android.util.LruCache<String, CachedResponse>(CACHE_SIZE) {
+        override fun entryRemoved(
+            evicted: Boolean,
+            key: String?,
+            oldValue: CachedResponse?,
+            newValue: CachedResponse?
+        ) {
+            if (evicted) Timber.d("AI cache evicted: $key")
+        }
+    }
+
     // Retry settings
     private val MAX_RETRIES = 3
     private val RETRY_DELAY_MS = 1000L
-    
+
     data class CachedResponse(
         val response: String,
         val timestamp: Long
     )
-    
+
     /**
      * Generate cache key for AI requests
      */
     private fun generateCacheKey(prompt: String, systemPrompt: String?, modelId: Long?): String {
         return "${modelId ?: "default"}:${systemPrompt ?: ""}:$prompt"
     }
-    
+
     /**
      * Get cached response if available and not expired
      */
@@ -62,17 +71,12 @@ class AIService @Inject constructor(
         }
         return null
     }
-    
+
     /**
      * Cache AI response
      */
     private fun cacheResponse(key: String, response: String) {
-        if (responseCache.size >= CACHE_SIZE) {
-            // Remove oldest entry
-            val oldestKey = responseCache.entries.minByOrNull { it.value.timestamp }?.key
-            oldestKey?.let { responseCache.remove(it) }
-        }
-        responseCache[key] = CachedResponse(response, System.currentTimeMillis())
+        responseCache.put(key, CachedResponse(response, System.currentTimeMillis()))
     }
     
     /**
@@ -126,19 +130,17 @@ class AIService @Inject constructor(
         }
 
         // If default model failed or reached limit, try other models
-        val otherModels = mutableListOf<AIModelConfig>()
-        aiModelRepository.getAllModels().collect {
-            otherModels.addAll(it.filter {
-                model -> model.isEnabled && !hasReachedUsageLimit(model) && model.id != defaultModel?.id
-            })
-        }
+        val allModels: List<AIModelConfig> = aiModelRepository.getAllModels().first()
+        val otherModels = allModels.filter { model ->
+            model.isEnabled && !hasReachedUsageLimit(model) && model.id != defaultModel?.id
+        }.toMutableList()
 
         if (otherModels.isEmpty()) {
             return Result.failure(Exception("No enabled models available or all reached usage limit"))
         }
 
         // Sort by last used
-        val sortedModels = otherModels.sortedByDescending { it.lastUsed }
+        val sortedModels = otherModels.sortedByDescending { model -> model.lastUsed }
 
         // Try each model in order until one succeeds
         var lastException: Exception? = null

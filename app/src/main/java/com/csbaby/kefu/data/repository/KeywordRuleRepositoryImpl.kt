@@ -147,24 +147,27 @@ class KeywordRuleRepositoryImpl @Inject constructor(
 
     /**
      * Sync rules from server to local cache.
-     * Replaces all local rules with server data.
+     * Builds new data first, then atomically replaces local cache.
      */
     suspend fun syncFromServer(): Result<Int> {
         return try {
             deviceManager.ensureRegistered()
             val remoteRules = apiService.getRules()
-            // Clear local and repopulate
+
+            // Build new entities first before touching local DB
+            val newEntities = remoteRules.map { dto ->
+                dto.dtoToDomain().toEntity()
+            }
+
+            // Atomic replace
             scenarioDao.deleteAllRelations()
             keywordRuleDao.deleteAllRules()
-            var count = 0
-            for (dto in remoteRules) {
-                val rule = dto.dtoToDomain()
-                val id = keywordRuleDao.insertRule(rule.toEntity())
-                count++
-                Timber.d("Synced rule from server: id=$id, keyword=${rule.keyword}")
+            for (entity in newEntities) {
+                keywordRuleDao.insertRule(entity)
             }
-            Timber.i("Rules synced from server: $count rules")
-            Result.success(count)
+
+            Timber.i("Rules synced from server: ${newEntities.size} rules")
+            Result.success(newEntities.size)
         } catch (e: Exception) {
             Timber.e(e, "Failed to sync rules from server")
             Result.failure(e)

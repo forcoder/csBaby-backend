@@ -14,6 +14,10 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 interface AIClient {
     suspend fun generateCompletion(
@@ -64,13 +68,14 @@ class AIClientImpl @Inject constructor(
     /**
      * Check if request is allowed based on rate limiting
      */
-    private val rateLimitLock = Any()
+    private val rateLimitLocks = ConcurrentHashMap<String, Any>()
 
     private fun isRequestAllowed(apiKey: String): Boolean {
         val now = System.currentTimeMillis()
         val timestamps = requestTimestamps.getOrPut(apiKey) { mutableListOf() }
+        val lock = rateLimitLocks.getOrPut(apiKey) { Any() }
 
-        synchronized(rateLimitLock) {
+        synchronized(lock) {
             // Remove timestamps outside the window
             timestamps.removeIf { now - it > REQUEST_WINDOW_MS }
 
@@ -125,7 +130,7 @@ class AIClientImpl @Inject constructor(
             Timber.d("AI Request Headers: $headers")
             
             val client = getConfiguredClient()
-            val response = client.newCall(request).execute()
+            val response = withContext(Dispatchers.IO) { client.newCall(request).execute() }
             val responseBody = response.body?.string() ?: return Result.failure(Exception("Empty response"))
 
             Timber.d("AI Response Status: ${response.code}")
@@ -279,8 +284,8 @@ class AIClientImpl @Inject constructor(
             }
 
             val request = requestBuilder.build()
-            val response = client.newCall(request).execute()
-            val responseBody = response.body?.string() 
+            val response = withContext(Dispatchers.IO) { client.newCall(request).execute() }
+            val responseBody = response.body?.string()
                 ?: return Result.failure(Exception("Empty response"))
 
             Timber.d("Raw API Response from $endpoint: ${responseBody.take(200)}...")

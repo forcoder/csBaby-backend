@@ -761,10 +761,11 @@ def restore_backup():
 # Admin accounts persisted in SQLite
 _admin_table_initialized = False
 
-def _ensure_admin_table():
-    global _admin_table_initialized
-    if not _admin_table_initialized:
-        db = get_connection()
+
+def _ensure_admin_tables():
+    """Ensure all admin-related tables exist (idempotent, uses CREATE IF NOT EXISTS)."""
+    db = get_connection()
+    try:
         db.executescript("""
             CREATE TABLE IF NOT EXISTS admin_accounts (
                 phone TEXT PRIMARY KEY,
@@ -772,9 +773,24 @@ def _ensure_admin_table():
                 is_active INTEGER DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS admin_sessions (
+                token TEXT PRIMARY KEY,
+                phone TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                expires_at DATETIME NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_admin_sessions_phone ON admin_sessions(phone);
+            CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at);
         """)
         db.commit()
+    finally:
         db.close()
+
+
+def _ensure_admin_table():
+    global _admin_table_initialized
+    if not _admin_table_initialized:
+        _ensure_admin_tables()
         _admin_table_initialized = True
 
 def _init_admin():
@@ -844,6 +860,7 @@ def _admin_exists_in_db(phone: str) -> bool:
 
 def _create_admin_session(phone: str) -> str:
     """Create a persistent admin session token with expiry."""
+    _ensure_admin_tables()
     import datetime
     token = secrets.token_hex(32)
     expires_at = datetime.datetime.utcnow() + datetime.timedelta(hours=_ADMIN_SESSION_EXPIRY_HOURS)
@@ -861,6 +878,7 @@ def _create_admin_session(phone: str) -> str:
 
 def _validate_admin_session(token: str) -> Optional[str]:
     """Validate admin session token. Returns phone if valid, None otherwise."""
+    _ensure_admin_tables()
     import datetime
     db = get_connection()
     try:
@@ -883,6 +901,7 @@ def _validate_admin_session(token: str) -> Optional[str]:
 
 def _cleanup_expired_sessions():
     """Remove expired admin sessions."""
+    _ensure_admin_tables()
     import datetime
     db = get_connection()
     try:

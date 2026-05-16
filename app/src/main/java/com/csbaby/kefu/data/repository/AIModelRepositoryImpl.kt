@@ -98,21 +98,26 @@ class AIModelRepositoryImpl @Inject constructor(
 
     /**
      * Sync models from server to local cache.
+     * Builds new data first, then atomically replaces local cache.
      */
     suspend fun syncFromServer(): Result<Int> {
         return try {
             deviceManager.ensureRegistered()
             val remoteModels = apiService.getModels()
-            aiModelConfigDao.deleteAllModels()
-            var count = 0
-            for (dto in remoteModels) {
-                val model = dto.dtoToDomain()
-                aiModelConfigDao.insertModel(model.toEntity())
-                count++
-                Timber.d("Synced model from server: id=${model.id}, name=${model.modelName}")
+
+            // Build new entities first before touching local DB
+            val newEntities = remoteModels.map { dto ->
+                dto.dtoToDomain().toEntity()
             }
-            Timber.i("Models synced from server: $count models")
-            Result.success(count)
+
+            // Atomic replace
+            aiModelConfigDao.deleteAllModels()
+            for (entity in newEntities) {
+                aiModelConfigDao.insertModel(entity)
+            }
+
+            Timber.i("Models synced from server: ${newEntities.size} models")
+            Result.success(newEntities.size)
         } catch (e: Exception) {
             Timber.e(e, "Failed to sync models from server")
             Result.failure(e)

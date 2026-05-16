@@ -34,7 +34,7 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
         val loggingInterceptor = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.HEADERS else HttpLoggingInterceptor.Level.NONE
         }
 
         return OkHttpClient.Builder()
@@ -42,16 +42,6 @@ object NetworkModule {
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
-            .build()
-    }
-
-    @Provides
-    @Singleton
-    fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
-        return Retrofit.Builder()
-            .baseUrl("https://api.openai.com/")
-            .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
             .build()
     }
 
@@ -116,8 +106,9 @@ object NetworkModule {
     @Singleton
     fun provideDeviceManager(
         apiService: CsbabyApiService,
-        preferencesManager: PreferencesManager
+        preferencesManager: PreferencesManager,
+        authInterceptor: AuthInterceptor
     ): DeviceManager {
-        return DeviceManager(apiService, preferencesManager)
+        return DeviceManager(apiService, preferencesManager, authInterceptor)
     }
 }

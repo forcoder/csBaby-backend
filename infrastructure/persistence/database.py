@@ -188,6 +188,15 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_agent_skills_phone ON agent_skills(agent_phone);
         CREATE INDEX IF NOT EXISTS idx_sessions_tenant ON sessions(tenant_id);
         CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+
+        CREATE TABLE IF NOT EXISTS admin_sessions (
+            token TEXT PRIMARY KEY,
+            phone TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_admin_sessions_phone ON admin_sessions(phone);
+        CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at);
     """)
     db.commit()
     db.close()

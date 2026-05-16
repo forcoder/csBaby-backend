@@ -18,7 +18,8 @@ import javax.inject.Singleton
 @Singleton
 class DeviceManager @Inject constructor(
     private val apiService: CsbabyApiService,
-    private val preferencesManager: PreferencesManager
+    private val preferencesManager: PreferencesManager,
+    private val authInterceptor: AuthInterceptor
 ) {
     private val mutex = Mutex()
 
@@ -45,6 +46,7 @@ class DeviceManager @Inject constructor(
     suspend fun reRegister(): String {
         return mutex.withLock {
             preferencesManager.clearAuthToken()
+            authInterceptor.clearToken()
             registerDevice()
         }
     }
@@ -70,6 +72,7 @@ class DeviceManager @Inject constructor(
             val response: RegisterResponse = apiService.register(request)
             preferencesManager.saveAuthToken(response.token)
             preferencesManager.saveDeviceId(response.deviceId)
+            authInterceptor.updateToken(response.token)
             Timber.i("Device registered: ${response.deviceId}")
             return response.token
         } catch (e: Exception) {
