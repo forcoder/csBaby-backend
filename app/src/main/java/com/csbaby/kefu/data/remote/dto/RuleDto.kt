@@ -12,7 +12,7 @@ data class RuleDto(
     @SerializedName("target_type") val targetType: String = "ALL",
     @SerializedName("target_names") val targetNames: String = "[]",
     @SerializedName("priority") val priority: Int = 0,
-    @SerializedName("enabled") val enabled: Boolean = true,
+    @SerializedName("enabled") val enabled: Int = 1,
     @SerializedName("created_at") val createdAt: String = "",
     @SerializedName("updated_at") val updatedAt: String = ""
 )

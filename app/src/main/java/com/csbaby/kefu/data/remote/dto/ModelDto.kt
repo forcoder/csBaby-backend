@@ -12,8 +12,8 @@ data class ModelConfigDto(
     @SerializedName("api_endpoint") val apiEndpoint: String = "",
     @SerializedName("temperature") val temperature: Double = 0.7,
     @SerializedName("max_tokens") val maxTokens: Int = 2000,
-    @SerializedName("is_default") val isDefault: Boolean = false,
-    @SerializedName("enabled") val enabled: Boolean = true,
+    @SerializedName("is_default") val isDefault: Int = 0,
+    @SerializedName("enabled") val enabled: Int = 1,
     @SerializedName("created_at") val createdAt: String = "",
     @SerializedName("updated_at") val updatedAt: String = ""
 )

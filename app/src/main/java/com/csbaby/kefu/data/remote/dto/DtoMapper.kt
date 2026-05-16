@@ -14,7 +14,7 @@ fun RuleDto.toDomain(): KeywordRule = KeywordRule(
     targetType = enumValueOrDefault(targetType, RuleTargetType.ALL),
     targetNames = parseTargetNames(targetNames),
     priority = priority,
-    enabled = enabled,
+    enabled = enabled != 0,
     createdAt = createdAt.toLongOrNull() ?: 0L,
     updatedAt = updatedAt.toLongOrNull() ?: 0L
 )
@@ -29,7 +29,7 @@ fun KeywordRule.toDto(): RuleDto = RuleDto(
     targetType = targetType.name,
     targetNames = com.google.gson.Gson().toJson(targetNames),
     priority = priority,
-    enabled = enabled,
+    enabled = if (enabled) 1 else 0,
     createdAt = createdAt.toString(),
     updatedAt = updatedAt.toString()
 )
@@ -45,8 +45,8 @@ fun ModelConfigDto.toDomain(): AIModelConfig = AIModelConfig(
     apiEndpoint = apiEndpoint,
     temperature = temperature.toFloat(),
     maxTokens = maxTokens,
-    isDefault = isDefault,
-    isEnabled = enabled,
+    isDefault = isDefault != 0,
+    isEnabled = enabled != 0,
     monthlyCost = 0.0,
     lastUsed = 0L,
     createdAt = createdAt.toLongOrNull() ?: 0L
@@ -62,8 +62,8 @@ fun AIModelConfig.toDto(): ModelConfigDto = ModelConfigDto(
     apiEndpoint = apiEndpoint,
     temperature = temperature.toDouble(),
     maxTokens = maxTokens,
-    isDefault = isDefault,
-    enabled = isEnabled,
+    isDefault = if (isDefault) 1 else 0,
+    enabled = if (isEnabled) 1 else 0,
     createdAt = createdAt.toString(),
     updatedAt = ""
 )
