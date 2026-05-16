@@ -54,10 +54,6 @@ class PreferencesManager @Inject constructor(
         val SEARCH_MODE = stringPreferencesKey("search_mode") // KEYWORD, SEMANTIC, HYBRID
         // Theme settings
         val THEME_MODE = stringPreferencesKey("theme_mode") // light, dark, system
-        // Server sync settings
-        val AUTH_TOKEN = stringPreferencesKey("auth_token")
-        val DEVICE_ID = stringPreferencesKey("device_id")
-        val LAST_SYNC_TIMESTAMP = longPreferencesKey("last_sync_timestamp")
     }
 
     // Data class for user preferences
@@ -110,42 +106,6 @@ class PreferencesManager @Inject constructor(
                 themeMode = preferences[PreferencesKeys.THEME_MODE] ?: "system"
             )
         }
-
-    // ========== Server sync preferences ==========
-
-    val authTokenFlow: Flow<String> = dataStore.data
-        .catch { exception ->
-            if (exception is IOException) emit(emptyPreferences()) else throw exception
-        }
-        .map { it[PreferencesKeys.AUTH_TOKEN] ?: "" }
-
-    val deviceIdFlow: Flow<String> = dataStore.data
-        .catch { exception ->
-            if (exception is IOException) emit(emptyPreferences()) else throw exception
-        }
-        .map { it[PreferencesKeys.DEVICE_ID] ?: "" }
-
-    val lastSyncTimestampFlow: Flow<Long> = dataStore.data
-        .catch { exception ->
-            if (exception is IOException) emit(emptyPreferences()) else throw exception
-        }
-        .map { it[PreferencesKeys.LAST_SYNC_TIMESTAMP] ?: 0L }
-
-    suspend fun saveAuthToken(token: String) {
-        dataStore.edit { it[PreferencesKeys.AUTH_TOKEN] = token }
-    }
-
-    suspend fun clearAuthToken() {
-        dataStore.edit { it.remove(PreferencesKeys.AUTH_TOKEN) }
-    }
-
-    suspend fun saveDeviceId(id: String) {
-        dataStore.edit { it[PreferencesKeys.DEVICE_ID] = id }
-    }
-
-    suspend fun updateLastSyncTimestamp(ts: Long) {
-        dataStore.edit { it[PreferencesKeys.LAST_SYNC_TIMESTAMP] = ts }
-    }
 
 
     suspend fun updateMonitoringEnabled(enabled: Boolean) {

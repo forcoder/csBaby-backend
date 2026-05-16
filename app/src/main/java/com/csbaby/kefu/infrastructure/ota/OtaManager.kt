@@ -185,17 +185,17 @@ class OtaManager @Inject constructor(
                                                     val uri = Uri.parse(localUri)
                                                     if (uri.scheme == "file") {
                                                         val file = File(uri.path ?: "")
-                                                        if (file.exists()) apkFile = file
-                                                            else {
-                                                                // File path from URI may be encoded; try the constructed path
-                                                                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                                                                val appDir = File(downloadsDir, "KefuUpdates")
-                                                                _availableUpdate.value?.let { update ->
-                                                                    val fileName = "kefu_v${update.versionName}_${update.versionCode}.apk"
-                                                                    apkFile = File(appDir, fileName)
-                                                                }
+                                                        if (file.exists()) {
+                                                            apkFile = file
+                                                        } else {
+                                                            // File path from URI may be encoded; try the constructed path
+                                                            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                                                            val appDir = File(downloadsDir, "KefuUpdates")
+                                                            _availableUpdate.value?.let { update ->
+                                                                val fileName = "kefu_v${update.versionName}_${update.versionCode}.apk"
+                                                                apkFile = File(appDir, fileName)
                                                             }
-                                                        } catch (_: Exception) {}
+                                                        }
                                                     }
                                                 } catch (_: Exception) {}
                                             }
@@ -207,7 +207,9 @@ class OtaManager @Inject constructor(
                                                 val localFilename = cursor.getString(localFilenameIndex)
                                                 if (!localFilename.isNullOrEmpty()) {
                                                     val file = File(localFilename)
-                                                    if (file.exists()) apkFile = file
+                                                    if (file.exists()) {
+                                                        apkFile = file
+                                                    }
                                                 }
                                             }
                                         }
@@ -218,7 +220,9 @@ class OtaManager @Inject constructor(
                                             _availableUpdate.value?.let { update ->
                                                 val fileName = "kefu_v${update.versionName}_${update.versionCode}.apk"
                                                 val file = File(appDir, fileName)
-                                                if (file.exists()) apkFile = file
+                                                if (file.exists()) {
+                                                    apkFile = file
+                                                }
                                             }
                                         }
                                         apkFile?.let {

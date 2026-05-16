@@ -74,3 +74,6 @@ graphify-out/
 htmlcov/
 csBaby.db
 gbrain/
+
+# swarm
+.swarm/

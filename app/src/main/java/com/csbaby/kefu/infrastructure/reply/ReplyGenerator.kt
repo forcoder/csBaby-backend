@@ -148,36 +148,17 @@ class ReplyGenerator @Inject constructor(
         // Build user prompt
         val userPrompt = buildUserPrompt(message, context)
 
-        // Generate reply - try local AI first, fall back to backend
-        var aiResult = aiService.generateCompletion(
+        // Generate reply
+        val result = aiService.generateCompletion(
             prompt = userPrompt,
             systemPrompt = systemPrompt,
             temperature = 0.7f,
             maxTokens = 500
         )
 
-        // If local AI fails, try backend API
-        if (aiResult.isFailure) {
-            val backendResult = aiService.generateViaBackend(
-                message = message,
-                context = mapOf(
-                    "platform" to context.appPackage,
-                    "customer_name" to (context.conversationTitle ?: ""),
-                    "house_name" to (context.propertyName ?: "")
-                ),
-                style = if (styleProfile != null) mapOf(
-                    "formality" to styleProfile.formalityLevel,
-                    "enthusiasm" to styleProfile.enthusiasmLevel,
-                    "professionalism" to styleProfile.professionalismLevel
-                ) else emptyMap()
-            )
-            if (backendResult.isSuccess) {
-                aiResult = backendResult
-            }
-        }
-
-        return aiResult.fold(
+        return result.fold(
             onSuccess = { reply ->
+                // Apply style adjustment if enabled
                 val finalReply = if (preferences.styleLearningEnabled && styleProfile != null) {
                     styleLearningEngine.applyStyle(reply, context.userId).getOrDefault(reply)
                 } else {
@@ -201,7 +182,7 @@ class ReplyGenerator @Inject constructor(
             },
             onFailure = { error ->
                 if (isBaijuyiContext(context)) {
-                    Log.w(TAG, "Baijuyi AI generation failed (both local and backend): ${error.message}")
+                    Log.w(TAG, "Baijuyi AI generation failed: ${error.message}")
                 }
                 null
             }

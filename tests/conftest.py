@@ -17,13 +17,21 @@ def db_file():
 
 @pytest.fixture
 def app_module(db_file):
-    """Import/reload app module with test database path."""
+    """Import app module with test database path (no reload to preserve coverage)."""
     os.environ["DATABASE_PATH"] = db_file
     os.environ["JWT_SECRET"] = "test-secret-key"
+    os.environ["ADMIN_PHONE"] = "13800138000"
+    os.environ["ADMIN_PASSWORD"] = "testadmin123"
 
-    import importlib
     import app as app_module
-    importlib.reload(app_module)
+    # Reset DB state without reload
+    app_module._db_initialized = False
+    app_module._admin_table_initialized = False
+    app_module._admin_tokens = {}
+    app_module._blacklist_initialized = False
+    app_module._audit_log_initialized = False
+    app_module._rate_limit_store = {}
+    app_module.init_db()
     return app_module
 
 

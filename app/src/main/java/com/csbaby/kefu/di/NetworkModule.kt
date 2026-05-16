@@ -40,6 +40,11 @@ object NetworkModule {
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
+            .addInterceptor {
+                val request = it.request()
+                val response = it.proceed(request)
+                response
+            }
             .build()
     }
 
@@ -58,13 +63,13 @@ object NetworkModule {
     fun provideAIClient(okHttpClient: OkHttpClient): AIClient {
         return AIClientImpl(okHttpClient)
     }
-
+    
     @Provides
     @Singleton
     fun provideErrorHandler(@ApplicationContext context: Context): ErrorHandler {
         return ErrorHandler(context)
     }
-
+    
     @Provides
     @Singleton
     fun providePerformanceMonitor(@ApplicationContext context: Context): com.csbaby.kefu.infrastructure.monitoring.PerformanceMonitor {

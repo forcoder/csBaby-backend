@@ -754,22 +754,43 @@ def restore_backup():
     })
 
 # ========== Admin Authentication ==========
-# Admin accounts stored in-memory (small-scale admin use)
-_admin_accounts = {}
+# Admin accounts persisted in SQLite
+_admin_table_initialized = False
+
+def _ensure_admin_table():
+    global _admin_table_initialized
+    if not _admin_table_initialized:
+        db = get_connection()
+        db.executescript("""
+            CREATE TABLE IF NOT EXISTS admin_accounts (
+                phone TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                is_active INTEGER DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        db.commit()
+        db.close()
+        _admin_table_initialized = True
 
 def _init_admin():
-    """Create default admin if none exists."""
-    if not _admin_accounts:
-        phone = os.environ.get("ADMIN_PHONE", "13800138000")
-        password = os.environ.get("ADMIN_PASSWORD")
-        if not password:
-            raise RuntimeError("ADMIN_PASSWORD environment variable must be set")
-        _admin_accounts[phone] = {
-            "phone": phone,
-            "password_hash": _hash_password(password),
-            "is_active": True,
-            "created_at": _now_str(),
-        }
+    """Create default admin if none exists in DB."""
+    _ensure_admin_table()
+    db = get_connection()
+    try:
+        row = db.execute("SELECT COUNT(*) FROM admin_accounts").fetchone()
+        if row[0] == 0:
+            phone = os.environ.get("ADMIN_PHONE", "13800138000")
+            password = os.environ.get("ADMIN_PASSWORD")
+            if not password:
+                raise RuntimeError("ADMIN_PASSWORD environment variable must be set")
+            db.execute(
+                "INSERT INTO admin_accounts (phone, password_hash, is_active) VALUES (?, ?, 1)",
+                (phone, _hash_password(password))
+            )
+            db.commit()
+    finally:
+        db.close()
 
 def _hash_password(pw):
     import hashlib
@@ -780,10 +801,26 @@ def _now_str():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def _verify_admin(phone, password):
-    acc = _admin_accounts.get(phone)
-    if not acc:
-        return False
-    return acc["password_hash"] == _hash_password(password) and acc["is_active"]
+    _ensure_admin_table()
+    db = get_connection()
+    try:
+        row = db.execute(
+            "SELECT password_hash, is_active FROM admin_accounts WHERE phone=?", (phone,)
+        ).fetchone()
+        if not row:
+            return False
+        return row["password_hash"] == _hash_password(password) and bool(row["is_active"])
+    finally:
+        db.close()
+
+def _get_all_admins():
+    _ensure_admin_table()
+    db = get_connection()
+    try:
+        rows = db.execute("SELECT phone, is_active, created_at FROM admin_accounts ORDER BY created_at").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        db.close()
 
 def _admin_token_key(phone):
     return f"admin:{phone}"
@@ -792,7 +829,18 @@ def _generate_admin_token(phone):
     token = _hash_password(phone + str(time.time()))
     return token
 
-_admin_tokens = {}  # token -> phone
+_admin_tokens = {}  # token -> phone (kept in-memory for session validation)
+
+def _admin_exists_in_db(phone):
+    """Check if an admin account exists in the SQLite database."""
+    db = get_connection()
+    try:
+        row = db.execute("SELECT phone FROM admin_accounts WHERE phone=? AND is_active=1", (phone,)).fetchone()
+        return row is not None
+    except Exception:
+        return False
+    finally:
+        db.close()
 
 def require_admin(f):
     """Decorator: require admin JWT token."""
@@ -803,7 +851,7 @@ def require_admin(f):
             return jsonify({"error": "Unauthorized"}), 401
         token = auth_header[7:]
         phone = _admin_tokens.get(token)
-        if not phone or phone not in _admin_accounts:
+        if not phone or not _admin_exists_in_db(phone):
             return jsonify({"error": "Invalid admin token"}), 401
         request.admin_phone = phone
         return f(*args, **kwargs)
@@ -1528,14 +1576,7 @@ def admin_audit_log():
 @app.route("/api/admin/admins", methods=["GET"])
 @require_admin
 def admin_list_admins():
-    safe_accounts = []
-    for acc in _admin_accounts.values():
-        safe_accounts.append({
-            "phone": acc["phone"],
-            "is_active": acc["is_active"],
-            "created_at": acc["created_at"],
-        })
-    return jsonify(safe_accounts)
+    return jsonify(_get_all_admins())
 
 @app.route("/api/admin/admins", methods=["POST"])
 @rate_limit(max_requests=10, window_seconds=60)
@@ -1548,14 +1589,18 @@ def admin_create_admin():
         return jsonify({"error": "phone and password required"}), 400
     if len(password) < 6:
         return jsonify({"error": "password must be at least 6 chars"}), 400
-    if phone in _admin_accounts:
-        return jsonify({"error": "admin already exists"}), 409
-    _admin_accounts[phone] = {
-        "phone": phone,
-        "password_hash": _hash_password(password),
-        "is_active": bool(data.get("is_active", True)),
-        "created_at": _now_str(),
-    }
+    db = get_connection()
+    try:
+        row = db.execute("SELECT phone FROM admin_accounts WHERE phone=?", (phone,)).fetchone()
+        if row:
+            return jsonify({"error": "admin already exists"}), 409
+        db.execute(
+            "INSERT INTO admin_accounts (phone, password_hash, is_active) VALUES (?, ?, ?)",
+            (phone, _hash_password(password), 1 if data.get("is_active", True) else 0)
+        )
+        db.commit()
+    finally:
+        db.close()
     _log_audit(request.admin_phone, "create_admin", "admin", phone)
     return jsonify({"status": "created", "phone": phone}), 201
 
@@ -1564,15 +1609,20 @@ def admin_create_admin():
 @require_admin
 def admin_update_admin(phone):
     data = request.get_json() or {}
-    acc = _admin_accounts.get(phone)
-    if not acc:
-        return jsonify({"error": "Admin not found"}), 404
-    if "is_active" in data:
-        acc["is_active"] = bool(data["is_active"])
-    if "password" in data:
-        if len(data["password"]) < 6:
-            return jsonify({"error": "password must be at least 6 chars"}), 400
-        acc["password_hash"] = _hash_password(data["password"])
+    db = get_connection()
+    try:
+        row = db.execute("SELECT phone FROM admin_accounts WHERE phone=?", (phone,)).fetchone()
+        if not row:
+            return jsonify({"error": "Admin not found"}), 404
+        if "is_active" in data:
+            db.execute("UPDATE admin_accounts SET is_active=? WHERE phone=?", (1 if data["is_active"] else 0, phone))
+        if "password" in data:
+            if len(data["password"]) < 6:
+                return jsonify({"error": "password must be at least 6 chars"}), 400
+            db.execute("UPDATE admin_accounts SET password_hash=? WHERE phone=?", (_hash_password(data["password"]), phone))
+        db.commit()
+    finally:
+        db.close()
     _log_audit(request.admin_phone, "update_admin", "admin", phone)
     return jsonify({"status": "updated"})
 
@@ -1580,11 +1630,17 @@ def admin_update_admin(phone):
 @rate_limit(max_requests=10, window_seconds=60)
 @require_admin
 def admin_delete_admin(phone):
-    if phone not in _admin_accounts:
-        return jsonify({"error": "Admin not found"}), 404
-    if phone == request.admin_phone:
-        return jsonify({"error": "Cannot delete yourself"}), 400
-    del _admin_accounts[phone]
+    db = get_connection()
+    try:
+        row = db.execute("SELECT phone FROM admin_accounts WHERE phone=?", (phone,)).fetchone()
+        if not row:
+            return jsonify({"error": "Admin not found"}), 404
+        if phone == request.admin_phone:
+            return jsonify({"error": "Cannot delete yourself"}), 400
+        db.execute("DELETE FROM admin_accounts WHERE phone=?", (phone,))
+        db.commit()
+    finally:
+        db.close()
     # Clean up tokens belonging to the deleted admin
     tokens_to_remove = [t for t, p in _admin_tokens.items() if p == phone]
     for t in tokens_to_remove:
@@ -1592,11 +1648,46 @@ def admin_delete_admin(phone):
     _log_audit(request.admin_phone, "delete_admin", "admin", phone)
     return jsonify({"status": "deleted"})
 
-# ========== Admin API: Agent Status & Routing ==========
-_agent_status = {}  # phone -> {status, max_concurrent, updated_at}
-_agent_skills = {}  # phone -> [{"skill_tag", "proficiency"}]
-_routing_config = {"strategy": "skill_first", "fallback_to_ai": True, "max_queue_size": 50, "timeout_seconds": 300}
-_sessions = {}  # session_id -> {tenant_id, agent_phone, status, created_at}
+# ========== Admin API: Agent Status & Routing (SQLite persisted) ==========
+
+def _load_routing_config_from_db():
+    """Load routing_config from DB into memory on startup."""
+    db = get_connection()
+    try:
+        rows = db.execute("SELECT key, value FROM routing_config").fetchall()
+        cfg = {}
+        for r in rows:
+            try:
+                cfg[r["key"]] = json.loads(r["value"])
+            except Exception:
+                cfg[r["key"]] = r["value"]
+        return cfg
+    except Exception:
+        return {}
+    finally:
+        db.close()
+
+def _save_routing_config_to_db(key, value):
+    """Persist a single routing config key to DB (no-op if table not yet created)."""
+    db = get_connection()
+    try:
+        db.execute(
+            "INSERT OR REPLACE INTO routing_config (key, value, updated_at) VALUES (?, ?, ?)",
+            (key, json.dumps(value, ensure_ascii=False), _now_str())
+        )
+        db.commit()
+    except Exception:
+        pass  # Table may not exist yet during module load
+    finally:
+        db.close()
+
+# Initialize routing config from DB with defaults (module-level, runs at import time)
+_DEFAULT_ROUTING_CONFIG = {"strategy": "skill_first", "fallback_to_ai": True, "max_queue_size": 50, "timeout_seconds": 300}
+_routing_config = _load_routing_config_from_db()
+for _k, _v in _DEFAULT_ROUTING_CONFIG.items():
+    if _k not in _routing_config:
+        _routing_config[_k] = _v
+        _save_routing_config_to_db(_k, _v)
 
 @app.route("/api/agent/status", methods=["POST"])
 @rate_limit(max_requests=20, window_seconds=60)
@@ -1609,13 +1700,19 @@ def admin_set_agent_status():
     status = data.get("status", "online")
     if status not in ("online", "offline", "busy", "away"):
         return jsonify({"error": "invalid status"}), 400
-    _agent_status[phone] = {
-        "agent_phone": phone,
-        "agent_name": data.get("agent_name", phone),
-        "status": status,
-        "max_concurrent": data.get("max_concurrent", 5),
-        "updated_at": _now_str(),
-    }
+    db = get_connection()
+    try:
+        db.execute(
+            """INSERT OR REPLACE INTO agent_status (phone, agent_name, status, max_concurrent, tenant_id, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (phone, data.get("agent_name", phone), status,
+             data.get("max_concurrent", 5),
+             data.get("tenant_id", ""),
+             _now_str())
+        )
+        db.commit()
+    finally:
+        db.close()
     return jsonify({"status": "ok"})
 
 @app.route("/api/agent/skills", methods=["POST"])
@@ -1629,24 +1726,58 @@ def admin_set_agent_skills():
     skills = data.get("skills", [])
     if not isinstance(skills, list):
         return jsonify({"error": "skills must be a list"}), 400
-    _agent_skills[phone] = skills
+    db = get_connection()
+    try:
+        db.execute("DELETE FROM agent_skills WHERE agent_phone=?", (phone,))
+        for s in skills:
+            db.execute(
+                "INSERT INTO agent_skills (agent_phone, skill_tag, proficiency) VALUES (?, ?, ?)",
+                (phone, s.get("skill_tag", ""), s.get("proficiency", 5))
+            )
+        db.commit()
+    finally:
+        db.close()
     return jsonify({"status": "ok"})
 
 @app.route("/api/admin/tenants/<tenant_id>/agents", methods=["GET"])
 @require_admin
 def admin_get_tenant_agents(tenant_id):
-    agents = []
-    for phone, info in _agent_status.items():
-        agent = dict(info)
-        agent["skills"] = _agent_skills.get(phone, [])
-        agents.append(agent)
-    return jsonify({"agents": agents})
+    db = get_connection()
+    try:
+        rows = db.execute(
+            "SELECT * FROM agent_status WHERE tenant_id=? OR tenant_id='' ORDER BY updated_at DESC",
+            (tenant_id,)
+        ).fetchall()
+        agents = []
+        for r in rows:
+            agent = dict(r)
+            skill_rows = db.execute(
+                "SELECT skill_tag, proficiency FROM agent_skills WHERE agent_phone=?",
+                (agent["phone"],)
+            ).fetchall()
+            agent["skills"] = [dict(s) for s in skill_rows]
+            agents.append(agent)
+        return jsonify({"agents": agents})
+    finally:
+        db.close()
 
 @app.route("/api/admin/tenants/<tenant_id>/sessions", methods=["GET"])
 @require_admin
 def admin_get_tenant_sessions(tenant_id):
-    sessions = [s for s in _sessions.values() if s.get("tenant_id") == tenant_id]
-    return jsonify({"sessions": sessions, "total": len(sessions)})
+    db = get_connection()
+    try:
+        rows = db.execute(
+            "SELECT * FROM sessions WHERE tenant_id=? ORDER BY created_at DESC LIMIT 200",
+            (tenant_id,)
+        ).fetchall()
+        sessions = [dict(r) for r in rows]
+        total_row = db.execute(
+            "SELECT COUNT(*) as cnt FROM sessions WHERE tenant_id=?", (tenant_id,)
+        ).fetchone()
+        total = total_row["cnt"] if total_row else 0
+        return jsonify({"sessions": sessions, "total": total})
+    finally:
+        db.close()
 
 @app.route("/api/routing/config", methods=["POST"])
 @rate_limit(max_requests=10, window_seconds=60)
@@ -1667,6 +1798,7 @@ def admin_update_routing_config():
     for key in ("strategy", "fallback_to_ai", "max_queue_size", "timeout_seconds"):
         if key in data:
             _routing_config[key] = data[key]
+            _save_routing_config_to_db(key, data[key])
     return jsonify({"status": "ok", "config": _routing_config})
 
 @app.route("/api/admin/tenants/<tenant_id>/routing/config", methods=["GET"])
@@ -1679,10 +1811,15 @@ def admin_get_routing_config(tenant_id):
 @require_admin
 def admin_close_conversation(session_id):
     data = request.get_json() or {}
-    if session_id not in _sessions:
-        return jsonify({"error": "Session not found"}), 404
-    _sessions[session_id]["status"] = "closed"
-    _sessions[session_id]["closed_at"] = _now_str()
+    db = get_connection()
+    try:
+        row = db.execute("SELECT id FROM sessions WHERE id=?", (session_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Session not found"}), 404
+        db.execute("UPDATE sessions SET status='closed', closed_at=? WHERE id=?", (_now_str(), session_id))
+        db.commit()
+    finally:
+        db.close()
     return jsonify({"status": "ok"})
 
 # ========== Admin API: Change Password ==========
@@ -1698,11 +1835,280 @@ def admin_change_password():
     if len(new_password) < 6:
         return jsonify({"error": "new_password must be at least 6 chars"}), 400
     phone = request.admin_phone
-    acc = _admin_accounts.get(phone)
-    if not acc or acc["password_hash"] != _hash_password(old_password):
-        return jsonify({"error": "Invalid old password"}), 401
-    acc["password_hash"] = _hash_password(new_password)
+    db = get_connection()
+    try:
+        row = db.execute("SELECT password_hash FROM admin_accounts WHERE phone=?", (phone,)).fetchone()
+        if not row or row["password_hash"] != _hash_password(old_password):
+            return jsonify({"error": "Invalid old password"}), 401
+        db.execute("UPDATE admin_accounts SET password_hash=? WHERE phone=?", (_hash_password(new_password), phone))
+        db.commit()
+    finally:
+        db.close()
     return jsonify({"status": "ok"})
+
+# ========== Admin API: Tenant Style Config ==========
+@app.route("/api/admin/tenants/<tenant_id>/style", methods=["GET"])
+@require_admin
+def admin_get_tenant_style(tenant_id):
+    db = get_connection()
+    try:
+        row = db.execute("SELECT * FROM tenant_style_config WHERE device_id=?", (tenant_id,)).fetchone()
+        if not row:
+            return jsonify({
+                "device_id": tenant_id, "theme": "light", "primary_color": "#1976D2",
+                "accent_color": "#FF4081", "font_size": "medium", "bubble_style": "rounded",
+                "avatar_enabled": 1, "show_timestamp": 1, "send_sound": 1, "custom_css": "",
+            })
+        return jsonify(dict(row))
+    finally:
+        db.close()
+
+@app.route("/api/admin/tenants/<tenant_id>/style", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
+@require_admin
+def admin_update_tenant_style(tenant_id):
+    data = request.get_json() or {}
+    THEME_CHOICES = {"light", "dark", "auto"}
+    FONT_CHOICES = {"small", "medium", "large"}
+    BUBBLE_CHOICES = {"rounded", "square", "bubble"}
+    theme = data.get("theme", "light")
+    if theme not in THEME_CHOICES:
+        theme = "light"
+    font_size = data.get("font_size", "medium")
+    if font_size not in FONT_CHOICES:
+        font_size = "medium"
+    bubble_style = data.get("bubble_style", "rounded")
+    if bubble_style not in BUBBLE_CHOICES:
+        bubble_style = "rounded"
+    db = get_connection()
+    try:
+        db.execute(
+            """INSERT OR REPLACE INTO tenant_style_config
+               (device_id, theme, primary_color, accent_color, font_size, bubble_style,
+                avatar_enabled, show_timestamp, send_sound, custom_css, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (tenant_id, theme, data.get("primary_color", "#1976D2"),
+             data.get("accent_color", "#FF4081"), font_size, bubble_style,
+             1 if data.get("avatar_enabled", True) else 0,
+             1 if data.get("show_timestamp", True) else 0,
+             1 if data.get("send_sound", True) else 0,
+             data.get("custom_css", ""), _now_str())
+        )
+        db.commit()
+    finally:
+        db.close()
+    _log_audit(request.admin_phone, "update_style", "tenant", tenant_id)
+    return jsonify({"status": "ok"})
+
+# ========== Admin API: Tenant App Config ==========
+@app.route("/api/admin/tenants/<tenant_id>/app-config", methods=["GET"])
+@require_admin
+def admin_get_tenant_app_config(tenant_id):
+    db = get_connection()
+    try:
+        row = db.execute("SELECT * FROM tenant_app_config WHERE device_id=?", (tenant_id,)).fetchone()
+        if not row:
+            return jsonify({
+                "device_id": tenant_id, "app_name": "客服小秘",
+                "welcome_message": "您好，请问有什么可以帮您？",
+                "offline_message": "当前无客服在线，请稍后再试。",
+                "auto_reply_enabled": 1, "notification_enabled": 1, "voice_enabled": 0,
+                "language": "zh-CN", "session_timeout": 300, "max_queue_size": 50,
+                "file_upload_enabled": 1,
+            })
+        return jsonify(dict(row))
+    finally:
+        db.close()
+
+@app.route("/api/admin/tenants/<tenant_id>/app-config", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
+@require_admin
+def admin_update_tenant_app_config(tenant_id):
+    data = request.get_json() or {}
+    session_timeout = data.get("session_timeout", 300)
+    try:
+        session_timeout = max(30, min(int(session_timeout), 3600))
+    except (ValueError, TypeError):
+        session_timeout = 300
+    max_queue_size = data.get("max_queue_size", 50)
+    try:
+        max_queue_size = max(1, min(int(max_queue_size), 500))
+    except (ValueError, TypeError):
+        max_queue_size = 50
+    db = get_connection()
+    try:
+        db.execute(
+            """INSERT OR REPLACE INTO tenant_app_config
+               (device_id, app_name, welcome_message, offline_message,
+                auto_reply_enabled, notification_enabled, voice_enabled,
+                language, session_timeout, max_queue_size, file_upload_enabled, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (tenant_id, data.get("app_name", "客服小秘"),
+             data.get("welcome_message", "您好，请问有什么可以帮您？"),
+             data.get("offline_message", "当前无客服在线，请稍后再试。"),
+             1 if data.get("auto_reply_enabled", True) else 0,
+             1 if data.get("notification_enabled", True) else 0,
+             1 if data.get("voice_enabled", False) else 0,
+             data.get("language", "zh-CN"),
+             session_timeout, max_queue_size,
+             1 if data.get("file_upload_enabled", True) else 0,
+             _now_str())
+        )
+        db.commit()
+    finally:
+        db.close()
+    _log_audit(request.admin_phone, "update_app_config", "tenant", tenant_id)
+    return jsonify({"status": "ok"})
+
+# ========== Admin API: Tenant Backup Management ==========
+@app.route("/api/admin/tenants/<tenant_id>/backup", methods=["GET"])
+@require_admin
+def admin_export_tenant_backup(tenant_id):
+    """Export full backup data for a tenant."""
+    device_id = tenant_id
+    rule_repo = SqliteRuleRepository()
+    model_repo = SqliteModelRepository()
+    history_repo = SqliteHistoryRepository()
+    feedback_repo = SqliteFeedbackRepository()
+    metrics_repo = SqliteMetricsRepository()
+
+    db = get_connection()
+    try:
+        row = db.execute("SELECT id FROM devices WHERE id=?", (device_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Tenant not found"}), 404
+    finally:
+        db.close()
+
+    rules = rule_repo.get_by_device(device_id)
+    models = model_repo.get_by_device(device_id)
+    history_items, _ = history_repo.get_by_device(device_id, 5000, 0)
+    feedback_items = feedback_repo.get_by_device(device_id, 5000, 0)
+    metrics = metrics_repo.get_by_device_and_date_range(device_id, 365)
+
+    blacklist_items = []
+    try:
+        db = get_connection()
+        bl_rows = db.execute("SELECT * FROM blacklist WHERE device_id=? ORDER BY created_at DESC", (device_id,)).fetchall()
+        blacklist_items = [dict(r) for r in bl_rows]
+        db.close()
+    except Exception:
+        pass
+
+    return jsonify({
+        "version": 2,
+        "device_id": device_id,
+        "exported_at": _now_str(),
+        "rules": [_rule_to_dict(r) for r in rules],
+        "models": [_model_to_dict(m) for m in models],
+        "history": [{"id": h.id, "original_message": h.original_message,
+                      "reply_content": h.reply_content, "source": h.source,
+                      "model_used": h.model_used, "confidence": h.confidence,
+                      "response_time_ms": h.response_time_ms, "platform": h.platform,
+                      "customer_name": h.customer_name, "house_name": h.house_name,
+                      "created_at": h.created_at} for h in history_items],
+        "feedback": [{"id": f.id, "reply_history_id": f.reply_history_id,
+                       "action": f.action, "modified_text": f.modified_text,
+                       "rating": f.rating, "comment": f.comment, "created_at": f.created_at}
+                      for f in feedback_items],
+        "metrics": [{"date": m.date, "total_generated": m.total_generated,
+                      "total_accepted": m.total_accepted, "total_modified": m.total_modified,
+                      "total_rejected": m.total_rejected} for m in metrics],
+        "blacklist": blacklist_items,
+    })
+
+
+@app.route("/api/admin/tenants/<tenant_id>/backup/restore", methods=["POST"])
+@rate_limit(max_requests=5, window_seconds=60)
+@require_admin
+def admin_restore_tenant_backup(tenant_id):
+    """Restore tenant data from a backup JSON payload."""
+    data = request.get_json() or {}
+    backup = data.get("backup")
+    if not isinstance(backup, dict):
+        return jsonify({"error": "backup must be a JSON object"}), 400
+
+    device_id = tenant_id
+    db = get_connection()
+    try:
+        row = db.execute("SELECT id FROM devices WHERE id=?", (device_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Tenant not found"}), 404
+    finally:
+        db.close()
+
+    restored = {"rules": 0, "models": 0, "blacklist": 0}
+
+    rules_data = backup.get("rules", [])
+    if rules_data and isinstance(rules_data, list):
+        parsed_rules = []
+        for r in rules_data:
+            target_names = r.get("target_names", [])
+            if isinstance(target_names, str):
+                try:
+                    target_names = json.loads(target_names)
+                except json.JSONDecodeError:
+                    target_names = []
+            if not isinstance(target_names, list):
+                target_names = []
+            parsed_rules.append(KeywordRule(
+                device_id=device_id, keyword=r.get("keyword", ""),
+                match_type=r.get("match_type", "CONTAINS"), reply_template=r.get("reply_template", ""),
+                category=r.get("category", ""), target_type=r.get("target_type", "ALL"),
+                target_names=target_names, priority=r.get("priority", 0),
+                enabled=bool(r.get("enabled", True)),
+            ))
+        if parsed_rules:
+            SqliteRuleRepository().batch_create(parsed_rules, device_id, "override")
+            restored["rules"] = len(parsed_rules)
+
+    models_data = backup.get("models", [])
+    if models_data and isinstance(models_data, list):
+        db = get_connection()
+        try:
+            db.execute("DELETE FROM model_configs WHERE device_id=?", (device_id,))
+            db.commit()
+        finally:
+            db.close()
+        count = 0
+        for m_data in models_data:
+            try:
+                config = ModelConfig(
+                    device_id=device_id, name=m_data.get("name", ""),
+                    model_type=m_data.get("model_type", "OPENAI"), model=m_data.get("model", ""),
+                    api_key=m_data.get("api_key", ""), api_endpoint=m_data.get("api_endpoint", ""),
+                    temperature=m_data.get("temperature", 0.7), max_tokens=m_data.get("max_tokens", 2000),
+                    is_default=bool(m_data.get("is_default", False)), enabled=bool(m_data.get("enabled", True)),
+                )
+                SqliteModelRepository().create(config)
+                count += 1
+            except Exception:
+                pass
+        restored["models"] = count
+
+    bl_data = backup.get("blacklist", [])
+    if bl_data and isinstance(bl_data, list):
+        db = get_connection()
+        try:
+            db.execute("DELETE FROM blacklist WHERE device_id=?", (device_id,))
+            db.commit()
+            for bl in bl_data:
+                db.execute(
+                    "INSERT INTO blacklist (device_id, type, value, description, package_name, is_enabled) VALUES (?, ?, ?, ?, ?, ?)",
+                    (device_id, bl.get("type", "KEYWORD"), bl.get("value", ""),
+                     bl.get("description", ""), bl.get("package_name"),
+                     1 if bl.get("is_enabled", True) else 0)
+                )
+            db.commit()
+            restored["blacklist"] = len(bl_data)
+        except Exception:
+            pass
+        finally:
+            db.close()
+
+    _log_audit(request.admin_phone, "restore_backup", "tenant", tenant_id)
+    return jsonify({"status": "ok", "restored": restored})
+
 
 # ========== Global Error Handlers ==========
 def not_found(e):

@@ -1251,6 +1251,191 @@ def admin_tenant_routing_agent_add(tenant_id):
         flash("客服手机号不能为空", "error")
         return redirect(url_for("admin_tenant_routing", tenant_id=tenant_id))
 
+
+# ========== Admin Panel: Backup Management ==========
+
+@app.route("/admin/tenants/<tenant_id>/backup")
+@login_required
+def admin_tenant_backup(tenant_id):
+    """租户备份管理页面"""
+    token = session.get("admin_token", "")
+    tenant = _get_tenant(tenant_id, token)
+    backup_json = ""
+    error = None
+    try:
+        resp = api_get(f"/api/admin/tenants/{tenant_id}/backup", token)
+        if resp.status_code == 200:
+            backup_data = resp.json()
+            backup_json = json.dumps(backup_data, ensure_ascii=False, indent=2)
+        else:
+            error = _safe_api_error(resp, "获取备份数据失败")
+    except Exception as e:
+        error = f"网络错误: {e}"
+    return render_template(
+        "tenant_backup.html",
+        tenant=tenant,
+        backup_json=backup_json,
+        admin_phone=session.get("admin_phone"),
+        error=error,
+    )
+
+
+@app.route("/admin/tenants/<tenant_id>/backup/export", methods=["POST"])
+@login_required
+def admin_tenant_backup_export(tenant_id):
+    """触发备份下载"""
+    token = session.get("admin_token", "")
+    try:
+        resp = api_get(f"/api/admin/tenants/{tenant_id}/backup", token)
+        if resp.status_code == 200:
+            from flask import Response
+            backup_json = json.dumps(resp.json(), ensure_ascii=False, indent=2)
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            return Response(
+                backup_json,
+                mimetype="application/json",
+                headers={
+                    "Content-Disposition": f"attachment; filename=backup_{tenant_id[:8]}_{ts}.json"
+                },
+            )
+        else:
+            flash(_safe_api_error(resp, "导出失败"), "error")
+    except Exception as e:
+        flash(f"网络错误: {e}", "error")
+    return redirect(url_for("admin_tenant_backup", tenant_id=tenant_id))
+
+
+@app.route("/admin/tenants/<tenant_id>/backup/restore", methods=["POST"])
+@login_required
+def admin_tenant_backup_restore(tenant_id):
+    """从上传的 JSON 文件恢复备份"""
+    token = session.get("admin_token", "")
+    uploaded_file = request.files.get("backup_file")
+    if not uploaded_file or not uploaded_file.filename:
+        flash("请选择备份文件", "error")
+        return redirect(url_for("admin_tenant_backup", tenant_id=tenant_id))
+    if not uploaded_file.filename.endswith(".json"):
+        flash("请上传 .json 格式的备份文件", "error")
+        return redirect(url_for("admin_tenant_backup", tenant_id=tenant_id))
+    try:
+        file_content = uploaded_file.read().decode("utf-8")
+        backup_data = json.loads(file_content)
+    except json.JSONDecodeError as e:
+        flash(f"JSON 格式错误: {e}", "error")
+        return redirect(url_for("admin_tenant_backup", tenant_id=tenant_id))
+    except Exception as e:
+        flash(f"文件读取失败: {e}", "error")
+        return redirect(url_for("admin_tenant_backup", tenant_id=tenant_id))
+    try:
+        resp = api_post(
+            f"/api/admin/tenants/{tenant_id}/backup/restore",
+            {"backup": backup_data},
+            token=token,
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            result = resp.json()
+            restored = result.get("restored", {})
+            parts = []
+            if restored.get("rules"): parts.append(f"规则 {restored['rules']} 条")
+            if restored.get("models"): parts.append(f"模型 {restored['models']} 个")
+            if restored.get("blacklist"): parts.append(f"黑名单 {restored['blacklist']} 条")
+            flash("恢复成功：" + "，".join(parts), "success")
+        else:
+            flash(_safe_api_error(resp, "恢复失败"), "error")
+    except Exception as e:
+        flash(f"网络错误: {e}", "error")
+    return redirect(url_for("admin_tenant_backup", tenant_id=tenant_id))
+
+
+# ========== Admin Panel: Style Config ==========
+
+@app.route("/admin/tenants/<tenant_id>/style", methods=["GET", "POST"])
+@login_required
+def admin_tenant_style(tenant_id):
+    """租户样式配置页面"""
+    token = session.get("admin_token", "")
+    tenant = _get_tenant(tenant_id, token)
+    error = None
+    success = None
+    if request.method == "POST":
+        style_data = {
+            "theme": request.form.get("theme", "light").strip(),
+            "primary_color": request.form.get("primary_color", "#1976D2").strip(),
+            "accent_color": request.form.get("accent_color", "#FF4081").strip(),
+            "font_size": request.form.get("font_size", "medium").strip(),
+            "bubble_style": request.form.get("bubble_style", "rounded").strip(),
+            "avatar_enabled": 1 if request.form.get("avatar_enabled") else 0,
+            "show_timestamp": 1 if request.form.get("show_timestamp") else 0,
+            "send_sound": 1 if request.form.get("send_sound") else 0,
+            "custom_css": request.form.get("custom_css", "").strip(),
+        }
+        try:
+            resp = api_post(f"/api/admin/tenants/{tenant_id}/style", style_data, token=token)
+            if resp.status_code == 200:
+                success = "样式配置已保存"
+            else:
+                error = _safe_api_error(resp)
+        except Exception as e:
+            error = f"网络错误: {e}"
+        return render_template("tenant_style.html", tenant=tenant,
+                               admin_phone=session.get("admin_phone"),
+                               error=error, success=success)
+    style_config = None
+    try:
+        resp = api_get(f"/api/admin/tenants/{tenant_id}/style", token)
+        if resp.status_code == 200:
+            style_config = resp.json()
+    except Exception:
+        pass
+    return render_template("tenant_style.html", tenant=tenant, style_config=style_config,
+                           admin_phone=session.get("admin_phone"), error=error, success=success)
+
+
+# ========== Admin Panel: App Config ==========
+
+@app.route("/admin/tenants/<tenant_id>/app-config", methods=["GET", "POST"])
+@login_required
+def admin_tenant_app_config(tenant_id):
+    """租户应用配置页面"""
+    token = session.get("admin_token", "")
+    tenant = _get_tenant(tenant_id, token)
+    error = None
+    success = None
+    if request.method == "POST":
+        app_data = {
+            "app_name": request.form.get("app_name", "客服小秘").strip(),
+            "welcome_message": request.form.get("welcome_message", "").strip(),
+            "offline_message": request.form.get("offline_message", "").strip(),
+            "auto_reply_enabled": 1 if request.form.get("auto_reply_enabled") else 0,
+            "notification_enabled": 1 if request.form.get("notification_enabled") else 0,
+            "voice_enabled": 1 if request.form.get("voice_enabled") else 0,
+            "language": request.form.get("language", "zh-CN").strip(),
+            "session_timeout": _safe_int(request.form.get("session_timeout"), 300),
+            "max_queue_size": _safe_int(request.form.get("max_queue_size"), 50),
+            "file_upload_enabled": 1 if request.form.get("file_upload_enabled") else 0,
+        }
+        try:
+            resp = api_post(f"/api/admin/tenants/{tenant_id}/app-config", app_data, token=token)
+            if resp.status_code == 200:
+                success = "应用配置已保存"
+            else:
+                error = _safe_api_error(resp)
+        except Exception as e:
+            error = f"网络错误: {e}"
+        return render_template("tenant_app_config.html", tenant=tenant,
+                               admin_phone=session.get("admin_phone"),
+                               error=error, success=success)
+    app_config = None
+    try:
+        resp = api_get(f"/api/admin/tenants/{tenant_id}/app-config", token)
+        if resp.status_code == 200:
+            app_config = resp.json()
+    except Exception:
+        pass
+    return render_template("tenant_app_config.html", tenant=tenant, app_config=app_config,
+                           admin_phone=session.get("admin_phone"), error=error, success=success)
+
     try:
         max_concurrent = int(max_concurrent)
     except ValueError:
