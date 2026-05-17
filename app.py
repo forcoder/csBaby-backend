@@ -1010,18 +1010,29 @@ def admin_login():
 @app.route("/api/admin/stats", methods=["GET"])
 @require_admin
 def admin_stats():
+    tenant_id = request.args.get("tenant_id", "").strip()
     db = get_connection()
     try:
-        device_count = db.execute("SELECT COUNT(*) FROM devices").fetchone()[0]
-        rule_count = db.execute("SELECT COUNT(*) FROM keyword_rules").fetchone()[0]
-        history_count = db.execute("SELECT COUNT(*) FROM reply_history").fetchone()[0]
-        today = _now_str()[:10]
-        today_history = db.execute(
-            "SELECT COUNT(*) FROM reply_history WHERE created_at >= ?", (today,)
-        ).fetchone()[0]
-        active_today = db.execute(
-            "SELECT COUNT(DISTINCT device_id) FROM reply_history WHERE created_at >= ?", (today,)
-        ).fetchone()[0]
+        if tenant_id:
+            device_count = db.execute("SELECT COUNT(*) FROM devices WHERE id=?", (tenant_id,)).fetchone()[0]
+            rule_count = db.execute("SELECT COUNT(*) FROM keyword_rules WHERE device_id=?", (tenant_id,)).fetchone()[0]
+            history_count = db.execute("SELECT COUNT(*) FROM reply_history WHERE device_id=?", (tenant_id,)).fetchone()[0]
+            today = _now_str()[:10]
+            today_history = db.execute(
+                "SELECT COUNT(*) FROM reply_history WHERE device_id=? AND created_at >= ?", (tenant_id, today)
+            ).fetchone()[0]
+            active_today = 1 if today_history > 0 else 0
+        else:
+            device_count = db.execute("SELECT COUNT(*) FROM devices").fetchone()[0]
+            rule_count = db.execute("SELECT COUNT(*) FROM keyword_rules").fetchone()[0]
+            history_count = db.execute("SELECT COUNT(*) FROM reply_history").fetchone()[0]
+            today = _now_str()[:10]
+            today_history = db.execute(
+                "SELECT COUNT(*) FROM reply_history WHERE created_at >= ?", (today,)
+            ).fetchone()[0]
+            active_today = db.execute(
+                "SELECT COUNT(DISTINCT device_id) FROM reply_history WHERE created_at >= ?", (today,)
+            ).fetchone()[0]
     finally:
         db.close()
     return jsonify({
@@ -1030,17 +1041,26 @@ def admin_stats():
         "history_count": history_count,
         "today_history": today_history,
         "active_today": active_today,
+        "tenant_id": tenant_id or "_global",
     })
 
 @app.route("/api/admin/recent-tenants", methods=["GET"])
 @require_admin
 def admin_recent_tenants():
+    tenant_id = request.args.get("tenant_id", "").strip()
     db = get_connection()
     try:
-        rows = db.execute(
-            "SELECT DISTINCT d.id, d.name, d.platform, d.app_version, d.last_heartbeat "
-            "FROM devices d ORDER BY d.last_heartbeat DESC LIMIT 10"
-        ).fetchall()
+        if tenant_id:
+            rows = db.execute(
+                "SELECT d.id, d.name, d.platform, d.app_version, d.last_heartbeat "
+                "FROM devices d WHERE d.id=? ORDER BY d.last_heartbeat DESC LIMIT 10",
+                (tenant_id,)
+            ).fetchall()
+        else:
+            rows = db.execute(
+                "SELECT DISTINCT d.id, d.name, d.platform, d.app_version, d.last_heartbeat "
+                "FROM devices d ORDER BY d.last_heartbeat DESC LIMIT 10"
+            ).fetchall()
         return jsonify([dict(r) for r in rows])
     finally:
         db.close()
@@ -1667,6 +1687,7 @@ def admin_audit_log():
     page = request.args.get("page", 1, type=int)
     page_size = min(request.args.get("page_size", 20, type=int), 100)
     action = request.args.get("action", "").strip()
+    tenant_id = request.args.get("tenant_id", "").strip()
     date_from = request.args.get("date_from", "").strip()
     date_to = request.args.get("date_to", "").strip()
     offset = (page - 1) * page_size
@@ -1679,6 +1700,11 @@ def admin_audit_log():
             query += " AND action = ?"
             count_query += " AND action = ?"
             params.append(action)
+        if tenant_id:
+            query += " AND (target_id = ? OR detail LIKE ?)"
+            count_query += " AND (target_id = ? OR detail LIKE ?)"
+            params.append(tenant_id)
+            params.append(f"%{tenant_id}%")
         if date_from:
             query += " AND created_at >= ?"
             count_query += " AND created_at >= ?"
@@ -1873,7 +1899,7 @@ def admin_get_tenant_agents(tenant_id):
     db = get_connection()
     try:
         rows = db.execute(
-            "SELECT * FROM agent_status WHERE tenant_id=? OR tenant_id='' ORDER BY updated_at DESC",
+            "SELECT * FROM agent_status WHERE tenant_id=? ORDER BY updated_at DESC",
             (tenant_id,)
         ).fetchall()
         agents = []
@@ -2297,8 +2323,9 @@ _admin_registered = _register_admin()
 application = app
 
 @app.route("/_debug/admin-status")
+@require_admin
 def _debug_admin_status():
-    """Debug endpoint to check if admin panel is registered."""
+    """Debug endpoint to check if admin panel is registered. Protected by admin auth."""
     return jsonify({
         "admin_registered": _admin_registered,
         "admin_mode": os.environ.get("ADMIN_API_MODE", "not set"),
