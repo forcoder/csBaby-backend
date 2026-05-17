@@ -794,22 +794,25 @@ def _ensure_admin_table():
         _admin_table_initialized = True
 
 def _init_admin():
-    """Create default admin if none exists in DB."""
+    """Create default admins if they don't exist in DB."""
     _ensure_admin_table()
+    password = os.environ.get("ADMIN_PASSWORD")
+    if not password:
+        logger.warning("ADMIN_PASSWORD not set, skipping default admin creation")
+        return
     db = get_connection()
     try:
-        row = db.execute("SELECT COUNT(*) FROM admin_accounts").fetchone()
-        if row[0] == 0:
-            phone = os.environ.get("ADMIN_PHONE", "13800138000")
-            password = os.environ.get("ADMIN_PASSWORD")
-            if not password:
-                logger.warning("ADMIN_PASSWORD not set, skipping default admin creation")
-                return
-            db.execute(
-                "INSERT INTO admin_accounts (phone, password_hash, is_active) VALUES (?, ?, 1)",
-                (phone, _hash_password(password))
-            )
-            db.commit()
+        # Support multiple admin phones (comma-separated)
+        phones = [p.strip() for p in os.environ.get("ADMIN_PHONE", "13800138000,15558181817").split(",") if p.strip()]
+        for phone in phones:
+            existing = db.execute("SELECT COUNT(*) FROM admin_accounts WHERE phone=?", (phone,)).fetchone()
+            if existing[0] == 0:
+                db.execute(
+                    "INSERT INTO admin_accounts (phone, password_hash, is_active) VALUES (?, ?, 1)",
+                    (phone, _hash_password(password))
+                )
+                logger.info("Created admin account: %s", phone)
+        db.commit()
     finally:
         db.close()
 
