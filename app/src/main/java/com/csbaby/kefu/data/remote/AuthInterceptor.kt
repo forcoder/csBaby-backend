@@ -1,6 +1,7 @@
 package com.csbaby.kefu.data.remote
 
 import com.csbaby.kefu.data.local.PreferencesManager
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.Response

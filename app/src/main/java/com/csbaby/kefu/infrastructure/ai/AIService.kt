@@ -10,6 +10,7 @@ import com.csbaby.kefu.domain.model.ModelType
 import com.csbaby.kefu.domain.model.UserStyleProfile
 import com.csbaby.kefu.domain.repository.AIModelRepository
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
