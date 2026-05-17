@@ -1,5 +1,6 @@
 import datetime
 import json
+import logging
 import os
 import time
 import urllib.parse
@@ -7,6 +8,8 @@ import requests as http_requests
 from functools import wraps
 from flask import Blueprint, request, render_template, redirect, url_for, session, flash, jsonify, current_app
 from config import API_BASE_URL, SESSION_SECRET
+
+admin_logger = logging.getLogger("csbaby.admin")
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin", template_folder="templates")
 
@@ -66,6 +69,7 @@ def _check_csrf():
     if current_app.config.get("TESTING"):
         return
     # Skip CSRF for login endpoint (user has no session yet)
+    admin_logger.info("CSRF check: endpoint=%s", request.endpoint)
     if request.endpoint in ("login", "admin.login"):
         return
     # Periodic cleanup of login rate limiter (1% of requests)
@@ -376,7 +380,9 @@ def login():
             attempts.append(now)
             _login_attempts[client_ip] = attempts
         try:
+            admin_logger.info("Login attempt: phone=%s, api_mode=%s", phone, os.environ.get("ADMIN_API_MODE", "not set"))
             resp = api_post("/api/admin/login", {"phone": phone, "password": password})
+            admin_logger.info("Login API response: status=%s", resp.status_code)
             if resp.status_code == 200:
                 try:
                     result = resp.json()
@@ -396,8 +402,10 @@ def login():
             else:
                 error = _safe_api_error(resp)
         except http_requests.exceptions.RequestException:
+            admin_logger.error("API connection error", exc_info=True)
             error = "无法连接 API 服务"
         except Exception as e:
+            admin_logger.error("Login error: %s", e, exc_info=True)
             error = f"请求失败: {type(e).__name__}"
         return render_template("login.html", error=error)
     return render_template("login.html", error=None)
