@@ -798,8 +798,17 @@ def _init_admin():
     _ensure_admin_table()
     password = os.environ.get("ADMIN_PASSWORD")
     if not password:
-        logger.warning("ADMIN_PASSWORD not set, skipping default admin creation")
-        return
+        # 仅在没有任何活跃管理员账户时，使用默认密码创建（首次部署安全兜底）
+        db_check = get_connection()
+        try:
+            count = db_check.execute("SELECT COUNT(*) FROM admin_accounts WHERE is_active=1").fetchone()[0]
+        finally:
+            db_check.close()
+        if count > 0:
+            logger.warning("ADMIN_PASSWORD not set, but active admin accounts exist — skipping default creation")
+            return
+        password = "admin123"
+        logger.warning("ADMIN_PASSWORD not set — using default password '%s'. Change it after first login!", password)
     db = get_connection()
     try:
         # Support multiple admin phones (comma-separated env var + hardcoded fallbacks)
