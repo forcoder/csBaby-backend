@@ -15,7 +15,7 @@ services:
       - key: ADMIN_PHONE
         value: "13800138000"
       - key: ADMIN_PASSWORD
-        sync: false
+        value: "admin123"
       - key: DATABASE_PATH
         value: "/var/data/csBaby.db"
       - key: PYTHON_VERSION
