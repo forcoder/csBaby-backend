@@ -993,6 +993,32 @@ def _startup_hook():
         _ensure_audit_table()
         _tables_initialized = True
 
+# ========== Admin API: First-time Setup ==========
+@app.route("/api/admin/setup", methods=["POST"])
+@rate_limit(max_requests=3, window_seconds=300)
+def admin_setup():
+    """One-time setup: create default admin if no active admin exists."""
+    data = request.get_json() or {}
+    phone = (data.get("phone") or "13800138000").strip()
+    password = data.get("password") or "admin123"
+    if len(password) < 6:
+        return jsonify({"error": "password must be at least 6 chars"}), 400
+    db = get_connection()
+    try:
+        count = db.execute("SELECT COUNT(*) FROM admin_accounts WHERE is_active=1").fetchone()[0]
+        if count > 0:
+            return jsonify({"error": "admin already exists, use login"}), 403
+        db.execute(
+            "INSERT INTO admin_accounts (phone, password_hash, is_active) VALUES (?, ?, 1)",
+            (phone, _hash_password(password))
+        )
+        db.commit()
+        logger.info("First-time admin created: %s", phone)
+        return jsonify({"status": "created", "phone": phone}), 201
+    finally:
+        db.close()
+
+
 # ========== Admin API: Auth ==========
 @app.route("/api/admin/login", methods=["POST"])
 @rate_limit(max_requests=5, window_seconds=300)

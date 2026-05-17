@@ -335,6 +335,36 @@ def parse_excel_content(file_bytes):
     return all_rules
 
 
+@admin_bp.route("/setup", methods=["GET", "POST"])
+def setup():
+    """First-time admin setup page."""
+    if request.method == "POST":
+        phone = request.form.get("phone", "13800138000").strip()
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+        if not phone or not password:
+            return render_template("setup.html", error="手机号和密码不能为空")
+        if password != confirm:
+            return render_template("setup.html", error="两次密码输入不一致")
+        if len(password) < 6:
+            return render_template("setup.html", error="密码至少6位")
+        try:
+            resp = api_post("/api/admin/setup", {"phone": phone, "password": password})
+            if resp.status_code == 201:
+                return render_template("setup_success.html", phone=phone)
+            else:
+                try:
+                    err = resp.json().get("error", "创建失败")
+                except Exception:
+                    err = f"创建失败 (HTTP {resp.status_code})"
+                return render_template("setup.html", error=err)
+        except http_requests.exceptions.RequestException:
+            return render_template("setup.html", error="无法连接 API 服务")
+        except Exception:
+            return render_template("setup.html", error="请求失败")
+    return render_template("setup.html", error=None)
+
+
 @admin_bp.route("/login", methods=["GET", "POST"])
 def login():
     if session.get("admin_phone"):
