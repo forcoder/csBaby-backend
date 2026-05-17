@@ -123,10 +123,32 @@ class UserAuthManager @Inject constructor(
         }
     }
 
+    /**
+     * 注册设备并绑定到用户（用于新用户首次使用）
+     */
+    suspend fun registerDeviceForUser(userId: String): String {
+        val request = RegisterRequest(
+            platform = "android",
+            appVersion = getAppVersion(),
+            name = getDeviceName()
+        )
+        try {
+            val response: RegisterResponse = apiService.register(request)
+            // 保存设备信息到 user_devices 表，这里需要后端支持
+            preferencesManager.saveAuthToken(response.token)
+            preferencesManager.saveDeviceId(response.deviceId)
+            authInterceptor.updateToken(response.token)
+            Timber.i("Device registered for user $userId: ${response.deviceId}")
+            return response.token
+        } catch (e: Exception) {
+            Timber.e(e, "Device registration for user failed")
+            throw e
+        }
+    }
+
     private fun getAppVersion(): String {
         return try {
-            val packageInfo = com.csbaby.kefu.BuildConfig.VERSION_NAME
-            packageInfo ?: "1.0.0"
+            com.csbaby.kefu.BuildConfig.VERSION_NAME ?: "1.0.0"
         } catch (e: Exception) {
             "1.0.0"
         }
