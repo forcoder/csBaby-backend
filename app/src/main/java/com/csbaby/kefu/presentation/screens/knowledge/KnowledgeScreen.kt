@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -54,6 +56,7 @@ fun KnowledgeScreen(
     var searchQuery by remember { mutableStateOf("") }
     var showClearDialog by remember { mutableStateOf(false) }
     var showImportModeDialog by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
     var pendingImportMode by remember { mutableStateOf(ImportMode.APPEND) }
     val snackbarHostState = remember { SnackbarHostState() }
     val importLauncher = rememberLauncherForActivityResult(
@@ -61,6 +64,20 @@ fun KnowledgeScreen(
     ) { uri ->
         if (uri != null) {
             viewModel.importRules(uri, pendingImportMode)
+        }
+    }
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportRules(uri, ExportFormat.JSON)
+        }
+    }
+    val exportCsvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportRules(uri, ExportFormat.CSV)
         }
     }
 
@@ -83,6 +100,15 @@ fun KnowledgeScreen(
                         Icon(
                             imageVector = Icons.Default.Delete,
                             contentDescription = "清空知识库"
+                        )
+                    }
+                    IconButton(
+                        onClick = { showExportDialog = true },
+                        enabled = uiState.totalRuleCount > 0 && !uiState.isImporting && !uiState.isClearing
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FileDownload,
+                            contentDescription = "导出知识库"
                         )
                     }
                     IconButton(
@@ -271,6 +297,21 @@ fun KnowledgeScreen(
                         "*/*"
                     )
                 )
+            }
+        )
+    }
+
+    if (showExportDialog) {
+        ExportFormatDialog(
+            currentRuleCount = uiState.totalRuleCount,
+            isExporting = uiState.isExporting,
+            onDismiss = { showExportDialog = false },
+            onSelectFormat = { format ->
+                showExportDialog = false
+                when (format) {
+                    ExportFormat.JSON -> exportLauncher.launch("knowledge_rules.json")
+                    ExportFormat.CSV -> exportCsvLauncher.launch("knowledge_rules.csv")
+                }
             }
         )
     }
@@ -652,6 +693,103 @@ private fun KeywordRule.targetSummary(): String {
     } else {
         "适用房源：${targetNames.joinToString("、")}"
     }
+}
+
+enum class ExportFormat {
+    JSON, CSV
+}
+
+@Composable
+fun ExportFormatDialog(
+    currentRuleCount: Int,
+    isExporting: Boolean,
+    onDismiss: () -> Unit,
+    onSelectFormat: (ExportFormat) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("导出知识库") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "当前知识库有 $currentRuleCount 条规则",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        onClick = { onSelectFormat(ExportFormat.JSON) },
+                        modifier = Modifier.weight(1f),
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "JSON",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "完整数据结构",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                    Surface(
+                        onClick = { onSelectFormat(ExportFormat.CSV) },
+                        modifier = Modifier.weight(1f),
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "CSV",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "表格格式",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+                if (isExporting) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text(
+                            text = "正在导出...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
 }
 
 

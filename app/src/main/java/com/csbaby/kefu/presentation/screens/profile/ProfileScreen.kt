@@ -84,6 +84,14 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            // 备份与恢复
+            BackupRestoreCard(
+                viewModel = viewModel,
+                uiState = uiState
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             // OTA 更新
             OtaUpdateCard(
                 viewModel = viewModel,
@@ -392,6 +400,152 @@ private fun StyleSlider(
                 inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
             )
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BackupRestoreCard(
+    viewModel: ProfileViewModel,
+    uiState: ProfileUiState
+) {
+    val backupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri != null) viewModel.createLocalBackup(uri)
+    }
+    val restoreLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) viewModel.restoreFromLocalBackup(uri)
+    }
+
+    // Show backup/restore messages via snackbar
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(uiState.backupMessage) {
+        val msg = uiState.backupMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(msg)
+        viewModel.clearBackupMessage()
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = "备份与恢复",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "备份知识库规则、黑名单和模型配置，支持本地和远程两种方式",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (uiState.lastBackupTime.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "上次备份: ${uiState.lastBackupTime}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Local backup/restore
+            Text(
+                text = "本地备份",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { backupLauncher.launch("csbaby_backup.json") },
+                    modifier = Modifier.weight(1f),
+                    enabled = !uiState.isBackingUp && !uiState.isRestoring
+                ) {
+                    if (uiState.isBackingUp) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    } else {
+                        Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+                    Text(if (uiState.isBackingUp) "备份中..." else "备份到本地")
+                }
+                OutlinedButton(
+                    onClick = { restoreLauncher.launch(arrayOf("application/json")) },
+                    modifier = Modifier.weight(1f),
+                    enabled = !uiState.isBackingUp && !uiState.isRestoring
+                ) {
+                    if (uiState.isRestoring) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    } else {
+                        Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+                    Text(if (uiState.isRestoring) "恢复中..." else "从本地恢复")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Divider()
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Remote backup/restore
+            Text(
+                text = "远程备份",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { viewModel.createRemoteBackup() },
+                    modifier = Modifier.weight(1f),
+                    enabled = !uiState.isBackingUp && !uiState.isRestoring
+                ) {
+                    Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("上传到云端")
+                }
+                OutlinedButton(
+                    onClick = { viewModel.restoreFromRemoteBackup() },
+                    modifier = Modifier.weight(1f),
+                    enabled = !uiState.isBackingUp && !uiState.isRestoring
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("从云端恢复")
+                }
+            }
+        }
     }
 }
 

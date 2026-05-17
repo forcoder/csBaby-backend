@@ -1,5 +1,8 @@
 package com.csbaby.kefu.presentation.screens.blacklist
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,7 +27,18 @@ fun BlacklistScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
-    
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) viewModel.importBlacklists(uri)
+    }
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri != null) viewModel.exportBlacklists(uri)
+    }
+
     LaunchedEffect(uiState.noticeMessage) {
         val message = uiState.noticeMessage ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(message)
@@ -44,6 +58,24 @@ fun BlacklistScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { importLauncher.launch(arrayOf("application/json")) },
+                        enabled = !uiState.isImporting && !uiState.isExporting
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FileUpload,
+                            contentDescription = "导入黑名单"
+                        )
+                    }
+                    IconButton(
+                        onClick = { exportLauncher.launch("blacklist.json") },
+                        enabled = uiState.blacklists.isNotEmpty() && !uiState.isImporting && !uiState.isExporting
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FileDownload,
+                            contentDescription = "导出黑名单"
+                        )
+                    }
                     IconButton(
                         onClick = { showClearDialog = true },
                         enabled = uiState.blacklists.isNotEmpty()
@@ -76,7 +108,7 @@ fun BlacklistScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            if (uiState.isLoading) {
+            if (uiState.isLoading || uiState.isImporting || uiState.isExporting) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center

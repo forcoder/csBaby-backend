@@ -44,4 +44,7 @@ interface AIModelConfigDao {
 
     @Query("DELETE FROM ai_model_configs")
     suspend fun deleteAllModels()
+
+    @Query("SELECT * FROM ai_model_configs ORDER BY isDefault DESC, lastUsed DESC")
+    suspend fun getAllModelsList(): List<AIModelConfigEntity>
 }

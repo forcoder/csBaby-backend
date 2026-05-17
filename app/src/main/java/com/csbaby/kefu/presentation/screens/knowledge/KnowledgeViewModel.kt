@@ -23,6 +23,7 @@ data class KnowledgeUiState(
     val totalRuleCount: Int = 0,
     val isLoading: Boolean = false,
     val isImporting: Boolean = false,
+    val isExporting: Boolean = false,
     val isClearing: Boolean = false,
     val noticeMessage: String? = null
 )
@@ -231,6 +232,30 @@ class KnowledgeViewModel @Inject constructor(
                     noticeMessage = noticeMessage
                 )
             }
+        }
+    }
+
+    fun exportRules(uri: Uri, format: ExportFormat) {
+        if (_uiState.value.isExporting) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isExporting = true, noticeMessage = null) }
+
+            val result = runCatching {
+                appContext.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    when (format) {
+                        ExportFormat.JSON -> knowledgeBaseManager.exportToJson(outputStream)
+                        ExportFormat.CSV -> knowledgeBaseManager.exportToCsv(outputStream)
+                    }
+                } ?: throw Exception("无法创建文件")
+            }
+
+            val noticeMessage = result.fold(
+                onSuccess = { "导出成功" },
+                onFailure = { "导出失败：${it.message}" }
+            )
+
+            _uiState.update { it.copy(isExporting = false, noticeMessage = noticeMessage) }
         }
     }
 
