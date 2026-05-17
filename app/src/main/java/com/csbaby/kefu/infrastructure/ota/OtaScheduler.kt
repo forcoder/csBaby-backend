@@ -121,6 +121,7 @@ class OtaScheduler @Inject constructor(
     /**
      * 获取下一次检查时间
      */
+    @Suppress("RestrictedApi")
     suspend fun getNextCheckTime(): String? {
         return try {
             val workInfos = workManager.getWorkInfosByTag(WORK_TAG).await()

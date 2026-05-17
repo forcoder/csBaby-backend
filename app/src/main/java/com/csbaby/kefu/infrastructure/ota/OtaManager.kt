@@ -253,7 +253,7 @@ class OtaManager @Inject constructor(
         }
         
         val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-        context.registerReceiver(downloadReceiver, filter)
+        context.registerReceiver(downloadReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
     }
     
     /**
@@ -423,8 +423,10 @@ class OtaManager @Inject constructor(
                             break
                         }
 
-                        val totalBytes = cursor.getLong(cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
-                        val downloadedBytes = cursor.getLong(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                        val totalBytesIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                        val downloadedBytesIndex = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                        val totalBytes = if (totalBytesIndex >= 0) cursor.getLong(totalBytesIndex) else 0L
+                        val downloadedBytes = if (downloadedBytesIndex >= 0) cursor.getLong(downloadedBytesIndex) else 0L
                         
                         if (totalBytes > 0) {
                             val progress = downloadedBytes.toFloat() / totalBytes
