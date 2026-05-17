@@ -5,11 +5,20 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.csbaby.kefu.data.local.KefuDatabase
+import com.csbaby.kefu.data.remote.CsbabyApiService
+import com.csbaby.kefu.data.remote.DeviceManager
+import com.csbaby.kefu.data.remote.dto.BackupDto
+import com.csbaby.kefu.data.remote.dto.BlacklistDto
+import com.csbaby.kefu.data.remote.dto.ModelConfigDto
+import com.csbaby.kefu.data.remote.dto.RestoreRequest
+import com.csbaby.kefu.data.remote.dto.RuleDto
 import com.csbaby.kefu.domain.model.KeywordRule
 import com.csbaby.kefu.infrastructure.knowledge.KnowledgeBaseManager
 
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import timber.log.Timber
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,7 +50,10 @@ enum class ImportMode {
 @HiltViewModel
 class KnowledgeViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
-    private val knowledgeBaseManager: KnowledgeBaseManager
+    private val knowledgeBaseManager: KnowledgeBaseManager,
+    private val apiService: CsbabyApiService,
+    private val deviceManager: DeviceManager,
+    private val kefuDatabase: KefuDatabase
 ) : ViewModel() {
 
     companion object {
@@ -187,6 +199,8 @@ class KnowledgeViewModel @Inject constructor(
             // 导入成功后，重建 Trie 树使新规则立即生效
             if (result.successCount > 0) {
                 knowledgeBaseManager.initializeMatcher()
+                // 自动同步到云端，防止卸载重装后数据丢失
+                autoSyncToCloud()
             }
 
             _uiState.update {
@@ -194,6 +208,53 @@ class KnowledgeViewModel @Inject constructor(
                     isImporting = false,
                     noticeMessage = noticeMessage
                 )
+            }
+        }
+    }
+
+    /**
+     * 导入成功后自动同步所有数据到云端
+     */
+    private fun autoSyncToCloud() {
+        viewModelScope.launch {
+            try {
+                deviceManager.ensureRegistered()
+                val rules = kefuDatabase.keywordRuleDao().getAllRulesList().map { entity ->
+                    RuleDto(
+                        id = entity.id.toInt(), deviceId = "", keyword = entity.keyword,
+                        matchType = entity.matchType, replyTemplate = entity.replyTemplate,
+                        category = entity.category, targetType = entity.targetType,
+                        targetNames = entity.targetNamesJson, priority = entity.priority,
+                        enabled = if (entity.enabled) 1 else 0
+                    )
+                }
+                val models = kefuDatabase.aiModelConfigDao().getAllModelsList().map { entity ->
+                    ModelConfigDto(
+                        id = entity.id.toInt(), deviceId = "", name = entity.modelName,
+                        modelType = entity.modelType, model = entity.model,
+                        apiKey = "", apiEndpoint = entity.apiEndpoint,
+                        temperature = entity.temperature.toDouble(), maxTokens = entity.maxTokens,
+                        isDefault = if (entity.isDefault) 1 else 0,
+                        enabled = if (entity.isEnabled) 1 else 0
+                    )
+                }
+                val blacklist = kefuDatabase.messageBlacklistDao().getAllList().map { entity ->
+                    BlacklistDto(
+                        id = entity.id, type = entity.type, value = entity.value,
+                        description = entity.description, packageName = entity.packageName,
+                        isEnabled = entity.isEnabled, createdAt = entity.createdAt
+                    )
+                }
+                val backupData = BackupDto(
+                    version = 2, deviceId = "",
+                    rules = rules, models = models,
+                    history = emptyList(), feedback = emptyList(), metrics = emptyList(),
+                    blacklist = blacklist
+                )
+                apiService.restoreBackup(RestoreRequest(backup = backupData))
+                Timber.d(TAG, "导入后自动云同步成功: rules=${rules.size}, models=${models.size}, blacklist=${blacklist.size}")
+            } catch (e: Exception) {
+                Timber.w(TAG, "导入后自动云同步失败（不影响本地导入）: ${e.message}")
             }
         }
     }

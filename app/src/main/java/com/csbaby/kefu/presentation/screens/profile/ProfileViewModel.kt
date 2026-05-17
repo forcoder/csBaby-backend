@@ -16,6 +16,8 @@ import com.csbaby.kefu.data.remote.CsbabyApiService
 import com.csbaby.kefu.data.remote.DeviceManager
 import com.csbaby.kefu.data.remote.VersionListItem
 import com.csbaby.kefu.data.remote.dto.BackupDto
+import com.csbaby.kefu.data.remote.dto.BlacklistDto
+import com.csbaby.kefu.data.remote.dto.ModelConfigDto
 import com.csbaby.kefu.data.remote.dto.RestoreRequest
 import com.csbaby.kefu.data.remote.dto.RuleDto
 import com.csbaby.kefu.domain.model.UserStyleProfile
@@ -420,6 +422,8 @@ class ProfileViewModel @Inject constructor(
             _uiState.update { it.copy(isBackingUp = true, backupMessage = null) }
             try {
                 deviceManager.ensureRegistered()
+
+                // 1. Rules
                 val rules = kefuDatabase.keywordRuleDao().getAllRulesList().map { entity ->
                     RuleDto(
                         id = entity.id.toInt(), deviceId = "", keyword = entity.keyword,
@@ -429,15 +433,39 @@ class ProfileViewModel @Inject constructor(
                         enabled = if (entity.enabled) 1 else 0
                     )
                 }
+
+                // 2. Models (without API keys for security)
+                val models = kefuDatabase.aiModelConfigDao().getAllModelsList().map { entity ->
+                    ModelConfigDto(
+                        id = entity.id.toInt(), deviceId = "", name = entity.modelName,
+                        modelType = entity.modelType, model = entity.model,
+                        apiKey = "", apiEndpoint = entity.apiEndpoint,
+                        temperature = entity.temperature.toDouble(), maxTokens = entity.maxTokens,
+                        isDefault = if (entity.isDefault) 1 else 0,
+                        enabled = if (entity.isEnabled) 1 else 0
+                    )
+                }
+
+                // 3. Blacklist
+                val blacklist = kefuDatabase.messageBlacklistDao().getAllList().map { entity ->
+                    BlacklistDto(
+                        id = entity.id, type = entity.type, value = entity.value,
+                        description = entity.description, packageName = entity.packageName,
+                        isEnabled = entity.isEnabled, createdAt = entity.createdAt
+                    )
+                }
+
                 val backupData = BackupDto(
-                    version = 1, deviceId = "", rules = rules,
-                    models = emptyList(), history = emptyList(),
-                    feedback = emptyList(), metrics = emptyList()
+                    version = 2, deviceId = "",
+                    rules = rules, models = models,
+                    history = emptyList(), feedback = emptyList(), metrics = emptyList(),
+                    blacklist = blacklist
                 )
                 apiService.restoreBackup(RestoreRequest(backup = backupData))
                 val timeStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date())
-                _uiState.update { it.copy(isBackingUp = false, lastBackupTime = timeStr, backupMessage = "远程备份成功") }
-                Timber.i("远程备份成功")
+                val totalCount = rules.size + models.size + blacklist.size
+                _uiState.update { it.copy(isBackingUp = false, lastBackupTime = timeStr, backupMessage = "远程备份成功（${rules.size}规则+${models.size}模型+${blacklist.size}黑名单）") }
+                Timber.i("远程备份成功: rules=${rules.size}, models=${models.size}, blacklist=${blacklist.size}")
             } catch (e: Exception) {
                 _uiState.update { it.copy(isBackingUp = false, backupMessage = "远程备份失败：${e.message}") }
                 Timber.e(e, "远程备份失败")
@@ -451,24 +479,79 @@ class ProfileViewModel @Inject constructor(
             try {
                 deviceManager.ensureRegistered()
                 val backupData = apiService.exportBackup()
+
+                // 1. Restore rules (override mode)
                 var rulesRestored = 0
-                backupData.rules.forEach { dto ->
-                    try {
-                        kefuDatabase.keywordRuleDao().insertRule(
-                            KeywordRuleEntity(
-                                keyword = dto.keyword, matchType = dto.matchType,
-                                replyTemplate = dto.replyTemplate, category = dto.category,
-                                targetType = dto.targetType, targetNamesJson = dto.targetNames,
-                                priority = dto.priority, enabled = dto.enabled == 1
+                if (backupData.rules.isNotEmpty()) {
+                    kefuDatabase.keywordRuleDao().deleteAllRules()
+                    backupData.rules.forEach { dto ->
+                        try {
+                            kefuDatabase.keywordRuleDao().insertRule(
+                                KeywordRuleEntity(
+                                    keyword = dto.keyword, matchType = dto.matchType,
+                                    replyTemplate = dto.replyTemplate, category = dto.category,
+                                    targetType = dto.targetType, targetNamesJson = dto.targetNames,
+                                    priority = dto.priority, enabled = dto.enabled == 1
+                                )
                             )
-                        )
-                        rulesRestored++
-                    } catch (e: Exception) {
-                        Timber.w(e, "跳过一条远程规则恢复")
+                            rulesRestored++
+                        } catch (e: Exception) {
+                            Timber.w(e, "跳过一条远程规则恢复")
+                        }
                     }
                 }
-                _uiState.update { it.copy(isRestoring = false, backupMessage = "远程恢复成功：规则 $rulesRestored 条") }
-                Timber.i("远程恢复成功: rules=$rulesRestored")
+
+                // 2. Restore models (override mode)
+                var modelsRestored = 0
+                if (backupData.models.isNotEmpty()) {
+                    kefuDatabase.aiModelConfigDao().deleteAllModels()
+                    backupData.models.forEach { dto ->
+                        try {
+                            kefuDatabase.aiModelConfigDao().insertModel(
+                                AIModelConfigEntity(
+                                    modelType = dto.modelType,
+                                    modelName = dto.name,
+                                    model = dto.model,
+                                    apiKey = "",
+                                    apiEndpoint = dto.apiEndpoint,
+                                    temperature = dto.temperature.toFloat(),
+                                    maxTokens = dto.maxTokens,
+                                    isDefault = dto.isDefault == 1,
+                                    isEnabled = dto.enabled == 1
+                                )
+                            )
+                            modelsRestored++
+                        } catch (e: Exception) {
+                            Timber.w(e, "跳过一条远程模型恢复")
+                        }
+                    }
+                }
+
+                // 3. Restore blacklist (override mode)
+                var blacklistRestored = 0
+                if (backupData.blacklist.isNotEmpty()) {
+                    kefuDatabase.messageBlacklistDao().deleteAll()
+                    backupData.blacklist.forEach { dto ->
+                        try {
+                            kefuDatabase.messageBlacklistDao().insert(
+                                MessageBlacklistEntity(
+                                    type = dto.type,
+                                    value = dto.value,
+                                    description = dto.description,
+                                    packageName = dto.packageName,
+                                    isEnabled = dto.isEnabled
+                                )
+                            )
+                            blacklistRestored++
+                        } catch (e: Exception) {
+                            Timber.w(e, "跳过一条远程黑名单恢复")
+                        }
+                    }
+                }
+
+                val msg = "远程恢复成功：${rulesRestored}规则+${modelsRestored}模型+${blacklistRestored}黑名单"
+                _uiState.update { it.copy(isRestoring = false, backupMessage = msg) }
+                Timber.i("远程恢复成功: rules=$rulesRestored, models=$modelsRestored, blacklist=$blacklistRestored")
             } catch (e: Exception) {
                 _uiState.update { it.copy(isRestoring = false, backupMessage = "远程恢复失败：${e.message}") }
                 Timber.e(e, "远程恢复失败")

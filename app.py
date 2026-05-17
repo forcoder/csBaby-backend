@@ -677,14 +677,24 @@ def export_backup():
     feedback_items = feedback_repo.get_by_device(device_id, 1000, 0)
     metrics = metrics_repo.get_by_device_and_date_range(device_id, 365)
 
+    blacklist_items = []
+    try:
+        db = get_connection()
+        bl_rows = db.execute("SELECT * FROM blacklist WHERE device_id=? ORDER BY created_at DESC", (device_id,)).fetchall()
+        blacklist_items = [dict(r) for r in bl_rows]
+        db.close()
+    except Exception:
+        pass
+
     return jsonify({
-        "version": 1, "device_id": device_id,
+        "version": 2, "device_id": device_id,
         "rules": [_rule_to_dict(r) for r in rules],
         "models": [_model_to_dict(m) for m in models],
         "history": [{"id": h.id, "original_message": h.original_message,
                       "reply_content": h.reply_content} for h in history_items],
         "feedback": [{"id": f.id, "action": f.action} for f in feedback_items],
         "metrics": [{"date": m.date, "total_generated": m.total_generated} for m in metrics],
+        "blacklist": blacklist_items,
     })
 
 @app.route("/api/backup/restore", methods=["POST"])
@@ -752,9 +762,31 @@ def restore_backup():
         for config in parsed_models:
             SqliteModelRepository().create(config)
 
+    # Restore blacklist
+    bl_data = backup.get("blacklist", [])
+    bl_count = 0
+    if bl_data and isinstance(bl_data, list):
+        db = get_connection()
+        try:
+            db.execute("DELETE FROM blacklist WHERE device_id=?", (device_id,))
+            db.commit()
+            for bl in bl_data:
+                db.execute(
+                    "INSERT INTO blacklist (device_id, type, value, description, package_name, is_enabled) VALUES (?, ?, ?, ?, ?, ?)",
+                    (device_id, bl.get("type", "KEYWORD"), bl.get("value", ""),
+                     bl.get("description", ""), bl.get("package_name"),
+                     1 if bl.get("is_enabled", True) else 0)
+                )
+            db.commit()
+            bl_count = len(bl_data)
+        except Exception:
+            pass
+        finally:
+            db.close()
+
     return jsonify({
         "status": "ok",
-        "restored": {"rules": len(parsed_rules), "models": len(parsed_models)},
+        "restored": {"rules": len(parsed_rules), "models": len(parsed_models), "blacklist": bl_count},
     })
 
 # ========== Admin Authentication ==========
