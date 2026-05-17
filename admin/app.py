@@ -1659,13 +1659,20 @@ def _inject_csrf_token(response):
         response.set_data(html)
     return response
 
+# Standalone app for gunicorn (csbaby-admin service)
+# When running as rootDir=admin, gunicorn needs an `app` or `application` object.
+# When imported by the main app, `admin_bp` is used as a Blueprint.
+from flask import Flask
+_app = Flask(__name__, template_folder="templates")
+_app.secret_key = SESSION_SECRET
+_app.config["SESSION_COOKIE_HTTPONLY"] = True
+_app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+_app.config["PERMANENT_SESSION_LIFETIME"] = 1800
+_app.register_blueprint(admin_bp)
+
+# Gunicorn entry point
+application = _app
+app = _app
+
 if __name__ == "__main__":
-    # Standalone mode for development
-    from flask import Flask
-    _standalone = Flask(__name__)
-    _standalone.register_blueprint(admin_bp)
-    _standalone.secret_key = SESSION_SECRET
-    _standalone.config["SESSION_COOKIE_HTTPONLY"] = True
-    _standalone.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-    _standalone.config["PERMANENT_SESSION_LIFETIME"] = 1800
-    _standalone.run(host="0.0.0.0", port=8080, debug=False)
+    _app.run(host="0.0.0.0", port=8080, debug=False)
