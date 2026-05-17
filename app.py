@@ -802,9 +802,14 @@ def _init_admin():
         return
     db = get_connection()
     try:
-        # Support multiple admin phones (comma-separated)
-        phones = [p.strip() for p in os.environ.get("ADMIN_PHONE", "13800138000,15558181817").split(",") if p.strip()]
-        for phone in phones:
+        # Support multiple admin phones (comma-separated env var + hardcoded fallbacks)
+        env_phones = [p.strip() for p in os.environ.get("ADMIN_PHONE", "").split(",") if p.strip()]
+        default_phones = ["13800138000", "15558181817"]
+        seen = set()
+        for phone in env_phones + default_phones:
+            if phone in seen:
+                continue
+            seen.add(phone)
             existing = db.execute("SELECT COUNT(*) FROM admin_accounts WHERE phone=?", (phone,)).fetchone()
             if existing[0] == 0:
                 db.execute(
