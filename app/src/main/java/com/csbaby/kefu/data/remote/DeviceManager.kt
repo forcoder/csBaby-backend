@@ -24,30 +24,72 @@ class UserAuthManager @Inject constructor(
     private val mutex = Mutex()
 
     /**
-     * 确保设备已注册，返回有效的 token
-     * 如果本地已有 token 则直接返回，否则自动注册
+     * 检查用户是否已登录，返回有效的 token 或 userId
+     * 如果本地已有 token 则直接返回，否则需要用户登录
      */
-    suspend fun ensureRegistered(): String {
+    suspend fun ensureAuthenticated(): Pair<String?, String?> {
         val existingToken = preferencesManager.authTokenFlow.first()
         if (existingToken.isNotBlank()) {
-            return existingToken
+            val userId = preferencesManager.userPreferencesFlow.first().userId
+            return Pair(existingToken, userId)
         }
-        return mutex.withLock {
-            // Double-check after acquiring lock
+
+        val currentUserId = preferencesManager.userPreferencesFlow.first().currentUserId
+        if (currentUserId.isNotBlank() && currentUserId != "default_user") {
             val token = preferencesManager.authTokenFlow.first()
-            if (token.isNotBlank()) return@withLock token
-            registerDevice()
+            return Pair(token, currentUserId)
         }
+
+        return Pair(null, null) // Need to login
     }
 
     /**
-     * 强制重新注册设备
+     * 用户登录
      */
-    suspend fun reRegister(): String {
-        return mutex.withLock {
-            preferencesManager.clearAuthToken()
-            authInterceptor.clearToken()
-            registerDevice()
+    suspend fun login(phone: String, password: String): AuthResponse {
+        val response = apiService.userLogin(UserLoginRequest(phone, password))
+        preferencesManager.saveAuthToken(response.token)
+        preferencesManager.updateCurrentUserId(response.userId)
+        preferencesManager.saveUserId(response.userId)
+        authInterceptor.updateToken(response.token)
+        return response
+    }
+
+    /**
+     * 用户注册
+     */
+    suspend fun register(phone: String, password: String, name: String = ""): AuthResponse {
+        val response = apiService.userRegister(UserRegisterRequest(phone, password, name))
+        preferencesManager.saveAuthToken(response.token)
+        preferencesManager.updateCurrentUserId(response.userId)
+        preferencesManager.saveUserId(response.userId)
+        authInterceptor.updateToken(response.token)
+        return response
+    }
+
+    /**
+     * 修改密码
+     */
+    suspend fun changePassword(oldPassword: String, newPassword: String): ChangePasswordResponse {
+        return apiService.changePassword(ChangePasswordRequest(oldPassword, newPassword))
+    }
+
+    /**
+     * 登出
+     */
+    suspend fun logout() {
+        preferencesManager.clearAllAuthData()
+        authInterceptor.clearToken()
+    }
+
+    /**
+     * 发送心跳
+     */
+    suspend fun heartbeat() {
+        try {
+            apiService.heartbeat()
+        } catch (e: Exception) {
+            Timber.w(e, "Heartbeat failed")
         }
     }
 
