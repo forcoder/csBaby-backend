@@ -14,6 +14,15 @@ interface CsbabyApiService {
     @POST("api/auth/register")
     suspend fun register(@Body req: RegisterRequest): RegisterResponse
 
+    @POST("api/auth/user/register")
+    suspend fun userRegister(@Body req: UserRegisterRequest): AuthResponse
+
+    @POST("api/auth/user/login")
+    suspend fun userLogin(@Body req: UserLoginRequest): AuthResponse
+
+    @POST("api/auth/user/change_password")
+    suspend fun changePassword(@Body req: ChangePasswordRequest): ChangePasswordResponse
+
     @POST("api/auth/heartbeat")
     suspend fun heartbeat()
 

@@ -12,11 +12,11 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 设备注册与 Token 管理
- * 首次启动自动注册，Token 过期自动重新注册
+ * 用户认证与 Token 管理
+ * 支持用户登录/注册，多设备共享数据
  */
 @Singleton
-class DeviceManager @Inject constructor(
+class UserAuthManager @Inject constructor(
     private val apiService: CsbabyApiService,
     private val preferencesManager: PreferencesManager,
     private val authInterceptor: AuthInterceptor

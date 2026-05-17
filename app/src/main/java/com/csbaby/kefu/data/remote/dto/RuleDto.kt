@@ -4,7 +4,7 @@ import com.google.gson.annotations.SerializedName
 
 data class RuleDto(
     @SerializedName("id") val id: Int = 0,
-    @SerializedName("device_id") val deviceId: String = "",
+    @SerializedName("user_id") val userId: String = "",
     @SerializedName("keyword") val keyword: String = "",
     @SerializedName("match_type") val matchType: String = "CONTAINS",
     @SerializedName("reply_template") val replyTemplate: String = "",

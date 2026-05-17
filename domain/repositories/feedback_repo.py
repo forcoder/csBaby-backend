@@ -9,5 +9,5 @@ class FeedbackRepository(ABC):
         pass
 
     @abstractmethod
-    def get_by_device(self, device_id: str, limit: int, offset: int) -> List[Feedback]:
+    def get_by_device(self, user_id: str, limit: int, offset: int) -> List[Feedback]:
         pass

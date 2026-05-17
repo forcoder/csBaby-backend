@@ -6,20 +6,20 @@ from infrastructure.persistence.database import get_connection
 
 
 class SqliteMetricsRepository(MetricsRepository):
-    def get_by_device_and_date_range(self, device_id: str, days: int) -> List[OptimizationMetrics]:
+    def get_by_device_and_date_range(self, user_id: str, days: int) -> List[OptimizationMetrics]:
         db = get_connection()
         rows = db.execute(
-            "SELECT * FROM optimization_metrics WHERE device_id=? AND date >= date('now', ?) ORDER BY date DESC",
-            (device_id, f"-{days} days"),
+            "SELECT * FROM optimization_metrics WHERE user_id=? AND date >= date('now', ?) ORDER BY date DESC",
+            (user_id, f"-{days} days"),
         ).fetchall()
         db.close()
         return [OptimizationMetrics(
-            id=r["id"], device_id=r["device_id"], date=r["date"],
+            id=r["id"], user_id=r["user_id"], date=r["date"],
             total_generated=r["total_generated"], total_accepted=r["total_accepted"],
             total_modified=r["total_modified"], total_rejected=r["total_rejected"],
         ) for r in rows]
 
-    def increment_metric(self, device_id: str, action: str) -> None:
+    def increment_metric(self, user_id: str, action: str) -> None:
         today = datetime.now().strftime("%Y-%m-%d")
         field_map = {
             "generated": "total_generated", "accepted": "total_accepted",
@@ -30,10 +30,10 @@ class SqliteMetricsRepository(MetricsRepository):
             return
         db = get_connection()
         db.execute(
-            f"""INSERT INTO optimization_metrics (device_id, date, {field})
+            f"""INSERT INTO optimization_metrics (user_id, date, {field})
                 VALUES (?, ?, 1)
-                ON CONFLICT(device_id, date) DO UPDATE SET {field} = {field} + 1""",
-            (device_id, today),
+                ON CONFLICT(user_id, date) DO UPDATE SET {field} = {field} + 1""",
+            (user_id, today),
         )
         db.commit()
         db.close()

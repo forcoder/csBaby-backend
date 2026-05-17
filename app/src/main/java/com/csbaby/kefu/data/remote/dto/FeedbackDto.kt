@@ -4,7 +4,7 @@ import com.google.gson.annotations.SerializedName
 
 data class FeedbackDto(
     @SerializedName("id") val id: Int = 0,
-    @SerializedName("device_id") val deviceId: String = "",
+    @SerializedName("user_id") val userId: String = "",
     @SerializedName("reply_history_id") val replyHistoryId: Int? = null,
     @SerializedName("action") val action: String = "",
     @SerializedName("modified_text") val modifiedText: String = "",
@@ -15,7 +15,7 @@ data class FeedbackDto(
 
 data class MetricsDto(
     @SerializedName("id") val id: Int = 0,
-    @SerializedName("device_id") val deviceId: String = "",
+    @SerializedName("user_id") val userId: String = "",
     @SerializedName("date") val date: String = "",
     @SerializedName("total_generated") val totalGenerated: Int = 0,
     @SerializedName("total_accepted") val totalAccepted: Int = 0,

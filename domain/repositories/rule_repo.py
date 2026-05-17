@@ -9,11 +9,11 @@ class RuleRepository(ABC):
         pass
 
     @abstractmethod
-    def get_by_device(self, device_id: str) -> List[KeywordRule]:
+    def get_by_device(self, user_id: str) -> List[KeywordRule]:
         pass
 
     @abstractmethod
-    def get_by_id(self, rule_id: int, device_id: str) -> Optional[KeywordRule]:
+    def get_by_id(self, rule_id: int, user_id: str) -> Optional[KeywordRule]:
         pass
 
     @abstractmethod
@@ -21,9 +21,9 @@ class RuleRepository(ABC):
         pass
 
     @abstractmethod
-    def delete(self, rule_id: int, device_id: str) -> bool:
+    def delete(self, rule_id: int, user_id: str) -> bool:
         pass
 
     @abstractmethod
-    def batch_create(self, rules: List[KeywordRule], device_id: str, mode: str) -> int:
+    def batch_create(self, rules: List[KeywordRule], user_id: str, mode: str) -> int:
         pass

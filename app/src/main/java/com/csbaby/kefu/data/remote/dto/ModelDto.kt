@@ -4,7 +4,7 @@ import com.google.gson.annotations.SerializedName
 
 data class ModelConfigDto(
     @SerializedName("id") val id: Int = 0,
-    @SerializedName("device_id") val deviceId: String = "",
+    @SerializedName("user_id") val userId: String = "",
     @SerializedName("name") val name: String = "",
     @SerializedName("model_type") val modelType: String = "OPENAI",
     @SerializedName("model") val model: String = "",

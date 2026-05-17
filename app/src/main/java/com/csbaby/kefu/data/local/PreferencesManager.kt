@@ -57,6 +57,7 @@ class PreferencesManager @Inject constructor(
         val THEME_MODE = stringPreferencesKey("theme_mode") // light, dark, system
         // Auth / Device
         val AUTH_TOKEN = stringPreferencesKey("auth_token")
+        val USER_ID = stringPreferencesKey("user_id")
         val DEVICE_ID = stringPreferencesKey("device_id")
         val LAST_SYNC_TIMESTAMP = longPreferencesKey("last_sync_timestamp")
     }
@@ -71,7 +72,8 @@ class PreferencesManager @Inject constructor(
 
         val styleLearningEnabled: Boolean = true,
         val autoSendEnabled: Boolean = false,
-        val currentUserId: String = "default_user",
+        val currentUserId: String = "",
+        val userId: String = "",
         val isFirstLaunch: Boolean = true,
         val notificationPermissionAsked: Boolean = false,
         val overlayPermissionAsked: Boolean = false,
@@ -100,7 +102,8 @@ class PreferencesManager @Inject constructor(
 
                 styleLearningEnabled = preferences[PreferencesKeys.STYLE_LEARNING_ENABLED] ?: true,
                 autoSendEnabled = preferences[PreferencesKeys.AUTO_SEND_ENABLED] ?: false,
-                currentUserId = preferences[PreferencesKeys.CURRENT_USER_ID] ?: "default_user",
+                currentUserId = preferences[PreferencesKeys.CURRENT_USER_ID] ?: "",
+                userId = preferences[PreferencesKeys.USER_ID] ?: "",
                 isFirstLaunch = preferences[PreferencesKeys.FIRST_LAUNCH] ?: true,
                 notificationPermissionAsked = preferences[PreferencesKeys.NOTIFICATION_PERMISSION_ASKED] ?: false,
                 overlayPermissionAsked = preferences[PreferencesKeys.OVERLAY_PERMISSION_ASKED] ?: false,
@@ -184,6 +187,18 @@ class PreferencesManager @Inject constructor(
         }
     }
 
+    suspend fun saveUserId(userId: String) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.USER_ID] = userId
+        }
+    }
+
+    suspend fun clearUserId() {
+        dataStore.edit { preferences ->
+            preferences.remove(PreferencesKeys.USER_ID)
+        }
+    }
+
     suspend fun setFirstLaunchComplete() {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.FIRST_LAUNCH] = false
@@ -250,6 +265,20 @@ class PreferencesManager @Inject constructor(
     suspend fun clearAuthToken() {
         dataStore.edit { preferences ->
             preferences.remove(PreferencesKeys.AUTH_TOKEN)
+        }
+    }
+
+    suspend fun clearUserId() {
+        dataStore.edit { preferences ->
+            preferences.remove(PreferencesKeys.USER_ID)
+        }
+    }
+
+    suspend fun clearAllAuthData() {
+        dataStore.edit { preferences ->
+            preferences.remove(PreferencesKeys.AUTH_TOKEN)
+            preferences.remove(PreferencesKeys.USER_ID)
+            preferences.remove(PreferencesKeys.CURRENT_USER_ID)
         }
     }
 

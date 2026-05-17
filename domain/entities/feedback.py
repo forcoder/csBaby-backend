@@ -5,7 +5,7 @@ from datetime import datetime
 @dataclass
 class Feedback:
     id: int = 0
-    device_id: str = ""
+    user_id: str = ""
     reply_history_id: int = 0
     action: str = ""
     modified_text: str = ""

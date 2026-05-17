@@ -4,7 +4,7 @@ import com.google.gson.annotations.SerializedName
 
 data class HistoryEntryDto(
     @SerializedName("id") val id: Int = 0,
-    @SerializedName("device_id") val deviceId: String = "",
+    @SerializedName("user_id") val userId: String = "",
     @SerializedName("original_message") val originalMessage: String = "",
     @SerializedName("reply_content") val replyContent: String = "",
     @SerializedName("source") val source: String = "ai",

@@ -5,7 +5,7 @@ from datetime import datetime
 @dataclass
 class ModelConfig:
     id: int = 0
-    device_id: str = ""
+    user_id: str = ""
     name: str = ""
     model_type: str = "OPENAI"
     model: str = ""

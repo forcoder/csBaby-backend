@@ -4,7 +4,7 @@ from dataclasses import dataclass
 @dataclass
 class OptimizationMetrics:
     id: int = 0
-    device_id: str = ""
+    user_id: str = ""
     date: str = ""
     total_generated: int = 0
     total_accepted: int = 0

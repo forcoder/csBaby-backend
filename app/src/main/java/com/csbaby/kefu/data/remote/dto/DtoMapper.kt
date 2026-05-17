@@ -4,8 +4,9 @@ import com.csbaby.kefu.domain.model.*
 
 // ========== Rule DTO ↔ Domain ==========
 
-fun RuleDto.toDomain(): KeywordRule = KeywordRule(
+fun RuleDto.toDomain(userId: String = ""): KeywordRule = KeywordRule(
     id = id.toLong(),
+    userId = userId,
     keyword = keyword,
     matchType = enumValueOrDefault(matchType, MatchType.CONTAINS),
     replyTemplate = replyTemplate,
@@ -21,7 +22,7 @@ fun RuleDto.toDomain(): KeywordRule = KeywordRule(
 
 fun KeywordRule.toDto(): RuleDto = RuleDto(
     id = id.toInt(),
-    deviceId = "",
+    userId = userId,
     keyword = keyword,
     matchType = matchType.name,
     replyTemplate = replyTemplate,
@@ -36,8 +37,9 @@ fun KeywordRule.toDto(): RuleDto = RuleDto(
 
 // ========== Model DTO ↔ Domain ==========
 
-fun ModelConfigDto.toDomain(): AIModelConfig = AIModelConfig(
+fun ModelConfigDto.toDomain(userId: String = ""): AIModelConfig = AIModelConfig(
     id = id.toLong(),
+    userId = userId,
     modelType = enumValueOrDefault(modelType, ModelType.OPENAI),
     modelName = name,
     model = model,
@@ -54,7 +56,7 @@ fun ModelConfigDto.toDomain(): AIModelConfig = AIModelConfig(
 
 fun AIModelConfig.toDto(): ModelConfigDto = ModelConfigDto(
     id = id.toInt(),
-    deviceId = "",
+    userId = userId,
     name = modelName,
     modelType = modelType.name,
     model = model,
@@ -70,8 +72,9 @@ fun AIModelConfig.toDto(): ModelConfigDto = ModelConfigDto(
 
 // ========== History DTO ↔ Domain ==========
 
-fun HistoryEntryDto.toDomain(): ReplyHistory = ReplyHistory(
+fun HistoryEntryDto.toDomain(userId: String = ""): ReplyHistory = ReplyHistory(
     id = id.toLong(),
+    userId = userId,
     sourceApp = platform,
     originalMessage = originalMessage,
     generatedReply = replyContent,
@@ -85,7 +88,7 @@ fun HistoryEntryDto.toDomain(): ReplyHistory = ReplyHistory(
 
 fun ReplyHistory.toDto(): HistoryEntryDto = HistoryEntryDto(
     id = id.toInt(),
-    deviceId = "",
+    userId = userId,
     originalMessage = originalMessage,
     replyContent = generatedReply,
     source = "ai",
@@ -100,7 +103,7 @@ fun ReplyHistory.toDto(): HistoryEntryDto = HistoryEntryDto(
 
 // ========== Feedback DTO ↔ Domain ==========
 
-fun FeedbackDto.toDomain(): Pair<String, String> = Pair(action, comment)
+fun FeedbackDto.toDomain(userId: String = ""): Pair<String, String> = Pair(action, comment)
 
 // ========== Helpers ==========
 

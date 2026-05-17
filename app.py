@@ -253,7 +253,7 @@ def register():
             db.commit()
         finally:
             db.close()
-    resp = {"device_id": device.id, "token": device.token, "expires_in": 30 * 86400}
+    resp = {"user_id": device.user_id, "token": device.token, "expires_in": 30 * 86400}
     if user_id:
         resp["user_id"] = user_id
     return jsonify(resp)
@@ -1264,7 +1264,7 @@ def admin_get_global_default_model():
     # Return a global default model config
     db = get_connection()
     try:
-        row = db.execute("SELECT * FROM model_configs WHERE device_id='_global' AND is_default=1 AND enabled=1 LIMIT 1").fetchone()
+        row = db.execute("SELECT * FROM model_configs WHERE user_id='_global' AND is_default=1 AND enabled=1 LIMIT 1").fetchone()
         if row:
             return jsonify(_model_to_dict(ModelConfig(**{k: row[k] for k in row.keys()})))
         return jsonify({})
@@ -1286,7 +1286,7 @@ def admin_save_global_default_model():
         db.commit()
     db.close()
     config = ModelConfig(
-        device_id="_global",
+        user_id="_global",
         name=data.get("name", "global-default"),
         model_type=data.get("model_type", "OPENAI"),
         model=data.get("model", "gpt-4o"),
@@ -1321,7 +1321,7 @@ def admin_get_tenant_default_model(tenant_id):
 def admin_save_tenant_default_model(tenant_id):
     data = request.get_json() or {}
     config = ModelConfig(
-        device_id=tenant_id,
+        user_id=tenant_id,
         name=data.get("name", "default"),
         model_type=data.get("model_type", "OPENAI"),
         model=data.get("model", "gpt-4o"),
@@ -1347,7 +1347,7 @@ def admin_save_tenant_default_model(tenant_id):
 def admin_delete_tenant_default_model(tenant_id):
     db = get_connection()
     try:
-        db.execute("DELETE FROM model_configs WHERE device_id=? AND is_default=1", (tenant_id,))
+        db.execute("DELETE FROM model_configs WHERE user_id=? AND is_default=1", (tenant_id,))
         db.commit()
     finally:
         db.close()
@@ -1381,7 +1381,7 @@ def admin_create_tenant_rule(tenant_id):
     if not isinstance(target_names, list):
         return jsonify({"error": "target_names must be a list"}), 400
     rule = KeywordRule(
-        device_id=tenant_id,
+        user_id=tenant_id,
         keyword=keyword,
         match_type=match_type,
         reply_template=data.get("reply_template", ""),
@@ -1405,7 +1405,7 @@ def admin_update_tenant_rule(tenant_id, rule_id):
         return jsonify({"error": "Rule not found"}), 404
     data = request.get_json() or {}
     rule = KeywordRule(
-        id=rule_id, device_id=tenant_id,
+        id=rule_id, user_id=tenant_id,
         keyword=data.get("keyword", existing.keyword).strip(),
         match_type=data.get("match_type", existing.match_type),
         reply_template=data.get("reply_template", existing.reply_template),
@@ -1438,7 +1438,7 @@ def admin_batch_import_tenant_rules(tenant_id):
         return jsonify({"error": "too many rules (max 1000)"}), 400
     mode = data.get("mode", "append")
     rules = [KeywordRule(
-        device_id=tenant_id, keyword=r.get("keyword", ""),
+        user_id=tenant_id, keyword=r.get("keyword", ""),
         match_type=r.get("match_type", "CONTAINS"), reply_template=r.get("reply_template", ""),
         category=r.get("category", ""), target_type=r.get("target_type", "ALL"),
         target_names=r.get("target_names", []), priority=r.get("priority", 0),
@@ -1489,7 +1489,7 @@ def _blacklist_to_dict(row):
 def admin_get_blacklist(tenant_id):
     db = get_connection()
     try:
-        rows = db.execute("SELECT * FROM blacklist WHERE device_id=? ORDER BY created_at DESC", (tenant_id,)).fetchall()
+        rows = db.execute("SELECT * FROM blacklist WHERE user_id=? ORDER BY created_at DESC", (tenant_id,)).fetchall()
         return jsonify([_blacklist_to_dict(r) for r in rows])
     finally:
         db.close()
@@ -1505,7 +1505,7 @@ def admin_add_blacklist(tenant_id):
     db = get_connection()
     try:
         cur = db.execute(
-            "INSERT INTO blacklist (device_id, type, value, description, package_name, is_enabled) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO blacklist (user_id, type, value, description, package_name, is_enabled) VALUES (?, ?, ?, ?, ?, ?)",
             (tenant_id, data.get("type", "KEYWORD"), value, data.get("description", ""),
              data.get("package_name"), 1 if data.get("is_enabled", True) else 0)
         )
@@ -1521,11 +1521,11 @@ def admin_update_blacklist(tenant_id, bid):
     data = request.get_json() or {}
     db = get_connection()
     try:
-        row = db.execute("SELECT id FROM blacklist WHERE id=? AND device_id=?", (bid, tenant_id)).fetchone()
+        row = db.execute("SELECT id FROM blacklist WHERE id=? AND user_id=?", (bid, tenant_id)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         db.execute(
-            "UPDATE blacklist SET type=?, value=?, description=?, package_name=?, is_enabled=? WHERE id=? AND device_id=?",
+            "UPDATE blacklist SET type=?, value=?, description=?, package_name=?, is_enabled=? WHERE id=? AND user_id=?",
             (data.get("type", "KEYWORD"), data.get("value", ""), data.get("description", ""),
              data.get("package_name"), 1 if data.get("is_enabled", True) else 0, bid, tenant_id)
         )
@@ -1540,7 +1540,7 @@ def admin_update_blacklist(tenant_id, bid):
 def admin_delete_blacklist(tenant_id, bid):
     db = get_connection()
     try:
-        cur = db.execute("DELETE FROM blacklist WHERE id=? AND device_id=?", (bid, tenant_id))
+        cur = db.execute("DELETE FROM blacklist WHERE id=? AND user_id=?", (bid, tenant_id))
         db.commit()
         if cur.rowcount == 0:
             return jsonify({"error": "Not found"}), 404
@@ -1554,7 +1554,7 @@ def admin_delete_blacklist(tenant_id, bid):
 def admin_clear_blacklist(tenant_id):
     db = get_connection()
     try:
-        db.execute("DELETE FROM blacklist WHERE device_id=?", (tenant_id,))
+        db.execute("DELETE FROM blacklist WHERE user_id=?", (tenant_id,))
         db.commit()
         return jsonify({"status": "cleared"})
     finally:
@@ -1573,8 +1573,8 @@ def admin_get_tenant_history(tenant_id):
 
     db = get_connection()
     try:
-        query = "SELECT * FROM reply_history WHERE device_id = ?"
-        count_query = "SELECT COUNT(*) FROM reply_history WHERE device_id = ?"
+        query = "SELECT * FROM reply_history WHERE user_id = ?"
+        count_query = "SELECT COUNT(*) FROM reply_history WHERE user_id = ?"
         params = [tenant_id]
         if source:
             query += " AND source = ?"
@@ -1624,7 +1624,7 @@ def admin_create_tenant_model(tenant_id):
     if not isinstance(max_tokens, int) or max_tokens < 1 or max_tokens > 32000:
         return jsonify({"error": "max_tokens must be 1-32000"}), 400
     config = ModelConfig(
-        device_id=tenant_id,
+        user_id=tenant_id,
         name=name,
         model_type=data.get("model_type", "OPENAI"),
         model=data.get("model", "gpt-4o"),
@@ -1649,7 +1649,7 @@ def admin_update_tenant_model(tenant_id, model_id):
         return jsonify({"error": "Model not found"}), 404
     data = request.get_json() or {}
     config = ModelConfig(
-        id=model_id, device_id=tenant_id,
+        id=model_id, user_id=tenant_id,
         name=data.get("name", existing.name).strip(),
         model_type=data.get("model_type", existing.model_type),
         model=data.get("model", existing.model),
@@ -1683,8 +1683,8 @@ def admin_get_tenant_feedback(tenant_id):
     offset = (page - 1) * page_size
     db = get_connection()
     try:
-        query = "SELECT * FROM feedback WHERE device_id = ?"
-        count_query = "SELECT COUNT(*) FROM feedback WHERE device_id = ?"
+        query = "SELECT * FROM feedback WHERE user_id = ?"
+        count_query = "SELECT COUNT(*) FROM feedback WHERE user_id = ?"
         params = [tenant_id]
         if action:
             query += " AND action = ?"
@@ -1718,7 +1718,7 @@ def admin_get_tenant_metrics(tenant_id):
     items_page = items[offset:offset + page_size]
     return jsonify({
         "items": [{
-            "id": m.id, "device_id": m.device_id, "date": m.date,
+            "id": m.id, "user_id": m.user_id, "date": m.date,
             "total_generated": m.total_generated, "total_accepted": m.total_accepted,
             "total_modified": m.total_modified, "total_rejected": m.total_rejected,
         } for m in items_page],
@@ -2111,10 +2111,10 @@ def admin_change_password():
 def admin_get_tenant_style(tenant_id):
     db = get_connection()
     try:
-        row = db.execute("SELECT * FROM tenant_style_config WHERE device_id=?", (tenant_id,)).fetchone()
+        row = db.execute("SELECT * FROM tenant_style_config WHERE user_id=?", (tenant_id,)).fetchone()
         if not row:
             return jsonify({
-                "device_id": tenant_id, "theme": "light", "primary_color": "#1976D2",
+                "user_id": tenant_id, "theme": "light", "primary_color": "#1976D2",
                 "accent_color": "#FF4081", "font_size": "medium", "bubble_style": "rounded",
                 "avatar_enabled": 1, "show_timestamp": 1, "send_sound": 1, "custom_css": "",
             })
@@ -2143,7 +2143,7 @@ def admin_update_tenant_style(tenant_id):
     try:
         db.execute(
             """INSERT OR REPLACE INTO tenant_style_config
-               (device_id, theme, primary_color, accent_color, font_size, bubble_style,
+               (user_id, theme, primary_color, accent_color, font_size, bubble_style,
                 avatar_enabled, show_timestamp, send_sound, custom_css, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (tenant_id, theme, data.get("primary_color", "#1976D2"),
@@ -2165,10 +2165,10 @@ def admin_update_tenant_style(tenant_id):
 def admin_get_tenant_app_config(tenant_id):
     db = get_connection()
     try:
-        row = db.execute("SELECT * FROM tenant_app_config WHERE device_id=?", (tenant_id,)).fetchone()
+        row = db.execute("SELECT * FROM tenant_app_config WHERE user_id=?", (tenant_id,)).fetchone()
         if not row:
             return jsonify({
-                "device_id": tenant_id, "app_name": "客服小秘",
+                "user_id": tenant_id, "app_name": "客服小秘",
                 "welcome_message": "您好，请问有什么可以帮您？",
                 "offline_message": "当前无客服在线，请稍后再试。",
                 "auto_reply_enabled": 1, "notification_enabled": 1, "voice_enabled": 0,
@@ -2198,7 +2198,7 @@ def admin_update_tenant_app_config(tenant_id):
     try:
         db.execute(
             """INSERT OR REPLACE INTO tenant_app_config
-               (device_id, app_name, welcome_message, offline_message,
+               (user_id, app_name, welcome_message, offline_message,
                 auto_reply_enabled, notification_enabled, voice_enabled,
                 language, session_timeout, max_queue_size, file_upload_enabled, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -2224,7 +2224,7 @@ def admin_update_tenant_app_config(tenant_id):
 @require_admin
 def admin_export_tenant_backup(tenant_id):
     """Export full backup data for a tenant."""
-    device_id = tenant_id
+    user_id = tenant_id
     rule_repo = SqliteRuleRepository()
     model_repo = SqliteModelRepository()
     history_repo = SqliteHistoryRepository()
@@ -2233,22 +2233,22 @@ def admin_export_tenant_backup(tenant_id):
 
     db = get_connection()
     try:
-        row = db.execute("SELECT id FROM devices WHERE id=?", (device_id,)).fetchone()
+        row = db.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone()
         if not row:
             return jsonify({"error": "Tenant not found"}), 404
     finally:
         db.close()
 
-    rules = rule_repo.get_by_device(device_id)
-    models = model_repo.get_by_device(device_id)
-    history_items, _ = history_repo.get_by_device(device_id, 5000, 0)
-    feedback_items = feedback_repo.get_by_device(device_id, 5000, 0)
-    metrics = metrics_repo.get_by_device_and_date_range(device_id, 365)
+    rules = rule_repo.get_by_user(user_id)
+    models = model_repo.get_by_user(user_id)
+    history_items, _ = history_repo.get_by_user(user_id, 5000, 0)
+    feedback_items = feedback_repo.get_by_user(user_id, 5000, 0)
+    metrics = metrics_repo.get_by_user_and_date_range(user_id, 365)
 
     blacklist_items = []
     try:
         db = get_connection()
-        bl_rows = db.execute("SELECT * FROM blacklist WHERE device_id=? ORDER BY created_at DESC", (device_id,)).fetchall()
+        bl_rows = db.execute("SELECT * FROM blacklist WHERE user_id=? ORDER BY created_at DESC", (user_id,)).fetchall()
         blacklist_items = [dict(r) for r in bl_rows]
         db.close()
     except Exception:
@@ -2256,7 +2256,7 @@ def admin_export_tenant_backup(tenant_id):
 
     return jsonify({
         "version": 2,
-        "device_id": device_id,
+        "user_id": user_id,
         "exported_at": _now_str(),
         "rules": [_rule_to_dict(r) for r in rules],
         "models": [_model_to_dict(m) for m in models],
@@ -2287,10 +2287,10 @@ def admin_restore_tenant_backup(tenant_id):
     if not isinstance(backup, dict):
         return jsonify({"error": "backup must be a JSON object"}), 400
 
-    device_id = tenant_id
+    user_id = tenant_id
     db = get_connection()
     try:
-        row = db.execute("SELECT id FROM devices WHERE id=?", (device_id,)).fetchone()
+        row = db.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone()
         if not row:
             return jsonify({"error": "Tenant not found"}), 404
     finally:
@@ -2311,21 +2311,21 @@ def admin_restore_tenant_backup(tenant_id):
             if not isinstance(target_names, list):
                 target_names = []
             parsed_rules.append(KeywordRule(
-                device_id=device_id, keyword=r.get("keyword", ""),
+                user_id=user_id, keyword=r.get("keyword", ""),
                 match_type=r.get("match_type", "CONTAINS"), reply_template=r.get("reply_template", ""),
                 category=r.get("category", ""), target_type=r.get("target_type", "ALL"),
                 target_names=target_names, priority=r.get("priority", 0),
                 enabled=bool(r.get("enabled", True)),
             ))
         if parsed_rules:
-            SqliteRuleRepository().batch_create(parsed_rules, device_id, "override")
+            SqliteRuleRepository().batch_create(parsed_rules, user_id, "override")
             restored["rules"] = len(parsed_rules)
 
     models_data = backup.get("models", [])
     if models_data and isinstance(models_data, list):
         db = get_connection()
         try:
-            db.execute("DELETE FROM model_configs WHERE device_id=?", (device_id,))
+            db.execute("DELETE FROM model_configs WHERE user_id=?", (user_id,))
             db.commit()
         finally:
             db.close()
@@ -2333,7 +2333,7 @@ def admin_restore_tenant_backup(tenant_id):
         for m_data in models_data:
             try:
                 config = ModelConfig(
-                    device_id=device_id, name=m_data.get("name", ""),
+                    user_id=user_id, name=m_data.get("name", ""),
                     model_type=m_data.get("model_type", "OPENAI"), model=m_data.get("model", ""),
                     api_key=m_data.get("api_key", ""), api_endpoint=m_data.get("api_endpoint", ""),
                     temperature=m_data.get("temperature", 0.7), max_tokens=m_data.get("max_tokens", 2000),
@@ -2349,12 +2349,12 @@ def admin_restore_tenant_backup(tenant_id):
     if bl_data and isinstance(bl_data, list):
         db = get_connection()
         try:
-            db.execute("DELETE FROM blacklist WHERE device_id=?", (device_id,))
+            db.execute("DELETE FROM blacklist WHERE user_id=?", (user_id,))
             db.commit()
             for bl in bl_data:
                 db.execute(
-                    "INSERT INTO blacklist (device_id, type, value, description, package_name, is_enabled) VALUES (?, ?, ?, ?, ?, ?)",
-                    (device_id, bl.get("type", "KEYWORD"), bl.get("value", ""),
+                    "INSERT INTO blacklist (user_id, type, value, description, package_name, is_enabled) VALUES (?, ?, ?, ?, ?, ?)",
+                    (user_id, bl.get("type", "KEYWORD"), bl.get("value", ""),
                      bl.get("description", ""), bl.get("package_name"),
                      1 if bl.get("is_enabled", True) else 0)
                 )

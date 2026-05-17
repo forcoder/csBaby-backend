@@ -4,7 +4,7 @@ import com.google.gson.annotations.SerializedName
 
 data class BackupDto(
     @SerializedName("version") val version: Int = 2,
-    @SerializedName("device_id") val deviceId: String = "",
+    @SerializedName("user_id") val userId: String = "",
     @SerializedName("rules") val rules: List<RuleDto> = emptyList(),
     @SerializedName("models") val models: List<ModelConfigDto> = emptyList(),
     @SerializedName("history") val history: List<HistoryEntryDto> = emptyList(),

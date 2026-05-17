@@ -6,7 +6,7 @@ from datetime import datetime
 @dataclass
 class KeywordRule:
     id: int = 0
-    device_id: str = ""
+    user_id: str = ""
     keyword: str = ""
     match_type: str = "CONTAINS"
     reply_template: str = ""

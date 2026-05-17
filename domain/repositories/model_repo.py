@@ -9,11 +9,15 @@ class ModelRepository(ABC):
         pass
 
     @abstractmethod
-    def get_by_device(self, device_id: str) -> List[ModelConfig]:
+    def get_by_device(self, user_id: str) -> List[ModelConfig]:
         pass
 
     @abstractmethod
-    def get_by_id(self, model_id: int, device_id: str) -> Optional[ModelConfig]:
+    def get_default(self, user_id: str) -> Optional[ModelConfig]:
+        pass
+
+    @abstractmethod
+    def get_by_id(self, model_id: int, user_id: str) -> Optional[ModelConfig]:
         pass
 
     @abstractmethod
@@ -21,5 +25,5 @@ class ModelRepository(ABC):
         pass
 
     @abstractmethod
-    def delete(self, model_id: int, device_id: str) -> bool:
+    def delete(self, model_id: int, user_id: str) -> bool:
         pass

@@ -5,7 +5,7 @@ from datetime import datetime
 @dataclass
 class ReplyHistory:
     id: int = 0
-    device_id: str = ""
+    user_id: str = ""
     original_message: str = ""
     reply_content: str = ""
     source: str = "ai"

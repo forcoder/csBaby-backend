@@ -9,5 +9,5 @@ class HistoryRepository(ABC):
         pass
 
     @abstractmethod
-    def get_by_device(self, device_id: str, limit: int, offset: int) -> tuple[List[ReplyHistory], int]:
+    def get_by_device(self, user_id: str, limit: int, offset: int) -> tuple[List[ReplyHistory], int]:
         pass
