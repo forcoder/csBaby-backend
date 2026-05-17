@@ -2,10 +2,18 @@
 {% block content %}
 <div class="login-container">
     <h2>管理员登录</h2>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }}">{{ message }}</div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
     {% if error %}
     <div class="alert alert-error">{{ error }}</div>
     {% endif %}
-    <form method="POST" action="/login">
+    <form method="POST" action="{{ url_for('admin.login') }}">
+        <input type="hidden" name="_csrf_token" value="{{ _csrf_token() }}">
         <div class="form-group">
             <label>手机号</label>
             <input type="tel" name="phone" placeholder="请输入手机号" required>

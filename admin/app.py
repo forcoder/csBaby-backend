@@ -66,7 +66,7 @@ def _check_csrf():
     if current_app.config.get("TESTING"):
         return
     # Skip CSRF for login endpoint (user has no session yet)
-    if request.endpoint == "login":
+    if request.endpoint in ("login", "admin.login"):
         return
     # Periodic cleanup of login rate limiter (1% of requests)
     if secrets.randbelow(100) == 0:
@@ -335,6 +335,28 @@ def parse_excel_content(file_bytes):
     return all_rules
 
 
+@admin_bp.route("/_diag")
+def _diag():
+    """Diagnostic endpoint (remove after fix)."""
+    import logging
+    client = _get_api_client()
+    info = {
+        "admin_mode": os.environ.get("ADMIN_API_MODE", "not set"),
+        "has_api_client": client is not None,
+        "current_app_has_attr": hasattr(current_app, "_api_test_client"),
+        "remote_addr": request.remote_addr,
+        "endpoint": request.endpoint,
+    }
+    if client is not None:
+        try:
+            resp = client.get("/api/admin/stats")
+            info["test_call_status"] = resp.status_code
+        except Exception as e:
+            info["test_call_error"] = f"{type(e).__name__}: {e}"
+    import flask
+    return flask.jsonify(info)
+
+
 @admin_bp.route("/login", methods=["GET", "POST"])
 def login():
     if session.get("admin_phone"):
@@ -375,6 +397,8 @@ def login():
                 error = _safe_api_error(resp)
         except http_requests.exceptions.RequestException:
             error = "无法连接 API 服务"
+        except Exception as e:
+            error = f"请求失败: {type(e).__name__}"
         return render_template("login.html", error=error)
     return render_template("login.html", error=None)
 
