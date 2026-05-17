@@ -5,7 +5,7 @@
         <h1>{{ tenant.phone }}</h1>
         <span class="badge {{ 'badge-success' if tenant.get('is_active', 1) else 'badge-danger' }}">{{ '正常' if tenant.get('is_active', 1) else '已禁用' }}</span>
     </div>
-    <a href="/tenants" class="btn btn-back">← 返回列表</a>
+    <a href="/admin/tenants" class="btn btn-back">← 返回列表</a>
 </div>
 
 <div class="detail-meta">
@@ -15,43 +15,43 @@
 </div>
 
 <div class="stats-grid">
-    <a href="/tenants/{{ tenant.tenant_id }}/rules" class="stat-card stat-card-link">
+    <a href="/admin/tenants/{{ tenant.tenant_id }}/rules" class="stat-card stat-card-link">
         <div class="stat-value">{{ tenant.get('rule_count', 0) }}</div>
         <div class="stat-label">知识库规则</div>
     </a>
-    <a href="/tenants/{{ tenant.tenant_id }}/models" class="stat-card stat-card-link">
+    <a href="/admin/tenants/{{ tenant.tenant_id }}/models" class="stat-card stat-card-link">
         <div class="stat-value">{{ tenant.get('model_count', 0) }}</div>
         <div class="stat-label">模型配置</div>
     </a>
-    <a href="/tenants/{{ tenant.tenant_id }}/history" class="stat-card stat-card-link">
+    <a href="/admin/tenants/{{ tenant.tenant_id }}/history" class="stat-card stat-card-link">
         <div class="stat-value">{{ tenant.get('history_count', 0) }}</div>
         <div class="stat-label">回复历史</div>
     </a>
-    <a href="/tenants/{{ tenant.tenant_id }}/feedback" class="stat-card stat-card-link">
+    <a href="/admin/tenants/{{ tenant.tenant_id }}/feedback" class="stat-card stat-card-link">
         <div class="stat-value">{{ tenant.get('feedback_count', 0) }}</div>
         <div class="stat-label">用户反馈</div>
     </a>
-    <a href="/tenants/{{ tenant.tenant_id }}/blacklist" class="stat-card stat-card-link">
+    <a href="/admin/tenants/{{ tenant.tenant_id }}/blacklist" class="stat-card stat-card-link">
         <div class="stat-value">{{ tenant.get('blacklist_count', 0) }}</div>
         <div class="stat-label">黑名单</div>
     </a>
-    <a href="/tenants/{{ tenant.tenant_id }}/metrics" class="stat-card stat-card-link">
+    <a href="/admin/tenants/{{ tenant.tenant_id }}/metrics" class="stat-card stat-card-link">
         <div class="stat-value stat-value-sm">查看</div>
         <div class="stat-label">优化指标</div>
     </a>
-    <a href="/tenants/{{ tenant.tenant_id }}/routing" class="stat-card stat-card-link">
+    <a href="/admin/tenants/{{ tenant.tenant_id }}/routing" class="stat-card stat-card-link">
         <div class="stat-value stat-value-sm">🔀</div>
         <div class="stat-label">智能路由</div>
     </a>
-    <a href="/tenants/{{ tenant.tenant_id }}/backup" class="stat-card stat-card-link">
+    <a href="/admin/tenants/{{ tenant.tenant_id }}/backup" class="stat-card stat-card-link">
         <div class="stat-value stat-value-sm">💾</div>
         <div class="stat-label">备份恢复</div>
     </a>
-    <a href="/tenants/{{ tenant.tenant_id }}/style" class="stat-card stat-card-link">
+    <a href="/admin/tenants/{{ tenant.tenant_id }}/style" class="stat-card stat-card-link">
         <div class="stat-value stat-value-sm">🎨</div>
         <div class="stat-label">样式配置</div>
     </a>
-    <a href="/tenants/{{ tenant.tenant_id }}/app-config" class="stat-card stat-card-link">
+    <a href="/admin/tenants/{{ tenant.tenant_id }}/app-config" class="stat-card stat-card-link">
         <div class="stat-value stat-value-sm">⚙️</div>
         <div class="stat-label">应用配置</div>
     </a>
@@ -68,7 +68,7 @@
     <div class="alert alert-success">{{ success }}</div>
     {% endif %}
 
-    <form method="POST" action="/tenants/{{ tenant.tenant_id }}" class="form-card form-card-lg">
+    <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}" class="form-card form-card-lg">
         <input type="hidden" name="action" value="save_default_model">
         <div class="form-row">
             <div class="form-group">
@@ -126,7 +126,7 @@
 <div class="section section-danger">
     <h2>危险操作</h2>
     <p class="section-desc">禁用后该租户将无法使用系统。</p>
-    <form method="POST" action="/tenants/{{ tenant.tenant_id }}" class="action-form">
+    <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}" class="action-form">
         <input type="hidden" name="action" value="toggle_status">
         <input type="hidden" name="is_active" value="{{ 0 if tenant.get('is_active', 1) else 1 }}">
         <button type="submit" class="btn {{ 'btn-danger' if tenant.get('is_active', 1) else 'btn-success' }}"

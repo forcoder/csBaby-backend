@@ -5,7 +5,7 @@
         <h1>黑名单管理</h1>
         <span class="page-subtitle">{{ tenant.phone }}</span>
     </div>
-    <a href="/tenants/{{ tenant.tenant_id }}" class="btn btn-back">← 返回详情</a>
+    <a href="/admin/tenants/{{ tenant.tenant_id }}" class="btn btn-back">← 返回详情</a>
 </div>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -18,7 +18,7 @@
 
 <div class="section">
     <h2>新增黑名单</h2>
-    <form method="POST" action="/tenants/{{ tenant.tenant_id }}/blacklist/add" class="form-card form-card-lg">
+    <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/blacklist/add" class="form-card form-card-lg">
         <div class="form-row">
             <div class="form-group">
                 <label>黑名单类型</label>
@@ -92,14 +92,14 @@
                 <td>{{ item.created_at or '-' }}</td>
                 <td>
                     <button class="btn btn-sm btn-primary" onclick="document.getElementById('edit-{{ item.id }}').style.display='block'">编辑</button>
-                    <form method="POST" action="/tenants/{{ tenant.tenant_id }}/blacklist/{{ item.id }}/delete" style="display:inline;">
+                    <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/blacklist/{{ item.id }}/delete" style="display:inline;">
                         <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('确定删除这条黑名单？')">删除</button>
                     </form>
                 </td>
             </tr>
             <tr id="edit-{{ item.id }}" style="display:none;">
                 <td colspan="8">
-                    <form method="POST" action="/tenants/{{ tenant.tenant_id }}/blacklist/{{ item.id }}/edit" class="form-card">
+                    <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/blacklist/{{ item.id }}/edit" class="form-card">
                         <div class="form-row">
                             <div class="form-group">
                                 <label>黑名单类型</label>
@@ -139,7 +139,7 @@
     <p style="color:#888;padding:20px;text-align:center;">暂无黑名单记录。</p>
     {% endif %}
 
-    <form method="POST" action="/tenants/{{ tenant.tenant_id }}/blacklist/clear">
+    <form method="POST" action="/admin/tenants/{{ tenant.tenant_id }}/blacklist/clear">
         <button type="submit" class="btn btn-danger" onclick="return confirm('确定清空该租户的所有黑名单？此操作不可恢复。')"
                 {{ 'disabled' if not blacklists }}>清空全部黑名单</button>
     </form>

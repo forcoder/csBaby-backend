@@ -13,7 +13,7 @@
 <div class="alert alert-success">{{ success }}</div>
 {% endif %}
 
-<form method="POST" action="/default-model" class="form-card">
+<form method="POST" action="/admin/default-model" class="form-card">
     <div class="form-group">
         <label>模型名称</label>
         <input type="text" name="name" value="{{ model.get('name', '') if model else '' }}" placeholder="如：GPT-4o" required>
@@ -60,7 +60,7 @@
 <p style="color:#888;font-size:13px;margin-bottom:16px;">
     将当前全局默认模型快速应用到指定租户（覆盖已有配置）。
 </p>
-<form method="POST" action="/default-model" class="form-card" style="max-width:480px;">
+<form method="POST" action="/admin/default-model" class="form-card" style="max-width:480px;">
     <input type="hidden" name="action" value="apply_to_tenant">
     <div class="form-group">
         <label>租户 ID</label>

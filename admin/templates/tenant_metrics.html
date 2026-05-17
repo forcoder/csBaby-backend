@@ -5,12 +5,12 @@
         <h1>优化指标</h1>
         <span class="page-subtitle">{{ tenant.phone }}</span>
     </div>
-    <a href="/tenants/{{ tenant.tenant_id }}" class="btn btn-back">← 返回详情</a>
+    <a href="/admin/tenants/{{ tenant.tenant_id }}" class="btn btn-back">← 返回详情</a>
 </div>
 
 <div class="section">
     <h2>时间范围</h2>
-    <form method="GET" action="/tenants/{{ tenant.tenant_id }}/metrics" class="form-card">
+    <form method="GET" action="/admin/tenants/{{ tenant.tenant_id }}/metrics" class="form-card">
         <div class="form-row">
             <div class="form-group">
                 <label>天数</label>
@@ -85,11 +85,11 @@
     {% if total > page_size %}
     <div class="pagination">
         {% if page > 1 %}
-        <a href="/tenants/{{ tenant.tenant_id }}/metrics?days={{ days }}&page={{ page - 1 }}&page_size={{ page_size }}">上一页</a>
+        <a href="/admin/tenants/{{ tenant.tenant_id }}/metrics?days={{ days }}&page={{ page - 1 }}&page_size={{ page_size }}">上一页</a>
         {% endif %}
         <span>第 {{ page }} 页 / 共 {{ (total + page_size - 1) // page_size }} 页</span>
         {% if page * page_size < total %}
-        <a href="/tenants/{{ tenant.tenant_id }}/metrics?days={{ days }}&page={{ page + 1 }}&page_size={{ page_size }}">下一页</a>
+        <a href="/admin/tenants/{{ tenant.tenant_id }}/metrics?days={{ days }}&page={{ page + 1 }}&page_size={{ page_size }}">下一页</a>
         {% endif %}
     </div>
     {% endif %}
