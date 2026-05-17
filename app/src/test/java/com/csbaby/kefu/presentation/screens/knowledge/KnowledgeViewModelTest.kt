@@ -1,5 +1,9 @@
 package com.csbaby.kefu.presentation.screens.knowledge
 
+import android.content.Context
+import com.csbaby.kefu.data.local.KefuDatabase
+import com.csbaby.kefu.data.remote.CsbabyApiService
+import com.csbaby.kefu.data.remote.DeviceManager
 import com.csbaby.kefu.domain.model.KeywordRule
 import com.csbaby.kefu.domain.model.MatchType
 import com.csbaby.kefu.domain.model.RuleTargetType
@@ -18,12 +22,18 @@ import org.junit.Test
 class KnowledgeViewModelTest {
 
     private lateinit var knowledgeBaseManager: KnowledgeBaseManager
+    private lateinit var apiService: CsbabyApiService
+    private lateinit var deviceManager: DeviceManager
+    private lateinit var kefuDatabase: KefuDatabase
     private val testDispatcher = StandardTestDispatcher()
 
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         knowledgeBaseManager = mockk()
+        apiService = mockk()
+        deviceManager = mockk()
+        kefuDatabase = mockk()
     }
 
     @After
@@ -51,7 +61,10 @@ class KnowledgeViewModelTest {
 
         val viewModel = KnowledgeViewModel(
             appContext = mockk(relaxed = true),
-            knowledgeBaseManager = knowledgeBaseManager
+            knowledgeBaseManager = knowledgeBaseManager,
+            apiService = apiService,
+            deviceManager = deviceManager,
+            kefuDatabase = kefuDatabase
         )
 
         advanceUntilIdle()
@@ -71,7 +84,10 @@ class KnowledgeViewModelTest {
 
         val viewModel = KnowledgeViewModel(
             appContext = mockk(relaxed = true),
-            knowledgeBaseManager = knowledgeBaseManager
+            knowledgeBaseManager = knowledgeBaseManager,
+            apiService = apiService,
+            deviceManager = deviceManager,
+            kefuDatabase = kefuDatabase
         )
 
         advanceUntilIdle()
@@ -93,7 +109,10 @@ class KnowledgeViewModelTest {
 
         val viewModel = KnowledgeViewModel(
             appContext = mockk(relaxed = true),
-            knowledgeBaseManager = knowledgeBaseManager
+            knowledgeBaseManager = knowledgeBaseManager,
+            apiService = apiService,
+            deviceManager = deviceManager,
+            kefuDatabase = kefuDatabase
         )
 
         advanceUntilIdle()
@@ -111,7 +130,10 @@ class KnowledgeViewModelTest {
 
         val viewModel = KnowledgeViewModel(
             appContext = mockk(relaxed = true),
-            knowledgeBaseManager = knowledgeBaseManager
+            knowledgeBaseManager = knowledgeBaseManager,
+            apiService = apiService,
+            deviceManager = deviceManager,
+            kefuDatabase = kefuDatabase
         )
 
         advanceUntilIdle()
@@ -130,7 +152,10 @@ class KnowledgeViewModelTest {
 
         val viewModel = KnowledgeViewModel(
             appContext = mockk(relaxed = true),
-            knowledgeBaseManager = knowledgeBaseManager
+            knowledgeBaseManager = knowledgeBaseManager,
+            apiService = apiService,
+            deviceManager = deviceManager,
+            kefuDatabase = kefuDatabase
         )
 
         viewModel.deleteRule(1L)
@@ -149,7 +174,10 @@ class KnowledgeViewModelTest {
 
         val viewModel = KnowledgeViewModel(
             appContext = mockk(relaxed = true),
-            knowledgeBaseManager = knowledgeBaseManager
+            knowledgeBaseManager = knowledgeBaseManager,
+            apiService = apiService,
+            deviceManager = deviceManager,
+            kefuDatabase = kefuDatabase
         )
 
         viewModel.toggleRule(1L, false)
@@ -168,7 +196,10 @@ class KnowledgeViewModelTest {
 
         val viewModel = KnowledgeViewModel(
             appContext = mockk(relaxed = true),
-            knowledgeBaseManager = knowledgeBaseManager
+            knowledgeBaseManager = knowledgeBaseManager,
+            apiService = apiService,
+            deviceManager = deviceManager,
+            kefuDatabase = kefuDatabase
         )
 
         val newRule = createTestRule(0, "测试")
@@ -187,7 +218,10 @@ class KnowledgeViewModelTest {
 
         val viewModel = KnowledgeViewModel(
             appContext = mockk(relaxed = true),
-            knowledgeBaseManager = knowledgeBaseManager
+            knowledgeBaseManager = knowledgeBaseManager,
+            apiService = apiService,
+            deviceManager = deviceManager,
+            kefuDatabase = kefuDatabase
         )
 
         val existingRule = createTestRule(5, "测试")
@@ -206,7 +240,10 @@ class KnowledgeViewModelTest {
 
         val viewModel = KnowledgeViewModel(
             appContext = mockk(relaxed = true),
-            knowledgeBaseManager = knowledgeBaseManager
+            knowledgeBaseManager = knowledgeBaseManager,
+            apiService = apiService,
+            deviceManager = deviceManager,
+            kefuDatabase = kefuDatabase
         )
 
         advanceUntilIdle()
@@ -225,7 +262,10 @@ class KnowledgeViewModelTest {
 
         val viewModel = KnowledgeViewModel(
             appContext = mockk(relaxed = true),
-            knowledgeBaseManager = knowledgeBaseManager
+            knowledgeBaseManager = knowledgeBaseManager,
+            apiService = apiService,
+            deviceManager = deviceManager,
+            kefuDatabase = kefuDatabase
         )
 
         advanceUntilIdle()
@@ -248,7 +288,10 @@ class KnowledgeViewModelTest {
 
         val viewModel = KnowledgeViewModel(
             appContext = mockk(relaxed = true),
-            knowledgeBaseManager = knowledgeBaseManager
+            knowledgeBaseManager = knowledgeBaseManager,
+            apiService = apiService,
+            deviceManager = deviceManager,
+            kefuDatabase = kefuDatabase
         )
 
         advanceUntilIdle()
