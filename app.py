@@ -1054,6 +1054,35 @@ def delete_backup(backup_id):
     logger.info("Backup deleted: user=%s, id=%d", request.user_id, backup_id)
     return jsonify({"status": "ok"})
 
+# ========== OTA 版本检查 API ==========
+
+@app.route("/api/v1/ota/check", methods=["GET"])
+def ota_check():
+    """检查更新 - 从 shz.al 获取版本信息"""
+    try:
+        import urllib.request
+        url = "https://shz.al/~csBabyLog"
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            return {
+                "code": 0,
+                "message": "success",
+                "data": data
+            }
+    except Exception as e:
+        logger.error("Failed to fetch version info: %s", e)
+        return {"code": 500, "message": str(e)}, 500
+
+@app.route("/api/v1/ota/latest", methods=["GET"])
+def ota_latest():
+    """获取最新版本信息"""
+    return ota_check()
+
+@app.route("/api/v1/ota/versions", methods=["GET"])
+def ota_versions():
+    """获取版本列表"""
+    return ota_check()
+
 # ========== 云同步 API (支持实时同步和卸载重装恢复) ==========
 
 @app.route("/api/sync/all", methods=["GET"])
