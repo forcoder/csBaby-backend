@@ -144,6 +144,16 @@ def after_request(response):
     return response
 
 # ========== 健康检查 ==========
+@app.route("/", methods=["GET"])
+def root():
+    import datetime
+    return {
+        "status": "ok",
+        "service": "csbaby-sync-server",
+        "version": "1.0.0",
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+    }
+
 @app.route("/health", methods=["GET"])
 def health_check():
     import datetime
