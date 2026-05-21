@@ -1155,13 +1155,16 @@ def sync_push():
                     except (ValueError, TypeError):
                         pass
 
-        db.commit()
+        # Each repository handles its own connection and commit
+        # No additional commit needed here
     finally:
         db.close()
 
     return jsonify({
         "accepted": True,
-        "newServerVersion": int(time.time() * 1000)
+        "conflicts": [],
+        "newServerVersion": int(time.time() * 1000),
+        "serverTime": int(time.time() * 1000)
     })
 
 @app.route("/api/sync/changes", methods=["GET"])
