@@ -12,6 +12,7 @@ import logging
 import os
 import secrets
 import time
+import datetime
 from functools import wraps
 from threading import Lock
 from flask import Flask, request, jsonify
@@ -876,6 +877,345 @@ def restore_backup():
     return jsonify({
         "status": "ok",
         "restored": {"rules": len(parsed_rules), "models": len(parsed_models), "blacklist": bl_count},
+    })
+
+# ========== 云备份 API (支持卸载重装数据恢复) ==========
+
+def _ensure_backup_table():
+    """Ensure backup_records table exists."""
+    db = get_connection()
+    try:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS backup_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                device_name TEXT DEFAULT '',
+                app_version TEXT DEFAULT '',
+                data BLOB,
+                data_size INTEGER DEFAULT 0,
+                checksum TEXT DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_backup_records_user ON backup_records(user_id)")
+        db.commit()
+    finally:
+        db.close()
+
+@app.route("/api/v1/backup/upload", methods=["POST"])
+@rate_limit(max_requests=5, window_seconds=60)
+@require_auth
+def upload_backup():
+    """Upload a backup to the cloud."""
+    _ensure_backup_table()
+    data = request.get_json() or {}
+    device_name = data.get("device_name", "")[:200]
+    app_version = data.get("app_version", "")[:100]
+    checksum = data.get("checksum", "")[:64]
+
+    # Backup content - serialize to JSON and compress
+    content = data.get("data")
+    import gzip
+    import json as _json
+    if content:
+        content_json = _json.dumps(content)
+        content_bytes = content_json.encode("utf-8")
+        content_gz = gzip.compress(content_bytes)
+    else:
+        content_gz = b""
+
+    data_size = len(content_gz)
+
+    db = get_connection()
+    try:
+        cursor = db.execute(
+            """INSERT INTO backup_records
+               (user_id, device_name, app_version, data, data_size, checksum)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (request.user_id, device_name, app_version, content_gz, data_size, checksum)
+        )
+        db.commit()
+        backup_id = cursor.lastrowid
+
+        # Get creation time
+        row = db.execute(
+            "SELECT created_at FROM backup_records WHERE id=?", (backup_id,)
+        ).fetchone()
+        created_at = row["created_at"] if row else _now_str()
+    finally:
+        db.close()
+
+    logger.info("Backup uploaded: user=%s, id=%d, size=%d", request.user_id, backup_id, data_size)
+    return jsonify({
+        "id": backup_id,
+        "device_name": device_name,
+        "app_version": app_version,
+        "data_size": data_size,
+        "checksum": checksum,
+        "created_at": created_at,
+    }), 201
+
+@app.route("/api/v1/backup/list", methods=["GET"])
+@rate_limit(max_requests=10, window_seconds=60)
+@require_auth
+def list_backups():
+    """List all backups for the current user."""
+    _ensure_backup_table()
+    db = get_connection()
+    try:
+        rows = db.execute(
+            """SELECT id, device_name, app_version, data_size, checksum, created_at
+               FROM backup_records WHERE user_id=? ORDER BY created_at DESC LIMIT 100""",
+            (request.user_id,)
+        ).fetchall()
+    finally:
+        db.close()
+
+    backups = [
+        {
+            "id": r["id"],
+            "device_name": r["device_name"],
+            "app_version": r["app_version"],
+            "data_size": r["data_size"],
+            "checksum": r["checksum"],
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    ]
+    return jsonify(backups)
+
+@app.route("/api/v1/backup/download/<int:backup_id>", methods=["GET"])
+@rate_limit(max_requests=10, window_seconds=60)
+@require_auth
+def download_backup(backup_id):
+    """Download a specific backup."""
+    _ensure_backup_table()
+    db = get_connection()
+    try:
+        row = db.execute(
+            "SELECT * FROM backup_records WHERE id=? AND user_id=?",
+            (backup_id, request.user_id)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "Backup not found"}), 404
+
+        # Decompress data
+        import gzip
+        import json as _json
+        content = None
+        if row["data"]:
+            try:
+                content_bytes = gzip.decompress(row["data"])
+                content = _json.loads(content_bytes.decode("utf-8"))
+            except Exception:
+                pass  # Handle corrupted backups gracefully
+
+        return jsonify({
+            "id": row["id"],
+            "device_name": row["device_name"],
+            "app_version": row["app_version"],
+            "data": content,
+            "data_size": row["data_size"],
+            "checksum": row["checksum"],
+            "created_at": row["created_at"],
+        })
+    finally:
+        db.close()
+
+@app.route("/api/v1/backup/<int:backup_id>", methods=["DELETE"])
+@rate_limit(max_requests=10, window_seconds=60)
+@require_auth
+def delete_backup(backup_id):
+    """Delete a specific backup."""
+    _ensure_backup_table()
+    db = get_connection()
+    try:
+        cursor = db.execute(
+            "DELETE FROM backup_records WHERE id=? AND user_id=?",
+            (backup_id, request.user_id)
+        )
+        db.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"error": "Backup not found"}), 404
+    finally:
+        db.close()
+
+    logger.info("Backup deleted: user=%s, id=%d", request.user_id, backup_id)
+    return jsonify({"status": "ok"})
+
+# ========== 云同步 API (支持实时同步和卸载重装恢复) ==========
+
+@app.route("/api/sync/all", methods=["GET"])
+@rate_limit(max_requests=10, window_seconds=60)
+@require_auth
+def sync_get_all():
+    """全量同步：获取用户所有数据（首次登录/换手机恢复）"""
+    user_id = request.user_id
+    db = get_connection()
+    try:
+        row = db.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "User not found"}), 404
+
+        rules = SqliteRuleRepository().get_by_device(user_id)
+        models = SqliteModelRepository().get_by_device(user_id)
+        history, _ = SqliteHistoryRepository().get_by_device(user_id, 5000, 0)
+        blacklist_rows = db.execute(
+            "SELECT * FROM blacklist WHERE user_id=?", (user_id,)
+        ).fetchall()
+
+        style_row = db.execute(
+            "SELECT * FROM tenant_style_config WHERE user_id=?", (user_id,)
+        ).fetchone()
+        app_row = db.execute(
+            "SELECT * FROM tenant_app_config WHERE user_id=?", (user_id,)
+        ).fetchone()
+
+        return jsonify({
+            "keywordRules": [_rule_to_dict(r) for r in rules],
+            "aiModelConfigs": [_model_to_dict(m) for m in models],
+            "replyHistory": [{
+                "id": h.id, "originalMessage": h.original_message,
+                "replyContent": h.reply_content, "source": h.source,
+                "modelUsed": h.model_used, "confidence": h.confidence,
+                "createdAt": h.created_at
+            } for h in history],
+            "messageBlacklist": [dict(r) for r in blacklist_rows],
+            "userStyleProfile": dict(style_row) if style_row else None,
+            "appConfig": dict(app_row) if app_row else None,
+            "scenarios": [],
+            "serverTime": int(time.time() * 1000)
+        })
+    finally:
+        db.close()
+
+@app.route("/api/sync/push", methods=["POST"])
+@rate_limit(max_requests=30, window_seconds=60)
+@require_auth
+def sync_push():
+    """增量同步：推送本地变更到服务端"""
+    data = request.get_json() or {}
+    user_id = request.user_id
+
+    db = get_connection()
+    try:
+        rules_data = data.get("keywordRules", [])
+        for r in rules_data:
+            target_names = r.get("target_names", [])
+            if isinstance(target_names, str):
+                try:
+                    target_names = json.loads(target_names)
+                except json.JSONDecodeError:
+                    target_names = []
+            if not isinstance(target_names, list):
+                target_names = []
+            rule = KeywordRule(
+                id=r.get("id", 0) or 0,
+                user_id=user_id,
+                keyword=r.get("keyword", ""),
+                match_type=r.get("match_type", "CONTAINS"),
+                reply_template=r.get("reply_template", ""),
+                category=r.get("category", ""),
+                target_type=r.get("target_type", "ALL"),
+                target_names=target_names,
+                priority=r.get("priority", 0),
+                enabled=r.get("enabled", True)
+            )
+            SqliteRuleRepository().create(rule)
+
+        models_data = data.get("aiModelConfigs", [])
+        for m in models_data:
+            config = ModelConfig(
+                user_id=user_id,
+                name=m.get("name", ""),
+                model_type=m.get("model_type", "OPENAI"),
+                model=m.get("model", ""),
+                api_key=m.get("api_key", ""),
+                api_endpoint=m.get("api_endpoint", ""),
+                temperature=m.get("temperature", 0.7),
+                max_tokens=m.get("max_tokens", 2000),
+                is_default=m.get("is_default", False),
+                enabled=m.get("enabled", True)
+            )
+            SqliteModelRepository().create(config)
+
+        deleted_ids = data.get("deletedIds", {})
+        for entity_type, ids in deleted_ids.items():
+            if entity_type == "keyword_rules":
+                for rid in ids:
+                    try:
+                        SqliteRuleRepository().delete(int(rid), user_id)
+                    except (ValueError, TypeError):
+                        pass
+            elif entity_type == "ai_model_configs":
+                for mid in ids:
+                    try:
+                        SqliteModelRepository().delete(int(mid), user_id)
+                    except (ValueError, TypeError):
+                        pass
+
+        db.commit()
+    finally:
+        db.close()
+
+    return jsonify({
+        "accepted": True,
+        "newServerVersion": int(time.time() * 1000)
+    })
+
+@app.route("/api/sync/changes", methods=["GET"])
+@rate_limit(max_requests=30, window_seconds=60)
+@require_auth
+def sync_get_changes():
+    """增量同步：获取服务端自上次同步以来的变更"""
+    since = request.args.get("since", 0, type=int)
+    user_id = request.user_id
+    since_date = "1970-01-01 00:00:00"
+    if since > 0:
+        try:
+            since_date = datetime.datetime.fromtimestamp(since / 1000).strftime("%Y-%m-%d %H:%M:%S")
+        except (ValueError, OSError):
+            since_date = "1970-01-01 00:00:00"
+
+    db = get_connection()
+    try:
+        rules = SqliteRuleRepository().get_by_device(user_id)
+        models = SqliteModelRepository().get_by_device(user_id)
+        blacklist_rows = db.execute(
+            "SELECT * FROM blacklist WHERE user_id=? AND created_at > ?",
+            (user_id, since_date)
+        ).fetchall()
+
+        changed_rules = [r for r in rules if r.created_at > since_date]
+        changed_models = [m for m in models if m.created_at > since_date]
+
+        return jsonify({
+            "keywordRules": [_rule_to_dict(r) for r in changed_rules],
+            "aiModelConfigs": [_model_to_dict(m) for m in changed_models],
+            "messageBlacklist": [dict(r) for r in blacklist_rows],
+            "deletedIds": {},
+            "serverTime": int(time.time() * 1000),
+            "hasMore": False,
+            "nextCursor": None
+        })
+    finally:
+        db.close()
+
+@app.route("/api/sync/resolve", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
+@require_auth
+def sync_resolve():
+    """冲突解决：处理同步冲突"""
+    data = request.get_json() or {}
+    resolutions = data.get("resolutions", [])
+    # 简单实现：记录冲突但不自动解决（需要用户介入）
+    for r in resolutions:
+        logger.info("Sync conflict resolution: type=%s, id=%s, strategy=%s",
+                     r.get("entityType"), r.get("entityId"), r.get("strategy"))
+    return jsonify({
+        "resolved": True,
+        "serverTime": int(time.time() * 1000)
     })
 
 # ========== Admin Authentication ==========
