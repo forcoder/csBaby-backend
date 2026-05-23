@@ -28,7 +28,7 @@ from domain.entities.keyword_rule import KeywordRule
 from domain.entities.model_config import ModelConfig
 from domain.entities.reply_history import ReplyHistory
 from domain.entities.feedback import Feedback
-from infrastructure.persistence.database import init_db, get_connection, set_flask_app
+from infrastructure.persistence.database import init_db, get_connection
 from infrastructure.persistence.device_repo_sqlite import SqliteDeviceRepository
 from infrastructure.persistence.rule_repo_sqlite import SqliteRuleRepository
 from infrastructure.persistence.model_repo_sqlite import SqliteModelRepository
@@ -55,9 +55,6 @@ call_ai_model = ai_service.call_model
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB max request body
 app.secret_key = JWT_SECRET
-
-# Set Flask app reference for database logging
-set_flask_app(app)
 
 # ========== Database ==========
 _db_initialized = False
