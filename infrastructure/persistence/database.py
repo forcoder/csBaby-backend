@@ -1,9 +1,18 @@
-import psycopg2
-from psycopg2 import pool
 import os
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Try to import psycopg2, make it optional
+try:
+    import psycopg2
+    from psycopg2 import pool
+    PSYCOPG2_AVAILABLE = True
+except ImportError:
+    psycopg2 = None
+    pool = None
+    PSYCOPG2_AVAILABLE = False
+    logger.warning("psycopg2 not available, PostgreSQL features disabled")
 
 
 # Flask app reference for logging (set by app.py)
@@ -24,6 +33,8 @@ class PostgresqlConnectionPool:
 
     @classmethod
     def get_pool(cls):
+        if not PSYCOPG2_AVAILABLE:
+            raise RuntimeError("psycopg2 is not installed. Install psycopg2-binary to use PostgreSQL.")
         if cls._pool is None:
             cls._pool = psycopg2.pool.ThreadedConnectionPool(
                 minconn=1,
