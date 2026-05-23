@@ -12,7 +12,6 @@ import logging
 import os
 import secrets
 import time
-import datetime
 from functools import wraps
 from threading import Lock
 from flask import Flask, request, jsonify
@@ -35,7 +34,6 @@ from infrastructure.persistence.model_repo_sqlite import SqliteModelRepository
 from infrastructure.persistence.history_repo_sqlite import SqliteHistoryRepository
 from infrastructure.persistence.feedback_repo_sqlite import SqliteFeedbackRepository
 from infrastructure.persistence.metrics_repo_sqlite import SqliteMetricsRepository
-from domain.services.auth_service import AuthService as UserAuthService
 
 # ========== 配置 ==========
 JWT_SECRET = os.environ.get("JWT_SECRET")
@@ -71,7 +69,7 @@ def dict_from_row(row):
     return dict(row)
 
 # ========== JWT 认证 ==========
-def extract_user_id():
+def extract_device_id():
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         return None
@@ -80,10 +78,10 @@ def extract_user_id():
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        user_id = extract_user_id()
-        if not user_id:
+        device_id = extract_device_id()
+        if not device_id:
             return jsonify({"error": "Unauthorized"}), 401
-        request.user_id = user_id
+        request.device_id = device_id
         return f(*args, **kwargs)
     return decorated
 
@@ -144,89 +142,11 @@ def after_request(response):
     return response
 
 # ========== 健康检查 ==========
-@app.route("/", methods=["GET"])
-def root():
-    import datetime
-    return {
-        "status": "ok",
-        "service": "csbaby-sync-server",
-        "version": "1.0.0",
-        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
-    }
-
 @app.route("/health", methods=["GET"])
 def health_check():
-    import datetime
-    health: dict = {
-        "status": "ok",
-        "service": "csBaby-api",
-        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-    }
-    db_status = "ok"
-    try:
-        conn = get_connection()
-        conn.execute("SELECT 1")
-        conn.close()
-    except Exception as exc:
-        db_status = str(exc)
-        health["status"] = "degraded"
-    health["database"] = db_status
-    status_code = 200 if health["status"] == "ok" else 503
-    return jsonify(health), status_code
+    return jsonify({"status": "ok", "service": "csBaby-api"})
 
 # ========== 认证 API ==========
-@app.route("/api/auth/user/register", methods=["POST"])
-@rate_limit(max_requests=5, window_seconds=300)
-def user_register():
-    data = request.get_json() or {}
-    phone = (data.get("phone") or "").strip()
-    password = data.get("password", "")
-    name = (data.get("name") or "").strip()
-    if not phone or not password:
-        return jsonify({"error": "phone and password are required"}), 400
-    if len(password) < 6:
-        return jsonify({"error": "password must be at least 6 chars"}), 400
-    if len(phone) > 20:
-        return jsonify({"error": "phone too long (max 20 chars)"}), 400
-    # Check if phone already exists
-    db = get_connection()
-    try:
-        existing = db.execute("SELECT id FROM users WHERE phone=?", (phone,)).fetchone()
-        if existing:
-            return jsonify({"error": "phone already registered"}), 409
-        user_id = str(__import__("uuid").uuid4())
-        pw_hash, salt = UserAuthService.hash_password(password)
-        db.execute(
-            "INSERT INTO users (id, phone, password_hash, salt, name) VALUES (?, ?, ?, ?, ?)",
-            (user_id, phone, pw_hash, salt, name or phone),
-        )
-        db.commit()
-    finally:
-        db.close()
-    token = auth_service.generate_token(user_id)
-    return jsonify({"user_id": user_id, "token": token, "expires_in": 30 * 86400}), 201
-
-
-@app.route("/api/auth/user/login", methods=["POST"])
-@rate_limit(max_requests=5, window_seconds=300)
-def user_login():
-    data = request.get_json() or {}
-    phone = (data.get("phone") or "").strip()
-    password = data.get("password", "")
-    if not phone or not password:
-        return jsonify({"error": "phone and password are required"}), 400
-    db = get_connection()
-    try:
-        row = db.execute("SELECT id, password_hash, salt FROM users WHERE phone=?", (phone,)).fetchone()
-    finally:
-        db.close()
-    if not row or not UserAuthService.verify_password(password, row["salt"], row["password_hash"]):
-        return jsonify({"error": "Invalid phone or password"}), 401
-    user_id = row["id"]
-    token = auth_service.generate_token(user_id)
-    return jsonify({"user_id": user_id, "token": token, "expires_in": 30 * 86400})
-
-
 @app.route("/api/auth/register", methods=["POST"])
 @rate_limit(max_requests=10, window_seconds=60)
 def register():
@@ -239,42 +159,22 @@ def register():
         return jsonify({"error": "app_version must be a string"}), 400
     if len(app_version) > 50:
         return jsonify({"error": "app_version too long (max 50 chars)"}), 400
-    # Optional: bind to user if user_token provided
-    user_token = data.get("user_token", "")
-    user_id = auth_service.verify_token(user_token) if user_token else None
     device = Device.create(
         name=data.get("name", ""),
         platform=platform,
         app_version=app_version,
     )
-    if user_id:
-        device.token = auth_service.generate_token(user_id)
-    else:
-        device.token = auth_service.generate_token(device.id)
+    device.token = auth_service.generate_token(device.id)
     repo = SqliteDeviceRepository()
     repo.create(device)
-    # Link device to user if authenticated
-    if user_id:
-        db = get_connection()
-        try:
-            db.execute(
-                "INSERT OR IGNORE INTO user_devices (user_id, device_id, platform, device_name) VALUES (?, ?, ?, ?)",
-                (user_id, device.id, platform, data.get("name", "")),
-            )
-            db.commit()
-        finally:
-            db.close()
-    resp = {"user_id": device.user_id, "token": device.token, "expires_in": 30 * 86400}
-    if user_id:
-        resp["user_id"] = user_id
-    return jsonify(resp)
+    return jsonify({"device_id": device.id, "token": device.token, "expires_in": 30 * 86400})
 
 @app.route("/api/auth/heartbeat", methods=["POST"])
 @rate_limit(max_requests=60, window_seconds=60)
 @require_auth
 def heartbeat():
     repo = SqliteDeviceRepository()
-    repo.update_heartbeat(request.user_id)
+    repo.update_heartbeat(request.device_id)
     return jsonify({"status": "ok"})
 
 # ========== 知识库规则 API ==========
@@ -282,7 +182,7 @@ def heartbeat():
 @require_auth
 def get_rules():
     repo = SqliteRuleRepository()
-    rules = repo.get_by_device(request.user_id)
+    rules = repo.get_by_device(request.device_id)
     return jsonify([_rule_to_dict(r) for r in rules])
 
 @app.route("/api/rules", methods=["POST"])
@@ -305,7 +205,7 @@ def create_rule():
     if not isinstance(target_names, list):
         return jsonify({"error": "target_names must be a list"}), 400
     rule = KeywordRule(
-        user_id=request.user_id,
+        device_id=request.device_id,
         keyword=keyword,
         match_type=match_type,
         reply_template=data.get("reply_template", ""),
@@ -322,7 +222,7 @@ def create_rule():
 @require_auth
 def get_rule(rule_id):
     repo = SqliteRuleRepository()
-    rule = repo.get_by_id(rule_id, request.user_id)
+    rule = repo.get_by_id(rule_id, request.device_id)
     if not rule:
         return jsonify({"error": "Rule not found"}), 404
     return jsonify(_rule_to_dict(rule))
@@ -332,7 +232,7 @@ def get_rule(rule_id):
 @require_auth
 def update_rule(rule_id):
     repo = SqliteRuleRepository()
-    existing = repo.get_by_id(rule_id, request.user_id)
+    existing = repo.get_by_id(rule_id, request.device_id)
     if not existing:
         return jsonify({"error": "Rule not found"}), 404
     data = request.get_json() or {}
@@ -351,7 +251,7 @@ def update_rule(rule_id):
     if not isinstance(target_names, list):
         return jsonify({"error": "target_names must be a list"}), 400
     rule = KeywordRule(
-        id=rule_id, user_id=request.user_id,
+        id=rule_id, device_id=request.device_id,
         keyword=keyword, match_type=match_type,
         reply_template=data.get("reply_template", ""), category=data.get("category", ""),
         target_type=data.get("target_type", "ALL"), target_names=target_names,
@@ -365,7 +265,7 @@ def update_rule(rule_id):
 @require_auth
 def delete_rule(rule_id):
     repo = SqliteRuleRepository()
-    deleted = repo.delete(rule_id, request.user_id)
+    deleted = repo.delete(rule_id, request.device_id)
     if not deleted:
         return jsonify({"error": "Rule not found"}), 404
     return jsonify({"status": "deleted", "id": rule_id})
@@ -380,19 +280,19 @@ def batch_import_rules():
         return jsonify({"error": "too many rules (max 1000)"}), 400
     mode = data.get("mode", "append")
     rules = [KeywordRule(
-        user_id=request.user_id, keyword=r.get("keyword", ""),
+        device_id=request.device_id, keyword=r.get("keyword", ""),
         match_type=r.get("match_type", "CONTAINS"), reply_template=r.get("reply_template", ""),
         category=r.get("category", ""), target_type=r.get("target_type", "ALL"),
         target_names=r.get("target_names", []), priority=r.get("priority", 0),
     ) for r in rules_data]
     repo = SqliteRuleRepository()
-    count = repo.batch_create(rules, request.user_id, mode)
-    total = len(repo.get_by_device(request.user_id))
+    count = repo.batch_create(rules, request.device_id, mode)
+    total = len(repo.get_by_device(request.device_id))
     return jsonify({"status": "ok", "imported": count, "total": total})
 
 def _rule_to_dict(rule: KeywordRule) -> dict:
     return {
-        "id": rule.id, "user_id": rule.user_id, "keyword": rule.keyword,
+        "id": rule.id, "device_id": rule.device_id, "keyword": rule.keyword,
         "match_type": rule.match_type, "reply_template": rule.reply_template,
         "category": rule.category, "target_type": rule.target_type,
         "target_names": json.dumps(rule.target_names), "priority": rule.priority,
@@ -404,7 +304,7 @@ def _rule_to_dict(rule: KeywordRule) -> dict:
 @require_auth
 def get_models():
     repo = SqliteModelRepository()
-    models = repo.get_by_device(request.user_id)
+    models = repo.get_by_device(request.device_id)
     return jsonify([_model_to_dict(m) for m in models])
 
 @app.route("/api/models", methods=["POST"])
@@ -422,7 +322,7 @@ def create_model():
     if not isinstance(max_tokens, int) or max_tokens < 1 or max_tokens > 32000:
         return jsonify({"error": "max_tokens must be 1-32000"}), 400
     config = ModelConfig(
-        user_id=request.user_id, name=name,
+        device_id=request.device_id, name=name,
         model_type=data.get("model_type", "OPENAI"), model=data.get("model", "gpt-4o"),
         api_key=data.get("api_key", ""), api_endpoint=data.get("api_endpoint", ""),
         temperature=temperature, max_tokens=max_tokens,
@@ -436,7 +336,7 @@ def create_model():
 @require_auth
 def get_model(model_id):
     repo = SqliteModelRepository()
-    config = repo.get_by_id(model_id, request.user_id)
+    config = repo.get_by_id(model_id, request.device_id)
     if not config:
         return jsonify({"error": "Model not found"}), 404
     return jsonify(_model_to_dict(config))
@@ -446,7 +346,7 @@ def get_model(model_id):
 @require_auth
 def update_model(model_id):
     repo = SqliteModelRepository()
-    existing = repo.get_by_id(model_id, request.user_id)
+    existing = repo.get_by_id(model_id, request.device_id)
     if not existing:
         return jsonify({"error": "Model not found"}), 404
     data = request.get_json() or {}
@@ -460,7 +360,7 @@ def update_model(model_id):
     if not isinstance(max_tokens, int) or max_tokens < 1 or max_tokens > 32000:
         return jsonify({"error": "max_tokens must be 1-32000"}), 400
     config = ModelConfig(
-        id=model_id, user_id=request.user_id,
+        id=model_id, device_id=request.device_id,
         name=name, model_type=data.get("model_type", "OPENAI"),
         model=data.get("model", ""), api_key=data.get("api_key", ""),
         api_endpoint=data.get("api_endpoint", ""), temperature=temperature,
@@ -475,7 +375,7 @@ def update_model(model_id):
 @require_auth
 def delete_model(model_id):
     repo = SqliteModelRepository()
-    deleted = repo.delete(model_id, request.user_id)
+    deleted = repo.delete(model_id, request.device_id)
     if not deleted:
         return jsonify({"error": "Model not found"}), 404
     return jsonify({"status": "deleted", "id": model_id})
@@ -484,7 +384,7 @@ def delete_model(model_id):
 @require_auth
 def test_model(model_id):
     repo = SqliteModelRepository()
-    config = repo.get_by_id(model_id, request.user_id)
+    config = repo.get_by_id(model_id, request.device_id)
     if not config:
         return jsonify({"error": "Model not found"}), 404
     return jsonify({"success": True, "model": config.model, "tokens": 0})
@@ -497,7 +397,7 @@ def _model_to_dict(m: ModelConfig) -> dict:
         else:
             api_key = "*" * (len(api_key) - 4) + api_key[-4:]
     return {
-        "id": m.id, "user_id": m.user_id, "name": m.name,
+        "id": m.id, "device_id": m.device_id, "name": m.name,
         "model_type": m.model_type, "model": m.model, "api_key": api_key,
         "api_endpoint": m.api_endpoint, "temperature": m.temperature,
         "max_tokens": m.max_tokens, "is_default": int(m.is_default),
@@ -528,14 +428,14 @@ def generate_reply():
 
     # 1. Try keyword matching first using domain service
     rule_repo = SqliteRuleRepository()
-    rules = rule_repo.get_by_device(request.user_id)
+    rules = rule_repo.get_by_device(request.device_id)
     rule_dicts = [_rule_to_dict(r) for r in rules]
     matched = keyword_matcher.match(rule_dicts, message)
     if matched:
         template = matched[0]["reply_template"]
         reply = keyword_matcher.apply_template(template, context)
         history = ReplyHistory(
-            user_id=request.user_id, original_message=message, reply_content=reply,
+            device_id=request.device_id, original_message=message, reply_content=reply,
             source="keyword", platform=context.get("platform", ""),
             customer_name=context.get("customer_name", ""),
             house_name=context.get("house_name", ""),
@@ -548,7 +448,7 @@ def generate_reply():
 
     # 2. Fall back to AI model
     model_repo = SqliteModelRepository()
-    models = model_repo.get_by_device(request.user_id)
+    models = model_repo.get_by_device(request.device_id)
     enabled_models = [m for m in models if m.enabled]
     if not enabled_models:
         return jsonify({"error": "No enabled model configured"}), 400
@@ -571,11 +471,11 @@ def generate_reply():
     try:
         result = call_ai_model(ai_config, messages, model_config.temperature, model_config.max_tokens)
     except Exception as e:
-        logger.error("AI generation failed for user %s: %s", request.user_id, e, exc_info=True)
+        logger.error("AI generation failed for device %s: %s", request.device_id, e, exc_info=True)
         return jsonify({"error": "AI generation failed"}), 500
 
     history = ReplyHistory(
-        user_id=request.user_id, original_message=message,
+        device_id=request.device_id, original_message=message,
         reply_content=result["reply"], source="ai",
         model_used=result.get("model_used", ""), confidence=0.8,
         response_time_ms=result.get("response_time_ms", 0),
@@ -606,7 +506,7 @@ def chat():
             return jsonify({"error": f"messages[{i}] must have 'role' and 'content' fields"}), 400
 
     model_repo = SqliteModelRepository()
-    models = model_repo.get_by_device(request.user_id)
+    models = model_repo.get_by_device(request.device_id)
     enabled_models = [m for m in models if m.enabled]
     if not enabled_models:
         return jsonify({"error": "No enabled model configured"}), 400
@@ -617,7 +517,7 @@ def chat():
     try:
         result = call_ai_model(ai_config, messages, model_config.temperature, model_config.max_tokens)
     except Exception as e:
-        logger.error("AI chat failed for user %s: %s", request.user_id, e, exc_info=True)
+        logger.error("AI chat failed for device %s: %s", request.device_id, e, exc_info=True)
         return jsonify({"error": "AI chat failed"}), 500
 
     return jsonify({
@@ -633,9 +533,9 @@ def get_history():
     limit = min(request.args.get("limit", 50, type=int), 200)
     offset = request.args.get("offset", 0, type=int)
     repo = SqliteHistoryRepository()
-    items, total = repo.get_by_device(request.user_id, limit, offset)
+    items, total = repo.get_by_device(request.device_id, limit, offset)
     return jsonify({
-        "items": [{"id": i.id, "user_id": i.user_id,
+        "items": [{"id": i.id, "device_id": i.device_id,
                    "original_message": i.original_message, "reply_content": i.reply_content}
                   for i in items],
         "total": total, "limit": limit, "offset": offset,
@@ -653,7 +553,7 @@ def record_history():
     if len(reply_content) > 50000:
         return jsonify({"error": "reply_content too long (max 50000 chars)"}), 400
     entry = ReplyHistory(
-        user_id=request.user_id,
+        device_id=request.device_id,
         original_message=original_message,
         reply_content=reply_content,
         source=data.get("source", "ai"), model_used=data.get("model_used", ""),
@@ -664,7 +564,7 @@ def record_history():
     repo = SqliteHistoryRepository()
     created = repo.create(entry)
     return jsonify({
-        "id": created.id, "user_id": created.user_id,
+        "id": created.id, "device_id": created.device_id,
         "original_message": created.original_message,
         "reply_content": created.reply_content,
         "source": created.source, "model_used": created.model_used,
@@ -682,8 +582,8 @@ def get_feedback():
     limit = request.args.get("limit", 50, type=int)
     offset = request.args.get("offset", 0, type=int)
     repo = SqliteFeedbackRepository()
-    items = repo.get_by_device(request.user_id, limit, offset)
-    return jsonify([{"id": f.id, "user_id": f.user_id, "action": f.action} for f in items])
+    items = repo.get_by_device(request.device_id, limit, offset)
+    return jsonify([{"id": f.id, "device_id": f.device_id, "action": f.action} for f in items])
 
 @app.route("/api/feedback", methods=["POST"])
 @rate_limit(max_requests=60, window_seconds=60)
@@ -695,13 +595,13 @@ def submit_feedback():
     if action not in allowed_actions:
         return jsonify({"error": f"invalid action: {action}"}), 400
 
-    SqliteMetricsRepository().increment_metric(request.user_id, action)
+    SqliteMetricsRepository().increment_metric(request.device_id, action)
 
     comment = data.get("comment", "")
     if len(comment) > 2000:
         return jsonify({"error": "comment too long (max 2000 chars)"}), 400
     fb = Feedback(
-        user_id=request.user_id,
+        device_id=request.device_id,
         reply_history_id=data.get("reply_history_id"),
         action=action, modified_text=data.get("modified_text", ""),
         rating=data.get("rating", 0), comment=comment,
@@ -709,7 +609,7 @@ def submit_feedback():
     repo = SqliteFeedbackRepository()
     created = repo.create(fb)
     return jsonify({
-        "id": created.id, "user_id": created.user_id,
+        "id": created.id, "device_id": created.device_id,
         "action": created.action, "modified_text": created.modified_text,
         "rating": created.rating, "comment": created.comment,
     })
@@ -720,9 +620,9 @@ def submit_feedback():
 def get_optimize_metrics():
     days = request.args.get("days", 7, type=int)
     repo = SqliteMetricsRepository()
-    items = repo.get_by_device_and_date_range(request.user_id, days)
+    items = repo.get_by_device_and_date_range(request.device_id, days)
     return jsonify([{
-        "id": m.id, "user_id": m.user_id, "date": m.date,
+        "id": m.id, "device_id": m.device_id, "date": m.date,
         "total_generated": m.total_generated, "total_accepted": m.total_accepted,
         "total_modified": m.total_modified, "total_rejected": m.total_rejected,
     } for m in items])
@@ -731,7 +631,7 @@ def get_optimize_metrics():
 @require_auth
 def analyze_optimize():
     repo = SqliteMetricsRepository()
-    items = repo.get_by_device_and_date_range(request.user_id, 30)
+    items = repo.get_by_device_and_date_range(request.device_id, 30)
     if not items:
         return jsonify({"status": "no_data", "message": "暂无足够数据进行分析"})
 
@@ -764,37 +664,27 @@ def analyze_optimize():
 @rate_limit(max_requests=10, window_seconds=60)
 @require_auth
 def export_backup():
-    user_id = request.user_id
+    device_id = request.device_id
     rule_repo = SqliteRuleRepository()
     model_repo = SqliteModelRepository()
     history_repo = SqliteHistoryRepository()
     feedback_repo = SqliteFeedbackRepository()
     metrics_repo = SqliteMetricsRepository()
 
-    rules = rule_repo.get_by_device(user_id)
-    models = model_repo.get_by_device(user_id)
-    history_items, _ = history_repo.get_by_device(user_id, 1000, 0)
-    feedback_items = feedback_repo.get_by_device(user_id, 1000, 0)
-    metrics = metrics_repo.get_by_device_and_date_range(user_id, 365)
-
-    blacklist_items = []
-    try:
-        db = get_connection()
-        bl_rows = db.execute("SELECT * FROM blacklist WHERE user_id=? ORDER BY created_at DESC", (user_id,)).fetchall()
-        blacklist_items = [dict(r) for r in bl_rows]
-        db.close()
-    except Exception:
-        pass
+    rules = rule_repo.get_by_device(device_id)
+    models = model_repo.get_by_device(device_id)
+    history_items, _ = history_repo.get_by_device(device_id, 1000, 0)
+    feedback_items = feedback_repo.get_by_device(device_id, 1000, 0)
+    metrics = metrics_repo.get_by_device_and_date_range(device_id, 365)
 
     return jsonify({
-        "version": 2, "user_id": user_id,
+        "version": 1, "device_id": device_id,
         "rules": [_rule_to_dict(r) for r in rules],
         "models": [_model_to_dict(m) for m in models],
         "history": [{"id": h.id, "original_message": h.original_message,
                       "reply_content": h.reply_content} for h in history_items],
         "feedback": [{"id": f.id, "action": f.action} for f in feedback_items],
         "metrics": [{"date": m.date, "total_generated": m.total_generated} for m in metrics],
-        "blacklist": blacklist_items,
     })
 
 @app.route("/api/backup/restore", methods=["POST"])
@@ -805,7 +695,7 @@ def restore_backup():
     backup = data.get("backup")
     if not isinstance(backup, dict):
         return jsonify({"error": "backup must be a JSON object"}), 400
-    user_id = request.user_id
+    device_id = request.device_id
 
     rules_data = backup.get("rules", [])
     if rules_data and not isinstance(rules_data, list):
@@ -825,7 +715,7 @@ def restore_backup():
             if not isinstance(target_names, list):
                 target_names = []
             parsed_rules.append(KeywordRule(
-                user_id=user_id, keyword=r.get("keyword", ""),
+                device_id=device_id, keyword=r.get("keyword", ""),
                 match_type=r.get("match_type", "CONTAINS"), reply_template=r.get("reply_template", ""),
                 category=r.get("category", ""), target_type=r.get("target_type", "ALL"),
                 target_names=target_names,
@@ -838,7 +728,7 @@ def restore_backup():
     for m_data in models_data:
         try:
             parsed_models.append(ModelConfig(
-                user_id=user_id, name=m_data.get("name", ""),
+                device_id=device_id, name=m_data.get("name", ""),
                 model_type=m_data.get("model_type", "OPENAI"), model=m_data.get("model", ""),
                 api_key=m_data.get("api_key", ""), api_endpoint=m_data.get("api_endpoint", ""),
                 temperature=m_data.get("temperature", 0.7), max_tokens=m_data.get("max_tokens", 2000),
@@ -849,420 +739,22 @@ def restore_backup():
 
     # Restore rules
     if parsed_rules:
-        SqliteRuleRepository().batch_create(parsed_rules, user_id, "override")
+        SqliteRuleRepository().batch_create(parsed_rules, device_id, "override")
 
     # Restore models
     if parsed_models:
         db = get_connection()
         try:
-            db.execute("DELETE FROM model_configs WHERE user_id=?", (user_id,))
+            db.execute("DELETE FROM model_configs WHERE device_id=?", (device_id,))
             db.commit()
         finally:
             db.close()
         for config in parsed_models:
             SqliteModelRepository().create(config)
 
-    # Restore blacklist
-    bl_data = backup.get("blacklist", [])
-    bl_count = 0
-    if bl_data and isinstance(bl_data, list):
-        db = get_connection()
-        try:
-            db.execute("DELETE FROM blacklist WHERE user_id=?", (user_id,))
-            db.commit()
-            for bl in bl_data:
-                db.execute(
-                    "INSERT INTO blacklist (user_id, type, value, description, package_name, is_enabled) VALUES (?, ?, ?, ?, ?, ?)",
-                    (user_id, bl.get("type", "KEYWORD"), bl.get("value", ""),
-                     bl.get("description", ""), bl.get("package_name"),
-                     1 if bl.get("is_enabled", True) else 0)
-                )
-            db.commit()
-            bl_count = len(bl_data)
-        except Exception:
-            pass
-        finally:
-            db.close()
-
     return jsonify({
         "status": "ok",
-        "restored": {"rules": len(parsed_rules), "models": len(parsed_models), "blacklist": bl_count},
-    })
-
-# ========== 云备份 API (支持卸载重装数据恢复) ==========
-
-def _ensure_backup_table():
-    """Ensure backup_records table exists."""
-    db = get_connection()
-    try:
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS backup_records (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                device_name TEXT DEFAULT '',
-                app_version TEXT DEFAULT '',
-                data BLOB,
-                data_size INTEGER DEFAULT 0,
-                checksum TEXT DEFAULT '',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )
-        """)
-        db.execute("CREATE INDEX IF NOT EXISTS idx_backup_records_user ON backup_records(user_id)")
-        db.commit()
-    finally:
-        db.close()
-
-@app.route("/api/v1/backup/upload", methods=["POST"])
-@rate_limit(max_requests=5, window_seconds=60)
-@require_auth
-def upload_backup():
-    """Upload a backup to the cloud."""
-    _ensure_backup_table()
-    data = request.get_json() or {}
-    device_name = data.get("device_name", "")[:200]
-    app_version = data.get("app_version", "")[:100]
-    checksum = data.get("checksum", "")[:64]
-
-    # Backup content - serialize to JSON and compress
-    content = data.get("data")
-    import gzip
-    import json as _json
-    if content:
-        content_json = _json.dumps(content)
-        content_bytes = content_json.encode("utf-8")
-        content_gz = gzip.compress(content_bytes)
-    else:
-        content_gz = b""
-
-    data_size = len(content_gz)
-
-    db = get_connection()
-    try:
-        cursor = db.execute(
-            """INSERT INTO backup_records
-               (user_id, device_name, app_version, data, data_size, checksum)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (request.user_id, device_name, app_version, content_gz, data_size, checksum)
-        )
-        db.commit()
-        backup_id = cursor.lastrowid
-
-        # Get creation time
-        row = db.execute(
-            "SELECT created_at FROM backup_records WHERE id=?", (backup_id,)
-        ).fetchone()
-        created_at = row["created_at"] if row else _now_str()
-    finally:
-        db.close()
-
-    logger.info("Backup uploaded: user=%s, id=%d, size=%d", request.user_id, backup_id, data_size)
-    return jsonify({
-        "id": backup_id,
-        "device_name": device_name,
-        "app_version": app_version,
-        "data_size": data_size,
-        "checksum": checksum,
-        "created_at": created_at,
-    }), 201
-
-@app.route("/api/v1/backup/list", methods=["GET"])
-@rate_limit(max_requests=10, window_seconds=60)
-@require_auth
-def list_backups():
-    """List all backups for the current user."""
-    _ensure_backup_table()
-    db = get_connection()
-    try:
-        rows = db.execute(
-            """SELECT id, device_name, app_version, data_size, checksum, created_at
-               FROM backup_records WHERE user_id=? ORDER BY created_at DESC LIMIT 100""",
-            (request.user_id,)
-        ).fetchall()
-    finally:
-        db.close()
-
-    backups = [
-        {
-            "id": r["id"],
-            "device_name": r["device_name"],
-            "app_version": r["app_version"],
-            "data_size": r["data_size"],
-            "checksum": r["checksum"],
-            "created_at": r["created_at"],
-        }
-        for r in rows
-    ]
-    return jsonify(backups)
-
-@app.route("/api/v1/backup/download/<int:backup_id>", methods=["GET"])
-@rate_limit(max_requests=10, window_seconds=60)
-@require_auth
-def download_backup(backup_id):
-    """Download a specific backup."""
-    _ensure_backup_table()
-    db = get_connection()
-    try:
-        row = db.execute(
-            "SELECT * FROM backup_records WHERE id=? AND user_id=?",
-            (backup_id, request.user_id)
-        ).fetchone()
-        if not row:
-            return jsonify({"error": "Backup not found"}), 404
-
-        # Decompress data
-        import gzip
-        import json as _json
-        content = None
-        if row["data"]:
-            try:
-                content_bytes = gzip.decompress(row["data"])
-                content = _json.loads(content_bytes.decode("utf-8"))
-            except Exception:
-                pass  # Handle corrupted backups gracefully
-
-        return jsonify({
-            "id": row["id"],
-            "device_name": row["device_name"],
-            "app_version": row["app_version"],
-            "data": content,
-            "data_size": row["data_size"],
-            "checksum": row["checksum"],
-            "created_at": row["created_at"],
-        })
-    finally:
-        db.close()
-
-@app.route("/api/v1/backup/<int:backup_id>", methods=["DELETE"])
-@rate_limit(max_requests=10, window_seconds=60)
-@require_auth
-def delete_backup(backup_id):
-    """Delete a specific backup."""
-    _ensure_backup_table()
-    db = get_connection()
-    try:
-        cursor = db.execute(
-            "DELETE FROM backup_records WHERE id=? AND user_id=?",
-            (backup_id, request.user_id)
-        )
-        db.commit()
-        if cursor.rowcount == 0:
-            return jsonify({"error": "Backup not found"}), 404
-    finally:
-        db.close()
-
-    logger.info("Backup deleted: user=%s, id=%d", request.user_id, backup_id)
-    return jsonify({"status": "ok"})
-
-# ========== OTA 版本检查 API ==========
-
-@app.route("/api/v1/ota/check", methods=["GET"])
-def ota_check():
-    """检查更新 - 从 shz.al 获取版本信息"""
-    try:
-        import urllib.request
-        url = "https://shz.al/~csBabyLog"
-        with urllib.request.urlopen(url, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
-            return {
-                "code": 0,
-                "message": "success",
-                "data": data
-            }
-    except Exception as e:
-        logger.error("Failed to fetch version info: %s", e)
-        return {"code": 500, "message": str(e)}, 500
-
-@app.route("/api/v1/ota/latest", methods=["GET"])
-def ota_latest():
-    """获取最新版本信息"""
-    return ota_check()
-
-@app.route("/api/v1/ota/versions", methods=["GET"])
-def ota_versions():
-    """获取版本列表"""
-    return ota_check()
-
-# ========== 云同步 API (支持实时同步和卸载重装恢复) ==========
-
-@app.route("/api/sync/all", methods=["GET"])
-@rate_limit(max_requests=10, window_seconds=60)
-@require_auth
-def sync_get_all():
-    """全量同步：获取用户所有数据（首次登录/换手机恢复）"""
-    user_id = request.user_id
-    db = get_connection()
-    try:
-        row = db.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone()
-        if not row:
-            return jsonify({"error": "User not found"}), 404
-
-        rules = SqliteRuleRepository().get_by_device(user_id)
-        models = SqliteModelRepository().get_by_device(user_id)
-        history, _ = SqliteHistoryRepository().get_by_device(user_id, 5000, 0)
-        blacklist_rows = db.execute(
-            "SELECT * FROM blacklist WHERE user_id=?", (user_id,)
-        ).fetchall()
-
-        style_row = db.execute(
-            "SELECT * FROM tenant_style_config WHERE user_id=?", (user_id,)
-        ).fetchone()
-        app_row = db.execute(
-            "SELECT * FROM tenant_app_config WHERE user_id=?", (user_id,)
-        ).fetchone()
-
-        return jsonify({
-            "keywordRules": [_rule_to_dict(r) for r in rules],
-            "aiModelConfigs": [_model_to_dict(m) for m in models],
-            "replyHistory": [{
-                "id": h.id, "originalMessage": h.original_message,
-                "replyContent": h.reply_content, "source": h.source,
-                "modelUsed": h.model_used, "confidence": h.confidence,
-                "createdAt": h.created_at
-            } for h in history],
-            "messageBlacklist": [dict(r) for r in blacklist_rows],
-            "userStyleProfile": dict(style_row) if style_row else None,
-            "appConfig": dict(app_row) if app_row else None,
-            "scenarios": [],
-            "serverTime": int(time.time() * 1000)
-        })
-    finally:
-        db.close()
-
-@app.route("/sync/push", methods=["POST"])
-@app.route("/api/sync/push", methods=["POST"])
-@rate_limit(max_requests=30, window_seconds=60)
-@require_auth
-def sync_push():
-    """增量同步：推送本地变更到服务端"""
-    data = request.get_json() or {}
-    user_id = request.user_id
-    app.logger.info(f"sync_push called for user_id: {user_id}, data keys: {list(data.keys())}")
-
-    try:
-        rules_data = data.get("keywordRules", [])
-        for r in rules_data:
-            target_names = r.get("target_names", [])
-            if isinstance(target_names, str):
-                try:
-                    target_names = json.loads(target_names)
-                except json.JSONDecodeError:
-                    target_names = []
-            if not isinstance(target_names, list):
-                target_names = []
-
-            rule = KeywordRule(
-                id=r.get("id", 0) or 0,
-                user_id=user_id,
-                keyword=r.get("keyword", ""),
-                match_type=r.get("match_type", "CONTAINS"),
-                reply_template=r.get("reply_template", ""),
-                category=r.get("category", ""),
-                target_type=r.get("target_type", "ALL"),
-                target_names=target_names,
-                priority=r.get("priority", 0),
-                enabled=r.get("enabled", True)
-            )
-            SqliteRuleRepository().upsert(rule)
-
-        models_data = data.get("aiModelConfigs", [])
-        for m in models_data:
-            config = ModelConfig(
-                user_id=user_id,
-                name=m.get("name", ""),
-                model_type=m.get("model_type", "OPENAI"),
-                model=m.get("model", ""),
-                api_key=m.get("api_key", ""),
-                api_endpoint=m.get("api_endpoint", ""),
-                temperature=m.get("temperature", 0.7),
-                max_tokens=m.get("max_tokens", 2000),
-                is_default=m.get("is_default", False),
-                enabled=m.get("enabled", True)
-            )
-            SqliteModelRepository().upsert(config)
-
-        deleted_ids = data.get("deletedIds", {})
-        for entity_type, ids in deleted_ids.items():
-            if entity_type == "keyword_rules":
-                for rid in ids:
-                    try:
-                        SqliteRuleRepository().delete(int(rid), user_id)
-                    except (ValueError, TypeError):
-                        pass
-            elif entity_type == "ai_model_configs":
-                for mid in ids:
-                    try:
-                        SqliteModelRepository().delete(int(mid), user_id)
-                    except (ValueError, TypeError):
-                        pass
-
-    except Exception as e:
-        app.logger.error(f"sync_push error: {type(e).__name__}: {str(e)}")
-        return jsonify({"code": 500, "message": str(e)}), 500
-
-    return jsonify({
-        "code": 0,
-        "message": "成功",
-        "data": {
-            "accepted": True,
-            "conflicts": [],
-            "newServerVersion": int(time.time() * 1000),
-            "serverTime": int(time.time() * 1000)
-        }
-    })
-
-@app.route("/api/sync/changes", methods=["GET"])
-@rate_limit(max_requests=30, window_seconds=60)
-@require_auth
-def sync_get_changes():
-    """增量同步：获取服务端自上次同步以来的变更"""
-    since = request.args.get("since", 0, type=int)
-    user_id = request.user_id
-    since_date = "1970-01-01 00:00:00"
-    if since > 0:
-        try:
-            since_date = datetime.datetime.fromtimestamp(since / 1000).strftime("%Y-%m-%d %H:%M:%S")
-        except (ValueError, OSError):
-            since_date = "1970-01-01 00:00:00"
-
-    db = get_connection()
-    try:
-        rules = SqliteRuleRepository().get_by_device(user_id)
-        models = SqliteModelRepository().get_by_device(user_id)
-        blacklist_rows = db.execute(
-            "SELECT * FROM blacklist WHERE user_id=? AND created_at > ?",
-            (user_id, since_date)
-        ).fetchall()
-
-        changed_rules = [r for r in rules if r.created_at > since_date]
-        changed_models = [m for m in models if m.created_at > since_date]
-
-        return jsonify({
-            "keywordRules": [_rule_to_dict(r) for r in changed_rules],
-            "aiModelConfigs": [_model_to_dict(m) for m in changed_models],
-            "messageBlacklist": [dict(r) for r in blacklist_rows],
-            "deletedIds": {},
-            "serverTime": int(time.time() * 1000),
-            "hasMore": False,
-            "nextCursor": None
-        })
-    finally:
-        db.close()
-
-@app.route("/api/sync/resolve", methods=["POST"])
-@rate_limit(max_requests=10, window_seconds=60)
-@require_auth
-def sync_resolve():
-    """冲突解决：处理同步冲突"""
-    data = request.get_json() or {}
-    resolutions = data.get("resolutions", [])
-    # 简单实现：记录冲突但不自动解决（需要用户介入）
-    for r in resolutions:
-        logger.info("Sync conflict resolution: type=%s, id=%s, strategy=%s",
-                     r.get("entityType"), r.get("entityId"), r.get("strategy"))
-    return jsonify({
-        "resolved": True,
-        "serverTime": int(time.time() * 1000)
+        "restored": {"rules": len(parsed_rules), "models": len(parsed_models)},
     })
 
 # ========== Admin Authentication ==========
@@ -1306,17 +798,8 @@ def _init_admin():
     _ensure_admin_table()
     password = os.environ.get("ADMIN_PASSWORD")
     if not password:
-        # 仅在没有任何活跃管理员账户时，使用默认密码创建（首次部署安全兜底）
-        db_check = get_connection()
-        try:
-            count = db_check.execute("SELECT COUNT(*) FROM admin_accounts WHERE is_active=1").fetchone()[0]
-        finally:
-            db_check.close()
-        if count > 0:
-            logger.warning("ADMIN_PASSWORD not set, but active admin accounts exist — skipping default creation")
-            return
-        password = "admin123"
-        logger.warning("ADMIN_PASSWORD not set — using default password '%s'. Change it after first login!", password)
+        logger.warning("ADMIN_PASSWORD not set, skipping default admin creation")
+        return
     db = get_connection()
     try:
         # Support multiple admin phones (comma-separated env var + hardcoded fallbacks)
@@ -1469,32 +952,6 @@ def _startup_hook():
         _ensure_audit_table()
         _tables_initialized = True
 
-# ========== Admin API: First-time Setup ==========
-@app.route("/api/admin/setup", methods=["POST"])
-@rate_limit(max_requests=3, window_seconds=300)
-def admin_setup():
-    """One-time setup: create default admin if no active admin exists."""
-    data = request.get_json() or {}
-    phone = (data.get("phone") or "13800138000").strip()
-    password = data.get("password") or "admin123"
-    if len(password) < 6:
-        return jsonify({"error": "password must be at least 6 chars"}), 400
-    db = get_connection()
-    try:
-        count = db.execute("SELECT COUNT(*) FROM admin_accounts WHERE is_active=1").fetchone()[0]
-        if count > 0:
-            return jsonify({"error": "admin already exists, use login"}), 403
-        db.execute(
-            "INSERT INTO admin_accounts (phone, password_hash, is_active) VALUES (?, ?, 1)",
-            (phone, _hash_password(password))
-        )
-        db.commit()
-        logger.info("First-time admin created: %s", phone)
-        return jsonify({"status": "created", "phone": phone}), 201
-    finally:
-        db.close()
-
-
 # ========== Admin API: Auth ==========
 @app.route("/api/admin/login", methods=["POST"])
 @rate_limit(max_requests=5, window_seconds=300)
@@ -1512,55 +969,37 @@ def admin_login():
 @app.route("/api/admin/stats", methods=["GET"])
 @require_admin
 def admin_stats():
-    tenant_id = request.args.get("tenant_id", "").strip()
     db = get_connection()
     try:
-        if tenant_id:
-            user_count = db.execute("SELECT COUNT(*) FROM users WHERE id=?", (tenant_id,)).fetchone()[0]
-            rule_count = db.execute("SELECT COUNT(*) FROM keyword_rules WHERE user_id=?", (tenant_id,)).fetchone()[0]
-            history_count = db.execute("SELECT COUNT(*) FROM reply_history WHERE user_id=?", (tenant_id,)).fetchone()[0]
-            today = _now_str()[:10]
-            today_history = db.execute(
-                "SELECT COUNT(*) FROM reply_history WHERE user_id=? AND created_at >= ?", (tenant_id, today)
-            ).fetchone()[0]
-            active_today = 1 if today_history > 0 else 0
-        else:
-            user_count = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-            rule_count = db.execute("SELECT COUNT(*) FROM keyword_rules").fetchone()[0]
-            history_count = db.execute("SELECT COUNT(*) FROM reply_history").fetchone()[0]
-            today = _now_str()[:10]
-            today_history = db.execute(
-                "SELECT COUNT(*) FROM reply_history WHERE created_at >= ?", (today,)
-            ).fetchone()[0]
-            active_today = db.execute(
-                "SELECT COUNT(DISTINCT user_id) FROM reply_history WHERE created_at >= ?", (today,)
-            ).fetchone()[0]
+        device_count = db.execute("SELECT COUNT(*) FROM devices").fetchone()[0]
+        rule_count = db.execute("SELECT COUNT(*) FROM keyword_rules").fetchone()[0]
+        history_count = db.execute("SELECT COUNT(*) FROM reply_history").fetchone()[0]
+        today = _now_str()[:10]
+        today_history = db.execute(
+            "SELECT COUNT(*) FROM reply_history WHERE created_at >= ?", (today,)
+        ).fetchone()[0]
+        active_today = db.execute(
+            "SELECT COUNT(DISTINCT device_id) FROM reply_history WHERE created_at >= ?", (today,)
+        ).fetchone()[0]
     finally:
         db.close()
     return jsonify({
-        "user_count": user_count,
+        "device_count": device_count,
         "rule_count": rule_count,
         "history_count": history_count,
         "today_history": today_history,
         "active_today": active_today,
-        "tenant_id": tenant_id or "_global",
     })
 
 @app.route("/api/admin/recent-tenants", methods=["GET"])
 @require_admin
 def admin_recent_tenants():
-    tenant_id = request.args.get("tenant_id", "").strip()
     db = get_connection()
     try:
-        if tenant_id:
-            rows = db.execute(
-                "SELECT u.id, u.name, u.phone, u.created_at FROM users u WHERE u.id=? LIMIT 10",
-                (tenant_id,)
-            ).fetchall()
-        else:
-            rows = db.execute(
-                "SELECT u.id, u.name, u.phone, u.created_at FROM users u ORDER BY u.created_at DESC LIMIT 10"
-            ).fetchall()
+        rows = db.execute(
+            "SELECT DISTINCT d.id, d.name, d.platform, d.app_version, d.last_heartbeat "
+            "FROM devices d ORDER BY d.last_heartbeat DESC LIMIT 10"
+        ).fetchall()
         return jsonify([dict(r) for r in rows])
     finally:
         db.close()
@@ -1577,24 +1016,24 @@ def admin_tenants():
 
     db = get_connection()
     try:
-        query = "SELECT u.id, u.name, u.phone, u.created_at FROM users u"
-        count_query = "SELECT COUNT(*) FROM users u"
+        query = "SELECT d.id, d.name, d.platform, d.app_version, d.last_heartbeat, d.created_at FROM devices d"
+        count_query = "SELECT COUNT(*) FROM devices d"
         conditions = []
         params = []
         if search:
-            conditions.append("(u.name LIKE ? OR u.id LIKE ? OR u.phone LIKE ?)")
-            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+            conditions.append("(d.name LIKE ? OR d.id LIKE ?)")
+            params.extend([f"%{search}%", f"%{search}%"])
         if status == "active":
-            conditions.append("u.created_at >= datetime('now', '-7 days')")
+            conditions.append("d.last_heartbeat >= datetime('now', '-7 days')")
         elif status == "inactive":
-            conditions.append("u.created_at < datetime('now', '-7 days')")
+            conditions.append("(d.last_heartbeat < datetime('now', '-7 days') OR d.last_heartbeat IS NULL)")
         if conditions:
             where = " WHERE " + " AND ".join(conditions)
             query += where
             count_query += where
         count_params = list(params)
         total = db.execute(count_query, count_params).fetchone()[0]
-        query += " ORDER BY u.created_at DESC LIMIT ? OFFSET ?"
+        query += " ORDER BY d.last_heartbeat DESC LIMIT ? OFFSET ?"
         params.extend([page_size, offset])
         rows = db.execute(query, params).fetchall()
         return jsonify({
@@ -1611,13 +1050,13 @@ def admin_tenants():
 def admin_get_tenant(tenant_id):
     db = get_connection()
     try:
-        row = db.execute("SELECT * FROM users WHERE id = ?", (tenant_id,)).fetchone()
+        row = db.execute("SELECT * FROM devices WHERE id = ?", (tenant_id,)).fetchone()
         if not row:
             return jsonify({"error": "Tenant not found"}), 404
         d = dict(row)
-        d["rule_count"] = db.execute("SELECT COUNT(*) FROM keyword_rules WHERE user_id=?", (tenant_id,)).fetchone()[0]
-        d["history_count"] = db.execute("SELECT COUNT(*) FROM reply_history WHERE user_id=?", (tenant_id,)).fetchone()[0]
-        d["model_count"] = db.execute("SELECT COUNT(*) FROM model_configs WHERE user_id=?", (tenant_id,)).fetchone()[0]
+        d["rule_count"] = db.execute("SELECT COUNT(*) FROM keyword_rules WHERE device_id=?", (tenant_id,)).fetchone()[0]
+        d["history_count"] = db.execute("SELECT COUNT(*) FROM reply_history WHERE device_id=?", (tenant_id,)).fetchone()[0]
+        d["model_count"] = db.execute("SELECT COUNT(*) FROM model_configs WHERE device_id=?", (tenant_id,)).fetchone()[0]
         return jsonify(d)
     finally:
         db.close()
@@ -1628,16 +1067,24 @@ def admin_get_tenant(tenant_id):
 def admin_update_tenant(tenant_id):
     data = request.get_json() or {}
     name = data.get("name")
+    is_active = data.get("is_active")
     db = get_connection()
     try:
-        row = db.execute("SELECT id FROM users WHERE id=?", (tenant_id,)).fetchone()
+        row = db.execute("SELECT id FROM devices WHERE id=?", (tenant_id,)).fetchone()
         if not row:
             return jsonify({"error": "Tenant not found"}), 404
+        # Ensure is_active column exists (added via schema migration)
+        try:
+            db.execute("SELECT is_active FROM devices WHERE id=?", (tenant_id,)).fetchone()
+        except Exception:
+            db.execute("ALTER TABLE devices ADD COLUMN is_active INTEGER DEFAULT 1")
         if name is not None:
             name = str(name).strip()
             if len(name) > 200:
                 return jsonify({"error": "name too long (max 200 chars)"}), 400
-            db.execute("UPDATE users SET name=? WHERE id=?", (name, tenant_id))
+            db.execute("UPDATE devices SET name=? WHERE id=?", (name, tenant_id))
+        if is_active is not None:
+            db.execute("UPDATE devices SET is_active=? WHERE id=?", (1 if is_active else 0, tenant_id))
         db.commit()
         _log_audit(request.admin_phone, "update_tenant", "tenant", tenant_id)
     finally:
@@ -1651,7 +1098,7 @@ def admin_get_global_default_model():
     # Return a global default model config
     db = get_connection()
     try:
-        row = db.execute("SELECT * FROM model_configs WHERE user_id='_global' AND is_default=1 AND enabled=1 LIMIT 1").fetchone()
+        row = db.execute("SELECT * FROM model_configs WHERE device_id='_global' AND is_default=1 AND enabled=1 LIMIT 1").fetchone()
         if row:
             return jsonify(_model_to_dict(ModelConfig(**{k: row[k] for k in row.keys()})))
         return jsonify({})
@@ -1673,7 +1120,7 @@ def admin_save_global_default_model():
         db.commit()
     db.close()
     config = ModelConfig(
-        user_id="_global",
+        device_id="_global",
         name=data.get("name", "global-default"),
         model_type=data.get("model_type", "OPENAI"),
         model=data.get("model", "gpt-4o"),
@@ -1708,7 +1155,7 @@ def admin_get_tenant_default_model(tenant_id):
 def admin_save_tenant_default_model(tenant_id):
     data = request.get_json() or {}
     config = ModelConfig(
-        user_id=tenant_id,
+        device_id=tenant_id,
         name=data.get("name", "default"),
         model_type=data.get("model_type", "OPENAI"),
         model=data.get("model", "gpt-4o"),
@@ -1734,7 +1181,7 @@ def admin_save_tenant_default_model(tenant_id):
 def admin_delete_tenant_default_model(tenant_id):
     db = get_connection()
     try:
-        db.execute("DELETE FROM model_configs WHERE user_id=? AND is_default=1", (tenant_id,))
+        db.execute("DELETE FROM model_configs WHERE device_id=? AND is_default=1", (tenant_id,))
         db.commit()
     finally:
         db.close()
@@ -1768,7 +1215,7 @@ def admin_create_tenant_rule(tenant_id):
     if not isinstance(target_names, list):
         return jsonify({"error": "target_names must be a list"}), 400
     rule = KeywordRule(
-        user_id=tenant_id,
+        device_id=tenant_id,
         keyword=keyword,
         match_type=match_type,
         reply_template=data.get("reply_template", ""),
@@ -1792,7 +1239,7 @@ def admin_update_tenant_rule(tenant_id, rule_id):
         return jsonify({"error": "Rule not found"}), 404
     data = request.get_json() or {}
     rule = KeywordRule(
-        id=rule_id, user_id=tenant_id,
+        id=rule_id, device_id=tenant_id,
         keyword=data.get("keyword", existing.keyword).strip(),
         match_type=data.get("match_type", existing.match_type),
         reply_template=data.get("reply_template", existing.reply_template),
@@ -1825,7 +1272,7 @@ def admin_batch_import_tenant_rules(tenant_id):
         return jsonify({"error": "too many rules (max 1000)"}), 400
     mode = data.get("mode", "append")
     rules = [KeywordRule(
-        user_id=tenant_id, keyword=r.get("keyword", ""),
+        device_id=tenant_id, keyword=r.get("keyword", ""),
         match_type=r.get("match_type", "CONTAINS"), reply_template=r.get("reply_template", ""),
         category=r.get("category", ""), target_type=r.get("target_type", "ALL"),
         target_names=r.get("target_names", []), priority=r.get("priority", 0),
@@ -1845,16 +1292,16 @@ def _ensure_blacklist_table():
         db.executescript("""
             CREATE TABLE IF NOT EXISTS blacklist (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
+                device_id TEXT NOT NULL,
                 type TEXT DEFAULT 'KEYWORD',
                 value TEXT NOT NULL,
                 description TEXT DEFAULT '',
                 package_name TEXT,
                 is_enabled INTEGER DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
             );
-            CREATE INDEX IF NOT EXISTS idx_blacklist_user ON blacklist(user_id);
+            CREATE INDEX IF NOT EXISTS idx_blacklist_device ON blacklist(device_id);
         """)
         db.commit()
         db.close()
@@ -1876,7 +1323,7 @@ def _blacklist_to_dict(row):
 def admin_get_blacklist(tenant_id):
     db = get_connection()
     try:
-        rows = db.execute("SELECT * FROM blacklist WHERE user_id=? ORDER BY created_at DESC", (tenant_id,)).fetchall()
+        rows = db.execute("SELECT * FROM blacklist WHERE device_id=? ORDER BY created_at DESC", (tenant_id,)).fetchall()
         return jsonify([_blacklist_to_dict(r) for r in rows])
     finally:
         db.close()
@@ -1892,7 +1339,7 @@ def admin_add_blacklist(tenant_id):
     db = get_connection()
     try:
         cur = db.execute(
-            "INSERT INTO blacklist (user_id, type, value, description, package_name, is_enabled) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO blacklist (device_id, type, value, description, package_name, is_enabled) VALUES (?, ?, ?, ?, ?, ?)",
             (tenant_id, data.get("type", "KEYWORD"), value, data.get("description", ""),
              data.get("package_name"), 1 if data.get("is_enabled", True) else 0)
         )
@@ -1908,11 +1355,11 @@ def admin_update_blacklist(tenant_id, bid):
     data = request.get_json() or {}
     db = get_connection()
     try:
-        row = db.execute("SELECT id FROM blacklist WHERE id=? AND user_id=?", (bid, tenant_id)).fetchone()
+        row = db.execute("SELECT id FROM blacklist WHERE id=? AND device_id=?", (bid, tenant_id)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         db.execute(
-            "UPDATE blacklist SET type=?, value=?, description=?, package_name=?, is_enabled=? WHERE id=? AND user_id=?",
+            "UPDATE blacklist SET type=?, value=?, description=?, package_name=?, is_enabled=? WHERE id=? AND device_id=?",
             (data.get("type", "KEYWORD"), data.get("value", ""), data.get("description", ""),
              data.get("package_name"), 1 if data.get("is_enabled", True) else 0, bid, tenant_id)
         )
@@ -1927,7 +1374,7 @@ def admin_update_blacklist(tenant_id, bid):
 def admin_delete_blacklist(tenant_id, bid):
     db = get_connection()
     try:
-        cur = db.execute("DELETE FROM blacklist WHERE id=? AND user_id=?", (bid, tenant_id))
+        cur = db.execute("DELETE FROM blacklist WHERE id=? AND device_id=?", (bid, tenant_id))
         db.commit()
         if cur.rowcount == 0:
             return jsonify({"error": "Not found"}), 404
@@ -1941,7 +1388,7 @@ def admin_delete_blacklist(tenant_id, bid):
 def admin_clear_blacklist(tenant_id):
     db = get_connection()
     try:
-        db.execute("DELETE FROM blacklist WHERE user_id=?", (tenant_id,))
+        db.execute("DELETE FROM blacklist WHERE device_id=?", (tenant_id,))
         db.commit()
         return jsonify({"status": "cleared"})
     finally:
@@ -1960,8 +1407,8 @@ def admin_get_tenant_history(tenant_id):
 
     db = get_connection()
     try:
-        query = "SELECT * FROM reply_history WHERE user_id = ?"
-        count_query = "SELECT COUNT(*) FROM reply_history WHERE user_id = ?"
+        query = "SELECT * FROM reply_history WHERE device_id = ?"
+        count_query = "SELECT COUNT(*) FROM reply_history WHERE device_id = ?"
         params = [tenant_id]
         if source:
             query += " AND source = ?"
@@ -2011,7 +1458,7 @@ def admin_create_tenant_model(tenant_id):
     if not isinstance(max_tokens, int) or max_tokens < 1 or max_tokens > 32000:
         return jsonify({"error": "max_tokens must be 1-32000"}), 400
     config = ModelConfig(
-        user_id=tenant_id,
+        device_id=tenant_id,
         name=name,
         model_type=data.get("model_type", "OPENAI"),
         model=data.get("model", "gpt-4o"),
@@ -2036,7 +1483,7 @@ def admin_update_tenant_model(tenant_id, model_id):
         return jsonify({"error": "Model not found"}), 404
     data = request.get_json() or {}
     config = ModelConfig(
-        id=model_id, user_id=tenant_id,
+        id=model_id, device_id=tenant_id,
         name=data.get("name", existing.name).strip(),
         model_type=data.get("model_type", existing.model_type),
         model=data.get("model", existing.model),
@@ -2070,8 +1517,8 @@ def admin_get_tenant_feedback(tenant_id):
     offset = (page - 1) * page_size
     db = get_connection()
     try:
-        query = "SELECT * FROM feedback WHERE user_id = ?"
-        count_query = "SELECT COUNT(*) FROM feedback WHERE user_id = ?"
+        query = "SELECT * FROM feedback WHERE device_id = ?"
+        count_query = "SELECT COUNT(*) FROM feedback WHERE device_id = ?"
         params = [tenant_id]
         if action:
             query += " AND action = ?"
@@ -2105,7 +1552,7 @@ def admin_get_tenant_metrics(tenant_id):
     items_page = items[offset:offset + page_size]
     return jsonify({
         "items": [{
-            "id": m.id, "user_id": m.user_id, "date": m.date,
+            "id": m.id, "device_id": m.device_id, "date": m.date,
             "total_generated": m.total_generated, "total_accepted": m.total_accepted,
             "total_modified": m.total_modified, "total_rejected": m.total_rejected,
         } for m in items_page],
@@ -2179,7 +1626,6 @@ def admin_audit_log():
     page = request.args.get("page", 1, type=int)
     page_size = min(request.args.get("page_size", 20, type=int), 100)
     action = request.args.get("action", "").strip()
-    tenant_id = request.args.get("tenant_id", "").strip()
     date_from = request.args.get("date_from", "").strip()
     date_to = request.args.get("date_to", "").strip()
     offset = (page - 1) * page_size
@@ -2192,11 +1638,6 @@ def admin_audit_log():
             query += " AND action = ?"
             count_query += " AND action = ?"
             params.append(action)
-        if tenant_id:
-            query += " AND (target_id = ? OR detail LIKE ?)"
-            count_query += " AND (target_id = ? OR detail LIKE ?)"
-            params.append(tenant_id)
-            params.append(f"%{tenant_id}%")
         if date_from:
             query += " AND created_at >= ?"
             count_query += " AND created_at >= ?"
@@ -2391,7 +1832,7 @@ def admin_get_tenant_agents(tenant_id):
     db = get_connection()
     try:
         rows = db.execute(
-            "SELECT * FROM agent_status WHERE tenant_id=? ORDER BY updated_at DESC",
+            "SELECT * FROM agent_status WHERE tenant_id=? OR tenant_id='' ORDER BY updated_at DESC",
             (tenant_id,)
         ).fetchall()
         agents = []
@@ -2498,10 +1939,10 @@ def admin_change_password():
 def admin_get_tenant_style(tenant_id):
     db = get_connection()
     try:
-        row = db.execute("SELECT * FROM tenant_style_config WHERE user_id=?", (tenant_id,)).fetchone()
+        row = db.execute("SELECT * FROM tenant_style_config WHERE device_id=?", (tenant_id,)).fetchone()
         if not row:
             return jsonify({
-                "user_id": tenant_id, "theme": "light", "primary_color": "#1976D2",
+                "device_id": tenant_id, "theme": "light", "primary_color": "#1976D2",
                 "accent_color": "#FF4081", "font_size": "medium", "bubble_style": "rounded",
                 "avatar_enabled": 1, "show_timestamp": 1, "send_sound": 1, "custom_css": "",
             })
@@ -2530,7 +1971,7 @@ def admin_update_tenant_style(tenant_id):
     try:
         db.execute(
             """INSERT OR REPLACE INTO tenant_style_config
-               (user_id, theme, primary_color, accent_color, font_size, bubble_style,
+               (device_id, theme, primary_color, accent_color, font_size, bubble_style,
                 avatar_enabled, show_timestamp, send_sound, custom_css, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (tenant_id, theme, data.get("primary_color", "#1976D2"),
@@ -2552,10 +1993,10 @@ def admin_update_tenant_style(tenant_id):
 def admin_get_tenant_app_config(tenant_id):
     db = get_connection()
     try:
-        row = db.execute("SELECT * FROM tenant_app_config WHERE user_id=?", (tenant_id,)).fetchone()
+        row = db.execute("SELECT * FROM tenant_app_config WHERE device_id=?", (tenant_id,)).fetchone()
         if not row:
             return jsonify({
-                "user_id": tenant_id, "app_name": "客服小秘",
+                "device_id": tenant_id, "app_name": "客服小秘",
                 "welcome_message": "您好，请问有什么可以帮您？",
                 "offline_message": "当前无客服在线，请稍后再试。",
                 "auto_reply_enabled": 1, "notification_enabled": 1, "voice_enabled": 0,
@@ -2585,7 +2026,7 @@ def admin_update_tenant_app_config(tenant_id):
     try:
         db.execute(
             """INSERT OR REPLACE INTO tenant_app_config
-               (user_id, app_name, welcome_message, offline_message,
+               (device_id, app_name, welcome_message, offline_message,
                 auto_reply_enabled, notification_enabled, voice_enabled,
                 language, session_timeout, max_queue_size, file_upload_enabled, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -2611,7 +2052,7 @@ def admin_update_tenant_app_config(tenant_id):
 @require_admin
 def admin_export_tenant_backup(tenant_id):
     """Export full backup data for a tenant."""
-    user_id = tenant_id
+    device_id = tenant_id
     rule_repo = SqliteRuleRepository()
     model_repo = SqliteModelRepository()
     history_repo = SqliteHistoryRepository()
@@ -2620,22 +2061,22 @@ def admin_export_tenant_backup(tenant_id):
 
     db = get_connection()
     try:
-        row = db.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone()
+        row = db.execute("SELECT id FROM devices WHERE id=?", (device_id,)).fetchone()
         if not row:
             return jsonify({"error": "Tenant not found"}), 404
     finally:
         db.close()
 
-    rules = rule_repo.get_by_user(user_id)
-    models = model_repo.get_by_user(user_id)
-    history_items, _ = history_repo.get_by_user(user_id, 5000, 0)
-    feedback_items = feedback_repo.get_by_user(user_id, 5000, 0)
-    metrics = metrics_repo.get_by_user_and_date_range(user_id, 365)
+    rules = rule_repo.get_by_device(device_id)
+    models = model_repo.get_by_device(device_id)
+    history_items, _ = history_repo.get_by_device(device_id, 5000, 0)
+    feedback_items = feedback_repo.get_by_device(device_id, 5000, 0)
+    metrics = metrics_repo.get_by_device_and_date_range(device_id, 365)
 
     blacklist_items = []
     try:
         db = get_connection()
-        bl_rows = db.execute("SELECT * FROM blacklist WHERE user_id=? ORDER BY created_at DESC", (user_id,)).fetchall()
+        bl_rows = db.execute("SELECT * FROM blacklist WHERE device_id=? ORDER BY created_at DESC", (device_id,)).fetchall()
         blacklist_items = [dict(r) for r in bl_rows]
         db.close()
     except Exception:
@@ -2643,7 +2084,7 @@ def admin_export_tenant_backup(tenant_id):
 
     return jsonify({
         "version": 2,
-        "user_id": user_id,
+        "device_id": device_id,
         "exported_at": _now_str(),
         "rules": [_rule_to_dict(r) for r in rules],
         "models": [_model_to_dict(m) for m in models],
@@ -2674,10 +2115,10 @@ def admin_restore_tenant_backup(tenant_id):
     if not isinstance(backup, dict):
         return jsonify({"error": "backup must be a JSON object"}), 400
 
-    user_id = tenant_id
+    device_id = tenant_id
     db = get_connection()
     try:
-        row = db.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone()
+        row = db.execute("SELECT id FROM devices WHERE id=?", (device_id,)).fetchone()
         if not row:
             return jsonify({"error": "Tenant not found"}), 404
     finally:
@@ -2698,21 +2139,21 @@ def admin_restore_tenant_backup(tenant_id):
             if not isinstance(target_names, list):
                 target_names = []
             parsed_rules.append(KeywordRule(
-                user_id=user_id, keyword=r.get("keyword", ""),
+                device_id=device_id, keyword=r.get("keyword", ""),
                 match_type=r.get("match_type", "CONTAINS"), reply_template=r.get("reply_template", ""),
                 category=r.get("category", ""), target_type=r.get("target_type", "ALL"),
                 target_names=target_names, priority=r.get("priority", 0),
                 enabled=bool(r.get("enabled", True)),
             ))
         if parsed_rules:
-            SqliteRuleRepository().batch_create(parsed_rules, user_id, "override")
+            SqliteRuleRepository().batch_create(parsed_rules, device_id, "override")
             restored["rules"] = len(parsed_rules)
 
     models_data = backup.get("models", [])
     if models_data and isinstance(models_data, list):
         db = get_connection()
         try:
-            db.execute("DELETE FROM model_configs WHERE user_id=?", (user_id,))
+            db.execute("DELETE FROM model_configs WHERE device_id=?", (device_id,))
             db.commit()
         finally:
             db.close()
@@ -2720,7 +2161,7 @@ def admin_restore_tenant_backup(tenant_id):
         for m_data in models_data:
             try:
                 config = ModelConfig(
-                    user_id=user_id, name=m_data.get("name", ""),
+                    device_id=device_id, name=m_data.get("name", ""),
                     model_type=m_data.get("model_type", "OPENAI"), model=m_data.get("model", ""),
                     api_key=m_data.get("api_key", ""), api_endpoint=m_data.get("api_endpoint", ""),
                     temperature=m_data.get("temperature", 0.7), max_tokens=m_data.get("max_tokens", 2000),
@@ -2736,12 +2177,12 @@ def admin_restore_tenant_backup(tenant_id):
     if bl_data and isinstance(bl_data, list):
         db = get_connection()
         try:
-            db.execute("DELETE FROM blacklist WHERE user_id=?", (user_id,))
+            db.execute("DELETE FROM blacklist WHERE device_id=?", (device_id,))
             db.commit()
             for bl in bl_data:
                 db.execute(
-                    "INSERT INTO blacklist (user_id, type, value, description, package_name, is_enabled) VALUES (?, ?, ?, ?, ?, ?)",
-                    (user_id, bl.get("type", "KEYWORD"), bl.get("value", ""),
+                    "INSERT INTO blacklist (device_id, type, value, description, package_name, is_enabled) VALUES (?, ?, ?, ?, ?, ?)",
+                    (device_id, bl.get("type", "KEYWORD"), bl.get("value", ""),
                      bl.get("description", ""), bl.get("package_name"),
                      1 if bl.get("is_enabled", True) else 0)
                 )
@@ -2815,9 +2256,8 @@ _admin_registered = _register_admin()
 application = app
 
 @app.route("/_debug/admin-status")
-@require_admin
 def _debug_admin_status():
-    """Debug endpoint to check if admin panel is registered. Protected by admin auth."""
+    """Debug endpoint to check if admin panel is registered."""
     return jsonify({
         "admin_registered": _admin_registered,
         "admin_mode": os.environ.get("ADMIN_API_MODE", "not set"),
