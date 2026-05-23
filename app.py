@@ -1129,6 +1129,7 @@ def sync_get_all():
     finally:
         db.close()
 
+@app.route("/sync/push", methods=["POST"])
 @app.route("/api/sync/push", methods=["POST"])
 @rate_limit(max_requests=30, window_seconds=60)
 @require_auth
@@ -1137,7 +1138,6 @@ def sync_push():
     data = request.get_json() or {}
     user_id = request.user_id
 
-    db = get_connection()
     try:
         rules_data = data.get("keywordRules", [])
         for r in rules_data:
@@ -1194,16 +1194,18 @@ def sync_push():
                     except (ValueError, TypeError):
                         pass
 
-        # Each repository handles its own connection and commit
-        # No additional commit needed here
-    finally:
-        db.close()
+    except Exception as e:
+        return jsonify({"code": 500, "message": str(e)}), 500
 
     return jsonify({
-        "accepted": True,
-        "conflicts": [],
-        "newServerVersion": int(time.time() * 1000),
-        "serverTime": int(time.time() * 1000)
+        "code": 0,
+        "message": "成功",
+        "data": {
+            "accepted": True,
+            "conflicts": [],
+            "newServerVersion": int(time.time() * 1000),
+            "serverTime": int(time.time() * 1000)
+        }
     })
 
 @app.route("/api/sync/changes", methods=["GET"])
