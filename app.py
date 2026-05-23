@@ -72,16 +72,34 @@ def dict_from_row(row):
 def extract_device_id():
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        return None
-    return auth_service.verify_token(auth_header[7:])
+        return None, None
+
+    token = auth_header[7:]
+
+    # 尝试新格式 (userId/tenantId)
+    try:
+        import jwt
+        JWT_SECRET = os.environ.get("JWT_SECRET", "default-secret")
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        user_id = payload.get("userId") or payload.get("user_id")
+        tenant_id = payload.get("tenantId") or payload.get("tenant_id")
+        if user_id:
+            return user_id, tenant_id
+    except:
+        pass
+
+    # 回退到旧格式 (device_id)
+    device_id = auth_service.verify_token(token)
+    return device_id, None
 
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        device_id = extract_device_id()
+        device_id, tenant_id = extract_device_id()
         if not device_id:
             return jsonify({"error": "Unauthorized"}), 401
         request.device_id = device_id
+        request.tenant_id = tenant_id or device_id  # 如果没有tenant_id，用device_id
         return f(*args, **kwargs)
     return decorated
 
@@ -404,6 +422,506 @@ def heartbeat():
     repo = SqliteDeviceRepository()
     repo.update_heartbeat(request.device_id)
     return jsonify({"status": "ok"})
+
+# ========== 云端同步 API ==========
+
+@app.route("/sync/all", methods=["GET"])
+@require_auth
+def sync_all():
+    """全量同步 API - 获取该租户的所有数据"""
+    tenant_id = request.tenant_id
+
+    try:
+        db = get_connection()
+
+        # 查询关键词规则
+        rules = db.execute(
+            "SELECT * FROM keyword_rules WHERE tenant_id=? AND deleted=0",
+            (tenant_id,)
+        ).fetchall()
+
+        # 查询 AI 模型配置
+        models = db.execute(
+            "SELECT * FROM ai_model_configs WHERE tenant_id=? AND deleted=0",
+            (tenant_id,)
+        ).fetchall()
+
+        # 查询风格画像
+        profile_row = db.execute(
+            "SELECT * FROM user_style_profiles WHERE tenant_id=?",
+            (tenant_id,)
+        ).fetchone()
+        profile = dict(profile_row) if profile_row else None
+
+        # 查询应用配置
+        apps = db.execute(
+            "SELECT * FROM app_configs WHERE tenant_id=? AND deleted=0",
+            (tenant_id,)
+        ).fetchall()
+
+        # 查询场景
+        scenarios = db.execute(
+            "SELECT * FROM scenarios WHERE tenant_id=? AND deleted=0",
+            (tenant_id,)
+        ).fetchall()
+
+        # 查询回复历史
+        history = db.execute(
+            "SELECT * FROM reply_history WHERE tenant_id=? AND deleted=0 ORDER BY send_time DESC LIMIT 1000",
+            (tenant_id,)
+        ).fetchall()
+
+        # 查询黑名单
+        blacklist = db.execute(
+            "SELECT * FROM message_blacklist WHERE tenant_id=? AND deleted=0",
+            (tenant_id,)
+        ).fetchall()
+
+        db.close()
+
+        return jsonify({
+            "code": 0,
+            "message": "成功",
+            "data": {
+                "keywordRules": [_sync_rule_to_dict(r) for r in rules],
+                "aiModelConfigs": [_sync_model_to_dict(m) for m in models],
+                "userStyleProfile": _sync_profile_to_dict(profile) if profile else None,
+                "appConfigs": [_sync_app_to_dict(a) for a in apps],
+                "scenarios": [_sync_scenario_to_dict(s) for s in scenarios],
+                "replyHistory": [_sync_history_to_dict(h) for h in history],
+                "messageBlacklist": [_sync_blacklist_to_dict(b) for b in blacklist],
+                "serverTime": int(time.time() * 1000)
+            }
+        })
+    except Exception as e:
+        logger.error("sync_all error: %s", e)
+        return jsonify({"code": 500, "message": str(e), "data": None}), 500
+
+@app.route("/sync/changes", methods=["GET"])
+@require_auth
+def sync_changes():
+    """增量同步 API - 获取指定时间戳后的变更"""
+    tenant_id = request.tenant_id
+    since = int(request.args.get("since", 0))
+
+    try:
+        db = get_connection()
+
+        rules = db.execute(
+            "SELECT * FROM keyword_rules WHERE tenant_id=? AND (sync_version>? OR sync_version=0)",
+            (tenant_id, since)
+        ).fetchall()
+
+        models = db.execute(
+            "SELECT * FROM ai_model_configs WHERE tenant_id=? AND (sync_version>? OR sync_version=0)",
+            (tenant_id, since)
+        ).fetchall()
+
+        profile_row = db.execute(
+            "SELECT * FROM user_style_profiles WHERE tenant_id=?",
+            (tenant_id,)
+        ).fetchone()
+        profile = dict(profile_row) if profile_row and (profile_row["sync_version"] > since or profile_row["sync_version"] == 0) else None
+
+        apps = db.execute(
+            "SELECT * FROM app_configs WHERE tenant_id=? AND (sync_version>? OR sync_version=0)",
+            (tenant_id, since)
+        ).fetchall()
+
+        scenarios = db.execute(
+            "SELECT * FROM scenarios WHERE tenant_id=? AND (sync_version>? OR sync_version=0)",
+            (tenant_id, since)
+        ).fetchall()
+
+        history = db.execute(
+            "SELECT * FROM reply_history WHERE tenant_id=? AND (sync_version>? OR sync_version=0) ORDER BY send_time DESC LIMIT 100",
+            (tenant_id, since)
+        ).fetchall()
+
+        blacklist = db.execute(
+            "SELECT * FROM message_blacklist WHERE tenant_id=? AND (sync_version>? OR sync_version=0)",
+            (tenant_id, since)
+        ).fetchall()
+
+        # 查询已删除的记录
+        deleted_rules = db.execute(
+            "SELECT id FROM keyword_rules WHERE tenant_id=? AND deleted=1 AND updated_at>?",
+            (tenant_id, since)
+        ).fetchall()
+
+        db.close()
+
+        return jsonify({
+            "code": 0,
+            "message": "成功",
+            "data": {
+                "keywordRules": [_sync_rule_to_dict(r) for r in rules],
+                "aiModelConfigs": [_sync_model_to_dict(m) for m in models],
+                "userStyleProfile": _sync_profile_to_dict(profile) if profile else None,
+                "appConfigs": [_sync_app_to_dict(a) for a in apps],
+                "scenarios": [_sync_scenario_to_dict(s) for s in scenarios],
+                "replyHistory": [_sync_history_to_dict(h) for h in history],
+                "messageBlacklist": [_sync_blacklist_to_dict(b) for b in blacklist],
+                "deletedIds": {"keyword_rules": [str(r["id"]) for r in deleted_rules]},
+                "serverTime": int(time.time() * 1000),
+                "hasMore": False,
+                "nextCursor": None
+            }
+        })
+    except Exception as e:
+        logger.error("sync_changes error: %s", e)
+        return jsonify({"code": 500, "message": str(e), "data": None}), 500
+
+@app.route("/sync/push", methods=["POST"])
+@require_auth
+def sync_push():
+    """推送本地变更到云端"""
+    tenant_id = request.tenant_id
+    data = request.get_json() or {}
+
+    try:
+        db = get_connection()
+
+        # 处理关键词规则
+        rules = data.get("keywordRules", [])
+        for rule in rules:
+            _upsert_rule(db, rule, tenant_id)
+
+        # 处理 AI 模型配置
+        models = data.get("aiModelConfigs", [])
+        for model in models:
+            _upsert_model(db, model, tenant_id)
+
+        # 处理风格画像
+        profile = data.get("userStyleProfile")
+        if profile:
+            _upsert_profile(db, profile, tenant_id)
+
+        # 处理应用配置
+        apps = data.get("appConfigs", [])
+        for app in apps:
+            _upsert_app(db, app, tenant_id)
+
+        # 处理场景
+        scenarios = data.get("scenarios", [])
+        for scenario in scenarios:
+            _upsert_scenario(db, scenario, tenant_id)
+
+        # 处理回复历史
+        history = data.get("replyHistory", [])
+        for h in history:
+            _upsert_history(db, h, tenant_id)
+
+        # 处理黑名单
+        blacklist = data.get("messageBlacklist", [])
+        for b in blacklist:
+            _upsert_blacklist(db, b, tenant_id)
+
+        # 处理删除
+        deleted_ids = data.get("deletedIds", {})
+        for entity_type, ids in deleted_ids.items():
+            for entity_id in ids:
+                _delete_entity(db, entity_type, entity_id, tenant_id)
+
+        db.commit()
+        db.close()
+
+        return jsonify({
+            "code": 0,
+            "message": "成功",
+            "data": {
+                "accepted": True,
+                "conflicts": [],
+                "newServerVersion": int(time.time() * 1000),
+                "serverTime": int(time.time() * 1000)
+            }
+        })
+    except Exception as e:
+        logger.error("sync_push error: %s", e)
+        db.rollback()
+        db.close()
+        return jsonify({"code": 500, "message": str(e), "data": None}), 500
+
+# 辅助函数
+def _sync_rule_to_dict(r):
+    return {
+        "id": r["id"],
+        "keyword": r["keyword"],
+        "match_type": r["match_type"],
+        "reply_template": r["reply_template"],
+        "category": r["category"],
+        "target_type": r["target_type"],
+        "target_names": r["target_names"],
+        "priority": r["priority"],
+        "enabled": bool(r["enabled"]),
+        "createdAt": r["created_at"],
+        "updatedAt": r["updated_at"],
+        "tenantId": r["tenant_id"],
+        "syncVersion": r["sync_version"],
+        "deleted": bool(r["deleted"])
+    }
+
+def _sync_model_to_dict(m):
+    return {
+        "id": m["id"],
+        "modelType": m["model_type"],
+        "modelName": m["model_name"],
+        "apiKey": m["api_key"],
+        "apiEndpoint": m["api_endpoint"],
+        "temperature": m["temperature"],
+        "maxTokens": m["max_tokens"],
+        "isDefault": bool(m["is_default"]),
+        "isEnabled": bool(m["is_enabled"]),
+        "monthlyCost": m["monthly_cost"],
+        "lastUsed": m["last_used"],
+        "createdAt": m["created_at"],
+        "tenantId": m["tenant_id"],
+        "syncVersion": m["sync_version"],
+        "deleted": bool(m["deleted"])
+    }
+
+def _sync_profile_to_dict(p):
+    if not p:
+        return None
+    return {
+        "userId": p.get("user_id") or p.get("tenant_id"),
+        "formalityLevel": p.get("formality_level", 0.5),
+        "enthusiasmLevel": p.get("enthusiasm_level", 0.5),
+        "professionalismLevel": p.get("professionalism_level", 0.5),
+        "wordCountPreference": p.get("word_count_preference", 50),
+        "commonPhrases": p.get("common_phrases", ""),
+        "avoidPhrases": p.get("avoid_phrases", ""),
+        "learningSamples": p.get("learning_samples", 0),
+        "accuracyScore": p.get("accuracy_score", 0.0),
+        "lastTrained": p.get("last_trained", 0),
+        "createdAt": p.get("created_at", 0),
+        "tenantId": p.get("tenant_id"),
+        "syncVersion": p.get("sync_version", 0),
+        "deleted": bool(p.get("deleted", 0))
+    }
+
+def _sync_app_to_dict(a):
+    return {
+        "packageName": a["package_name"],
+        "appName": a["app_name"],
+        "iconUri": a.get("icon_uri"),
+        "isMonitored": bool(a["is_monitored"]),
+        "createdAt": a["created_at"],
+        "lastUsed": a["last_used"],
+        "tenantId": a["tenant_id"],
+        "syncVersion": a["sync_version"],
+        "deleted": bool(a["deleted"])
+    }
+
+def _sync_scenario_to_dict(s):
+    return {
+        "id": s["id"],
+        "name": s["name"],
+        "type": s["type"],
+        "targetId": s.get("target_id"),
+        "description": s.get("description"),
+        "createdAt": s["created_at"],
+        "tenantId": s["tenant_id"],
+        "syncVersion": s["sync_version"],
+        "deleted": bool(s["deleted"])
+    }
+
+def _sync_history_to_dict(h):
+    return {
+        "id": h["id"],
+        "sourceApp": h.get("source_app", ""),
+        "originalMessage": h.get("original_message", ""),
+        "generatedReply": h.get("generated_reply", ""),
+        "finalReply": h.get("final_reply", ""),
+        "ruleMatchedId": h.get("rule_matched_id"),
+        "modelUsedId": h.get("model_used_id"),
+        "styleApplied": bool(h.get("style_applied", 0)),
+        "sendTime": h["send_time"],
+        "modified": bool(h.get("modified", 0)),
+        "tenantId": h["tenant_id"],
+        "syncVersion": h["sync_version"],
+        "deleted": bool(h.get("deleted", 0))
+    }
+
+def _sync_blacklist_to_dict(b):
+    return {
+        "id": b["id"],
+        "type": b["type"],
+        "value": b["value"],
+        "description": b.get("description", ""),
+        "packageName": b.get("package_name"),
+        "createdAt": b["created_at"],
+        "isEnabled": bool(b["is_enabled"]),
+        "tenantId": b["tenant_id"],
+        "syncVersion": b["sync_version"],
+        "deleted": bool(b.get("deleted", 0))
+    }
+
+def _upsert_rule(db, rule, tenant_id):
+    now = int(time.time() * 1000)
+    db.execute("""
+        INSERT OR REPLACE INTO keyword_rules
+        (id, keyword, match_type, reply_template, category, target_type, target_names,
+         priority, enabled, created_at, updated_at, tenant_id, sync_version, deleted)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        rule.get("id") or 0,
+        rule.get("keyword", ""),
+        rule.get("matchType", "CONTAINS"),
+        rule.get("replyTemplate", ""),
+        rule.get("category", ""),
+        rule.get("targetType", "ALL"),
+        rule.get("targetNamesJson") if rule.get("targetNamesJson") else json.dumps(rule.get("targetNames", [])),
+        rule.get("priority", 0),
+        1 if rule.get("enabled", True) else 0,
+        rule.get("createdAt", now),
+        now,
+        tenant_id,
+        now,
+        1 if rule.get("deleted", False) else 0
+    ))
+
+def _upsert_model(db, model, tenant_id):
+    now = int(time.time() * 1000)
+    db.execute("""
+        INSERT OR REPLACE INTO ai_model_configs
+        (id, model_type, model_name, api_key, api_endpoint, temperature, max_tokens,
+         is_default, is_enabled, monthly_cost, last_used, created_at, tenant_id, sync_version, deleted)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        model.get("id") or 0,
+        model.get("modelType", ""),
+        model.get("modelName", ""),
+        model.get("apiKey", ""),
+        model.get("apiEndpoint", ""),
+        model.get("temperature", 0.7),
+        model.get("maxTokens", 1000),
+        1 if model.get("isDefault", False) else 0,
+        1 if model.get("isEnabled", True) else 0,
+        model.get("monthlyCost", 0.0),
+        model.get("lastUsed", now),
+        model.get("createdAt", now),
+        tenant_id,
+        now,
+        1 if model.get("deleted", False) else 0
+    ))
+
+def _upsert_profile(db, profile, tenant_id):
+    now = int(time.time() * 1000)
+    db.execute("""
+        INSERT OR REPLACE INTO user_style_profiles
+        (user_id, formality_level, enthusiasm_level, professionalism_level, word_count_preference,
+         common_phrases, avoid_phrases, learning_samples, accuracy_score, last_trained,
+         created_at, tenant_id, sync_version, deleted)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        profile.get("userId") or tenant_id,
+        profile.get("formalityLevel", 0.5),
+        profile.get("enthusiasmLevel", 0.5),
+        profile.get("professionalismLevel", 0.5),
+        profile.get("wordCountPreference", 50),
+        profile.get("commonPhrases", ""),
+        profile.get("avoidPhrases", ""),
+        profile.get("learningSamples", 0),
+        profile.get("accuracyScore", 0.0),
+        profile.get("lastTrained", now),
+        profile.get("createdAt", now),
+        tenant_id,
+        now,
+        1 if profile.get("deleted", False) else 0
+    ))
+
+def _upsert_app(db, app, tenant_id):
+    now = int(time.time() * 1000)
+    db.execute("""
+        INSERT OR REPLACE INTO app_configs
+        (package_name, app_name, icon_uri, is_monitored, created_at, last_used, tenant_id, sync_version, deleted)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        app.get("packageName", ""),
+        app.get("appName", ""),
+        app.get("iconUri"),
+        1 if app.get("isMonitored", False) else 0,
+        app.get("createdAt", now),
+        app.get("lastUsed", now),
+        tenant_id,
+        now,
+        1 if app.get("deleted", False) else 0
+    ))
+
+def _upsert_scenario(db, scenario, tenant_id):
+    now = int(time.time() * 1000)
+    db.execute("""
+        INSERT OR REPLACE INTO scenarios
+        (id, name, type, target_id, description, created_at, tenant_id, sync_version, deleted)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        scenario.get("id") or 0,
+        scenario.get("name", ""),
+        scenario.get("type", "ALL_PROPERTIES"),
+        scenario.get("targetId"),
+        scenario.get("description"),
+        scenario.get("createdAt", now),
+        tenant_id,
+        now,
+        1 if scenario.get("deleted", False) else 0
+    ))
+
+def _upsert_history(db, history, tenant_id):
+    now = int(time.time() * 1000)
+    db.execute("""
+        INSERT OR REPLACE INTO reply_history
+        (id, source_app, original_message, generated_reply, final_reply, rule_matched_id,
+         model_used_id, style_applied, send_time, modified, tenant_id, sync_version, deleted)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        history.get("id") or 0,
+        history.get("sourceApp", ""),
+        history.get("originalMessage", ""),
+        history.get("generatedReply", ""),
+        history.get("finalReply", ""),
+        history.get("ruleMatchedId"),
+        history.get("modelUsedId"),
+        1 if history.get("styleApplied", False) else 0,
+        history.get("sendTime", now),
+        1 if history.get("modified", False) else 0,
+        tenant_id,
+        now,
+        1 if history.get("deleted", False) else 0
+    ))
+
+def _upsert_blacklist(db, blacklist, tenant_id):
+    now = int(time.time() * 1000)
+    db.execute("""
+        INSERT OR REPLACE INTO message_blacklist
+        (id, type, value, description, package_name, created_at, is_enabled, tenant_id, sync_version, deleted)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        blacklist.get("id") or 0,
+        blacklist.get("type", "KEYWORD"),
+        blacklist.get("value", ""),
+        blacklist.get("description", ""),
+        blacklist.get("packageName"),
+        blacklist.get("createdAt", now),
+        1 if blacklist.get("isEnabled", True) else 0,
+        tenant_id,
+        now,
+        1 if blacklist.get("deleted", False) else 0
+    ))
+
+def _delete_entity(db, entity_type, entity_id, tenant_id):
+    table_map = {
+        "keyword_rules": "keyword_rules",
+        "ai_model_configs": "ai_model_configs",
+        "app_configs": "app_configs",
+        "scenarios": "scenarios",
+        "reply_history": "reply_history",
+        "message_blacklist": "message_blacklist",
+        "user_style_profiles": "user_style_profiles"
+    }
+    table = table_map.get(entity_type)
+    if table:
+        db.execute(f"UPDATE {table} SET deleted=1, sync_version=? WHERE id=?", (int(time.time() * 1000), entity_id))
 
 # ========== 知识库规则 API ==========
 @app.route("/api/rules", methods=["GET"])
