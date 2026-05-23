@@ -1137,6 +1137,7 @@ def sync_push():
     """增量同步：推送本地变更到服务端"""
     data = request.get_json() or {}
     user_id = request.user_id
+    app.logger.info(f"sync_push called for user_id: {user_id}, data keys: {list(data.keys())}")
 
     try:
         rules_data = data.get("keywordRules", [])
@@ -1196,6 +1197,7 @@ def sync_push():
                         pass
 
     except Exception as e:
+        app.logger.error(f"sync_push error: {type(e).__name__}: {str(e)}")
         return jsonify({"code": 500, "message": str(e)}), 500
 
     return jsonify({

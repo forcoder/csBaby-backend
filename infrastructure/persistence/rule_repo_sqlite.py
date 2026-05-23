@@ -7,45 +7,52 @@ from infrastructure.persistence.database import get_connection
 
 class SqliteRuleRepository(RuleRepository):
     def create(self, rule: KeywordRule) -> KeywordRule:
-        db = get_connection()
-        cursor = db.execute(
+        conn = get_connection()
+        cursor = conn.execute(
             """INSERT INTO keyword_rules
             (user_id, keyword, match_type, reply_template, category, target_type, target_names, priority)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id""",
             (rule.user_id, rule.keyword, rule.match_type, rule.reply_template,
              rule.category, rule.target_type, json.dumps(rule.target_names), rule.priority),
         )
-        rule.id = cursor.lastrowid
-        db.commit()
-        db.close()
+        row = cursor.fetchone()
+        rule.id = row[0]
+        conn.commit()
+        conn.close()
         return rule
 
     def get_by_device(self, user_id: str) -> List[KeywordRule]:
-        db = get_connection()
-        rows = db.execute(
-            "SELECT * FROM keyword_rules WHERE user_id = ? ORDER BY priority DESC, id DESC",
+        conn = get_connection()
+        cursor = conn.execute(
+            "SELECT * FROM keyword_rules WHERE user_id = %s ORDER BY priority DESC, id DESC",
             (user_id,),
-        ).fetchall()
-        db.close()
+        )
+        rows = cursor.fetchall()
+        conn.close()
         rules = []
         for r in rows:
             try:
                 target_names = json.loads(r["target_names"]) if r["target_names"] else []
             except (json.JSONDecodeError, TypeError):
                 target_names = []
-            rules.append(KeywordRule(id=r["id"], user_id=r["user_id"], keyword=r["keyword"],
-                                     match_type=r["match_type"], reply_template=r["reply_template"],
-                                     category=r["category"], target_type=r["target_type"],
-                                     target_names=target_names, priority=r["priority"],
-                                     enabled=bool(r["enabled"])))
+            rules.append(KeywordRule(
+                id=r["id"], user_id=r["user_id"], keyword=r["keyword"],
+                match_type=r["match_type"], reply_template=r["reply_template"],
+                category=r["category"], target_type=r["target_type"],
+                target_names=target_names, priority=r["priority"],
+                enabled=bool(r["enabled"])
+            ))
         return rules
 
     def get_by_id(self, rule_id: int, user_id: str) -> Optional[KeywordRule]:
-        db = get_connection()
-        row = db.execute(
-            "SELECT * FROM keyword_rules WHERE id = ? AND user_id = ?", (rule_id, user_id)
-        ).fetchone()
-        db.close()
+        conn = get_connection()
+        cursor = conn.execute(
+            "SELECT * FROM keyword_rules WHERE id = %s AND user_id = %s",
+            (rule_id, user_id)
+        )
+        row = cursor.fetchone()
+        conn.close()
         if not row:
             return None
         try:
@@ -53,7 +60,7 @@ class SqliteRuleRepository(RuleRepository):
         except (json.JSONDecodeError, TypeError):
             target_names = []
         return KeywordRule(
-            id=row["id"], user_id=r["user_id"], keyword=row["keyword"],
+            id=row["id"], user_id=row["user_id"], keyword=row["keyword"],
             match_type=row["match_type"], reply_template=row["reply_template"],
             category=row["category"], target_type=row["target_type"],
             target_names=target_names, priority=row["priority"],
@@ -61,84 +68,87 @@ class SqliteRuleRepository(RuleRepository):
         )
 
     def update(self, rule: KeywordRule) -> KeywordRule:
-        db = get_connection()
-        db.execute(
-            """UPDATE keyword_rules SET keyword=?, match_type=?, reply_template=?, category=?,
-            target_type=?, target_names=?, priority=?, enabled=?, updated_at=CURRENT_TIMESTAMP
-            WHERE id=? AND user_id=?""",
+        conn = get_connection()
+        conn.execute(
+            """UPDATE keyword_rules SET keyword=%s, match_type=%s, reply_template=%s, category=%s,
+            target_type=%s, target_names=%s, priority=%s, enabled=%s, updated_at=CURRENT_TIMESTAMP
+            WHERE id=%s AND user_id=%s""",
             (rule.keyword, rule.match_type, rule.reply_template, rule.category,
              rule.target_type, json.dumps(rule.target_names), rule.priority,
-             int(rule.enabled), rule.id, rule.user_id),
+             rule.enabled, rule.id, rule.user_id),
         )
-        db.commit()
-        db.close()
+        conn.commit()
+        conn.close()
         return rule
 
     def delete(self, rule_id: int, user_id: str) -> bool:
-        db = get_connection()
-        cursor = db.execute("DELETE FROM keyword_rules WHERE id=? AND user_id=?", (rule_id, user_id))
-        db.commit()
-        db.close()
+        conn = get_connection()
+        cursor = conn.execute(
+            "DELETE FROM keyword_rules WHERE id=%s AND user_id=%s",
+            (rule_id, user_id)
+        )
+        conn.commit()
+        conn.close()
         return cursor.rowcount > 0
 
     def batch_create(self, rules: List[KeywordRule], user_id: str, mode: str) -> int:
-        db = get_connection()
+        conn = get_connection()
         try:
-            db.execute("BEGIN TRANSACTION")
             if mode == "override":
-                db.execute("DELETE FROM keyword_rules WHERE user_id=?", (user_id,))
+                conn.execute("DELETE FROM keyword_rules WHERE user_id=%s", (user_id,))
             for rule in rules:
-                db.execute(
+                conn.execute(
                     """INSERT INTO keyword_rules
                     (user_id, keyword, match_type, reply_template, category, target_type, target_names, priority)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                     (user_id, rule.keyword, rule.match_type, rule.reply_template,
                      rule.category, rule.target_type, json.dumps(rule.target_names), rule.priority),
                 )
-            db.commit()
+            conn.commit()
         except Exception:
-            db.rollback()
+            conn.rollback()
             raise
         finally:
-            db.close()
+            conn.close()
         return len(rules)
 
     def upsert(self, rule: KeywordRule) -> KeywordRule:
-        """Insert or update a rule, handling WAL auto-commit correctly."""
-        db = get_connection()
+        """Insert or update a rule using PostgreSQL upsert."""
+        conn = get_connection()
         try:
-            # Check if rule exists
-            existing = db.execute(
-                "SELECT id FROM keyword_rules WHERE id=? AND user_id=?",
-                (rule.id, rule.user_id)
-            ).fetchone()
-
-            if existing:
-                # Update existing rule
-                db.execute(
-                    """UPDATE keyword_rules SET keyword=?, match_type=?, reply_template=?, category=?,
-                    target_type=?, target_names=?, priority=?, enabled=?, updated_at=CURRENT_TIMESTAMP
-                    WHERE id=? AND user_id=?""",
-                    (rule.keyword, rule.match_type, rule.reply_template, rule.category,
-                     rule.target_type, json.dumps(rule.target_names), rule.priority,
-                     int(rule.enabled), rule.id, rule.user_id),
+            if rule.id:
+                # Check if rule exists
+                cursor = conn.execute(
+                    "SELECT id FROM keyword_rules WHERE id=%s AND user_id=%s",
+                    (rule.id, rule.user_id)
                 )
+                existing = cursor.fetchone()
+
+                if existing:
+                    conn.execute(
+                        """UPDATE keyword_rules SET keyword=%s, match_type=%s, reply_template=%s, category=%s,
+                        target_type=%s, target_names=%s, priority=%s, enabled=%s, updated_at=CURRENT_TIMESTAMP
+                        WHERE id=%s AND user_id=%s""",
+                        (rule.keyword, rule.match_type, rule.reply_template, rule.category,
+                         rule.target_type, json.dumps(rule.target_names), rule.priority,
+                         rule.enabled, rule.id, rule.user_id),
+                    )
             else:
-                # Insert new rule - let SQLite auto-generate id if rule.id is 0 or None
-                insert_id = rule.id if rule.id else None
-                db.execute(
+                cursor = conn.execute(
                     """INSERT INTO keyword_rules
-                    (id, user_id, keyword, match_type, reply_template, category, target_type, target_names, priority, enabled)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (insert_id, rule.user_id, rule.keyword, rule.match_type, rule.reply_template,
-                     rule.category, rule.target_type, json.dumps(rule.target_names), rule.priority, int(rule.enabled)),
+                    (user_id, keyword, match_type, reply_template, category, target_type, target_names, priority, enabled)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id""",
+                    (rule.user_id, rule.keyword, rule.match_type, rule.reply_template,
+                     rule.category, rule.target_type, json.dumps(rule.target_names), rule.priority, rule.enabled),
                 )
-                rule.id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+                row = cursor.fetchone()
+                rule.id = row[0]
 
-            db.commit()
+            conn.commit()
         except Exception:
-            db.rollback()
+            conn.rollback()
             raise
         finally:
-            db.close()
+            conn.close()
         return rule

@@ -6,114 +6,138 @@ from infrastructure.persistence.database import get_connection
 
 class SqliteModelRepository(ModelRepository):
     def create(self, config: ModelConfig) -> ModelConfig:
-        db = get_connection()
+        conn = get_connection()
         if config.is_default:
-            db.execute("UPDATE model_configs SET is_default=0 WHERE user_id=?", (config.user_id,))
-        cursor = db.execute(
+            conn.execute("UPDATE model_configs SET is_default=FALSE WHERE user_id=%s", (config.user_id,))
+        cursor = conn.execute(
             """INSERT INTO model_configs
             (user_id, name, model_type, model, api_key, api_endpoint, temperature, max_tokens, is_default, enabled)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id""",
             (config.user_id, config.name, config.model_type, config.model,
              config.api_key, config.api_endpoint, config.temperature, config.max_tokens,
-             int(config.is_default), int(config.enabled)),
+             config.is_default, config.enabled),
         )
-        config.id = cursor.lastrowid
-        db.commit()
-        db.close()
+        row = cursor.fetchone()
+        config.id = row[0]
+        conn.commit()
+        conn.close()
         return config
 
     def get_by_device(self, user_id: str) -> List[ModelConfig]:
-        db = get_connection()
-        rows = db.execute(
-            "SELECT * FROM model_configs WHERE user_id=? ORDER BY is_default DESC, id ASC",
+        conn = get_connection()
+        cursor = conn.execute(
+            "SELECT * FROM model_configs WHERE user_id=%s ORDER BY is_default DESC, id ASC",
             (user_id,),
-        ).fetchall()
-        db.close()
+        )
+        rows = cursor.fetchall()
+        conn.close()
         return [self._row_to_entity(r) for r in rows]
 
     def get_default(self, user_id: str) -> Optional[ModelConfig]:
-        db = get_connection()
-        row = db.execute(
-            "SELECT * FROM model_configs WHERE user_id=? AND is_default=1 AND enabled=1 LIMIT 1",
+        conn = get_connection()
+        cursor = conn.execute(
+            "SELECT * FROM model_configs WHERE user_id=%s AND is_default=TRUE AND enabled=TRUE LIMIT 1",
             (user_id,),
-        ).fetchone()
-        db.close()
+        )
+        row = cursor.fetchone()
+        conn.close()
         if not row:
             return None
         return self._row_to_entity(row)
 
     def get_by_id(self, model_id: int, user_id: str) -> Optional[ModelConfig]:
-        db = get_connection()
-        row = db.execute(
-            "SELECT * FROM model_configs WHERE id=? AND user_id=?", (model_id, user_id)
-        ).fetchone()
-        db.close()
+        conn = get_connection()
+        cursor = conn.execute(
+            "SELECT * FROM model_configs WHERE id=%s AND user_id=%s",
+            (model_id, user_id)
+        )
+        row = cursor.fetchone()
+        conn.close()
         if not row:
             return None
         return self._row_to_entity(row)
 
     def update(self, config: ModelConfig) -> ModelConfig:
-        db = get_connection()
+        conn = get_connection()
         if config.is_default:
-            db.execute("UPDATE model_configs SET is_default=0 WHERE user_id=?", (config.user_id,))
-        db.execute(
-            """UPDATE model_configs SET name=?, model_type=?, model=?, api_key=?, api_endpoint=?,
-            temperature=?, max_tokens=?, is_default=?, enabled=?, updated_at=CURRENT_TIMESTAMP
-            WHERE id=? AND user_id=?""",
+            conn.execute("UPDATE model_configs SET is_default=FALSE WHERE user_id=%s", (config.user_id,))
+        conn.execute(
+            """UPDATE model_configs SET name=%s, model_type=%s, model=%s, api_key=%s, api_endpoint=%s,
+            temperature=%s, max_tokens=%s, is_default=%s, enabled=%s, updated_at=CURRENT_TIMESTAMP
+            WHERE id=%s AND user_id=%s""",
             (config.name, config.model_type, config.model, config.api_key, config.api_endpoint,
-             config.temperature, config.max_tokens, int(config.is_default), int(config.enabled),
+             config.temperature, config.max_tokens, config.is_default, config.enabled,
              config.id, config.user_id),
         )
-        db.commit()
-        db.close()
+        conn.commit()
+        conn.close()
         return config
 
     def delete(self, model_id: int, user_id: str) -> bool:
-        db = get_connection()
-        cursor = db.execute("DELETE FROM model_configs WHERE id=? AND user_id=?", (model_id, user_id))
-        db.commit()
-        db.close()
+        conn = get_connection()
+        cursor = conn.execute(
+            "DELETE FROM model_configs WHERE id=%s AND user_id=%s",
+            (model_id, user_id)
+        )
+        conn.commit()
+        conn.close()
         return cursor.rowcount > 0
 
     def upsert(self, config: ModelConfig) -> ModelConfig:
-        """Insert or update a model config."""
-        db = get_connection()
+        """Insert or update a model config using PostgreSQL upsert."""
+        conn = get_connection()
         try:
-            existing = db.execute(
-                "SELECT id FROM model_configs WHERE id=? AND user_id=?",
-                (config.id, config.user_id)
-            ).fetchone()
+            if config.is_default:
+                conn.execute("UPDATE model_configs SET is_default=FALSE WHERE user_id=%s", (config.user_id,))
 
-            if existing:
-                if config.is_default:
-                    db.execute("UPDATE model_configs SET is_default=0 WHERE user_id=?", (config.user_id,))
-                db.execute(
-                    """UPDATE model_configs SET name=?, model_type=?, model=?, api_key=?, api_endpoint=?,
-                    temperature=?, max_tokens=?, is_default=?, enabled=?, updated_at=CURRENT_TIMESTAMP
-                    WHERE id=? AND user_id=?""",
-                    (config.name, config.model_type, config.model, config.api_key, config.api_endpoint,
-                     config.temperature, config.max_tokens, int(config.is_default), int(config.enabled),
-                     config.id, config.user_id),
+            if config.id:
+                cursor = conn.execute(
+                    "SELECT id FROM model_configs WHERE id=%s AND user_id=%s",
+                    (config.id, config.user_id)
                 )
+                existing = cursor.fetchone()
+
+                if existing:
+                    conn.execute(
+                        """UPDATE model_configs SET name=%s, model_type=%s, model=%s, api_key=%s, api_endpoint=%s,
+                        temperature=%s, max_tokens=%s, is_default=%s, enabled=%s, updated_at=CURRENT_TIMESTAMP
+                        WHERE id=%s AND user_id=%s""",
+                        (config.name, config.model_type, config.model, config.api_key, config.api_endpoint,
+                         config.temperature, config.max_tokens, config.is_default, config.enabled,
+                         config.id, config.user_id),
+                    )
+                else:
+                    cursor = conn.execute(
+                        """INSERT INTO model_configs
+                        (user_id, name, model_type, model, api_key, api_endpoint, temperature, max_tokens, is_default, enabled)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id""",
+                        (config.user_id, config.name, config.model_type, config.model,
+                         config.api_key, config.api_endpoint, config.temperature, config.max_tokens,
+                         config.is_default, config.enabled),
+                    )
+                    row = cursor.fetchone()
+                    config.id = row[0]
             else:
-                if config.is_default:
-                    db.execute("UPDATE model_configs SET is_default=0 WHERE user_id=?", (config.user_id,))
-                cursor = db.execute(
+                cursor = conn.execute(
                     """INSERT INTO model_configs
                     (user_id, name, model_type, model, api_key, api_endpoint, temperature, max_tokens, is_default, enabled)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id""",
                     (config.user_id, config.name, config.model_type, config.model,
                      config.api_key, config.api_endpoint, config.temperature, config.max_tokens,
-                     int(config.is_default), int(config.enabled)),
+                     config.is_default, config.enabled),
                 )
-                config.id = cursor.lastrowid
+                row = cursor.fetchone()
+                config.id = row[0]
 
-            db.commit()
+            conn.commit()
         except Exception:
-            db.rollback()
+            conn.rollback()
             raise
         finally:
-            db.close()
+            conn.close()
         return config
 
     @staticmethod
