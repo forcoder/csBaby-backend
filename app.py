@@ -1138,7 +1138,10 @@ def sync_push():
     data = request.get_json() or {}
     user_id = request.user_id
 
+    db = get_connection()
     try:
+        db.execute("BEGIN TRANSACTION")
+
         rules_data = data.get("keywordRules", [])
         for r in rules_data:
             target_names = r.get("target_names", [])
@@ -1149,53 +1152,55 @@ def sync_push():
                     target_names = []
             if not isinstance(target_names, list):
                 target_names = []
-            rule = KeywordRule(
-                id=r.get("id", 0) or 0,
-                user_id=user_id,
-                keyword=r.get("keyword", ""),
-                match_type=r.get("match_type", "CONTAINS"),
-                reply_template=r.get("reply_template", ""),
-                category=r.get("category", ""),
-                target_type=r.get("target_type", "ALL"),
-                target_names=target_names,
-                priority=r.get("priority", 0),
-                enabled=r.get("enabled", True)
+
+            db.execute(
+                """INSERT OR REPLACE INTO keyword_rules
+                (id, user_id, keyword, match_type, reply_template, category, target_type, target_names, priority, enabled, updated_at)
+                VALUES (
+                    COALESCE((SELECT id FROM keyword_rules WHERE id=? AND user_id=?), NULL),
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP
+                )""",
+                (r.get("id", 0) or 0, user_id,
+                 user_id, r.get("keyword", ""), r.get("match_type", "CONTAINS"),
+                 r.get("reply_template", ""), r.get("category", ""),
+                 r.get("target_type", "ALL"), json.dumps(target_names),
+                 r.get("priority", 0), int(r.get("enabled", True)))
             )
-            SqliteRuleRepository().create(rule)
 
         models_data = data.get("aiModelConfigs", [])
         for m in models_data:
-            config = ModelConfig(
-                user_id=user_id,
-                name=m.get("name", ""),
-                model_type=m.get("model_type", "OPENAI"),
-                model=m.get("model", ""),
-                api_key=m.get("api_key", ""),
-                api_endpoint=m.get("api_endpoint", ""),
-                temperature=m.get("temperature", 0.7),
-                max_tokens=m.get("max_tokens", 2000),
-                is_default=m.get("is_default", False),
-                enabled=m.get("enabled", True)
+            db.execute(
+                """INSERT OR REPLACE INTO model_configs
+                (user_id, name, model_type, model, api_key, api_endpoint, temperature, max_tokens, is_default, enabled, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+                (user_id, m.get("name", ""), m.get("model_type", "OPENAI"),
+                 m.get("model", ""), m.get("api_key", ""), m.get("api_endpoint", ""),
+                 m.get("temperature", 0.7), m.get("max_tokens", 2000),
+                 int(m.get("is_default", False)), int(m.get("enabled", True)))
             )
-            SqliteModelRepository().create(config)
 
         deleted_ids = data.get("deletedIds", {})
         for entity_type, ids in deleted_ids.items():
             if entity_type == "keyword_rules":
                 for rid in ids:
                     try:
-                        SqliteRuleRepository().delete(int(rid), user_id)
+                        db.execute("DELETE FROM keyword_rules WHERE id=? AND user_id=?", (int(rid), user_id))
                     except (ValueError, TypeError):
                         pass
             elif entity_type == "ai_model_configs":
                 for mid in ids:
                     try:
-                        SqliteModelRepository().delete(int(mid), user_id)
+                        db.execute("DELETE FROM model_configs WHERE id=? AND user_id=?", (int(mid), user_id))
                     except (ValueError, TypeError):
                         pass
 
+        db.commit()
+
     except Exception as e:
+        db.rollback()
         return jsonify({"code": 500, "message": str(e)}), 500
+    finally:
+        db.close()
 
     return jsonify({
         "code": 0,
