@@ -141,33 +141,261 @@ def after_request(response):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
 
+# ========== OTA 更新检查 ==========
+@app.route("/api/v1/ota/check", methods=["POST"])
+def ota_check():
+    """检查 OTA 更新，返回是否有新版本"""
+    data = request.get_json() or {}
+    current_version = data.get("current_version", 1)
+
+    try:
+        db = get_connection()
+        cursor = db.execute("""
+            SELECT version_code, version_name, download_url, file_size, md5,
+                   release_notes, is_force_update, min_required_version
+            FROM ota_versions
+            WHERE is_published = 1
+            AND version_code > ?
+            AND min_required_version <= ?
+            ORDER BY version_code DESC
+            LIMIT 1
+        """, (current_version, current_version))
+
+        row = cursor.fetchone()
+        db.close()
+
+        if row:
+            return jsonify({
+                "code": 0,
+                "message": "成功",
+                "data": {
+                    "has_update": True,
+                    "version_code": row["version_code"],
+                    "version_name": row["version_name"],
+                    "download_url": row["download_url"],
+                    "file_size": row["file_size"],
+                    "md5": row["md5"],
+                    "release_notes": row["release_notes"],
+                    "is_force_update": bool(row["is_force_update"])
+                }
+            })
+        else:
+            return jsonify({
+                "code": 0,
+                "message": "没有更新",
+                "data": {
+                    "has_update": False
+                }
+            })
+    except Exception as e:
+        logger.error("OTA check failed: %s", e)
+        return jsonify({"code": 500, "message": str(e), "data": None}), 500
+
 # ========== 健康检查 ==========
 @app.route("/health", methods=["GET"])
 def health_check():
     return jsonify({"status": "ok", "service": "csBaby-api"})
 
 # ========== 认证 API ==========
-@app.route("/api/auth/register", methods=["POST"])
-@rate_limit(max_requests=10, window_seconds=60)
-def register():
+
+@app.route("/auth/login", methods=["POST"])
+def auth_login():
+    """用户登录 API - 支持邮箱+密码登录，返回 JWT Token"""
     data = request.get_json() or {}
-    platform = data.get("platform", "android")
-    if platform not in ("android", "ios", "web"):
-        return jsonify({"error": "invalid platform: must be android, ios, or web"}), 400
-    app_version = data.get("app_version", "")
-    if not isinstance(app_version, str):
-        return jsonify({"error": "app_version must be a string"}), 400
-    if len(app_version) > 50:
-        return jsonify({"error": "app_version too long (max 50 chars)"}), 400
-    device = Device.create(
-        name=data.get("name", ""),
-        platform=platform,
-        app_version=app_version,
-    )
-    device.token = auth_service.generate_token(device.id)
-    repo = SqliteDeviceRepository()
-    repo.create(device)
-    return jsonify({"device_id": device.id, "token": device.token, "expires_in": 30 * 86400})
+    email = data.get("email", "").strip()
+    password = data.get("password", "")
+
+    if not email or not password:
+        return jsonify({"error": "email and password required"}), 400
+
+    try:
+        db = get_connection()
+        # 查询用户表
+        user = db.execute(
+            "SELECT * FROM users WHERE email=?", (email,)
+        ).fetchone()
+
+        if not user:
+            return jsonify({"code": 401, "message": "用户不存在", "data": None}), 401
+
+        # 验证密码
+        stored_hash = user["password_hash"]
+        salt = user.get("salt", "")
+        import hashlib
+        pw_hash = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+
+        if pw_hash != stored_hash:
+            return jsonify({"code": 401, "message": "密码错误", "data": None}), 401
+
+        user_id = user["id"]
+        tenant_id = user.get("tenant_id", user_id)
+
+        # 生成 JWT Token
+        import time as _time
+        import jwt
+
+        JWT_SECRET = os.environ.get("JWT_SECRET", "default-secret")
+        access_payload = {
+            "userId": user_id,
+            "tenantId": tenant_id,
+            "type": "access",
+            "iat": _time.time(),
+            "exp": _time.time() + 30 * 86400  # 30天
+        }
+        refresh_payload = {
+            "userId": user_id,
+            "tenantId": tenant_id,
+            "type": "refresh",
+            "id": secrets.token_hex(16),
+            "iat": _time.time(),
+            "exp": _time.time() + 30 * 86400
+        }
+        access_token = jwt.encode(access_payload, JWT_SECRET, algorithm="HS256")
+        refresh_token = jwt.encode(refresh_payload, JWT_SECRET, algorithm="HS256")
+
+        db.close()
+
+        return jsonify({
+            "code": 0,
+            "message": "登录成功",
+            "data": {
+                "userId": user_id,
+                "tenantId": tenant_id,
+                "accessToken": access_token,
+                "refreshToken": refresh_token,
+                "expiresAt": int((_time.time() + 30 * 86400) * 1000)
+            }
+        })
+    except Exception as e:
+        logger.error("auth_login error: %s", e)
+        return jsonify({"code": 500, "message": str(e), "data": None}), 500
+
+@app.route("/auth/register", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
+def auth_register():
+    """用户注册 API"""
+    data = request.get_json() or {}
+    email = data.get("email", "").strip()
+    password = data.get("password", "")
+    display_name = data.get("displayName", "")
+
+    if not email or not password:
+        return jsonify({"error": "email and password required"}), 400
+
+    if len(password) < 6:
+        return jsonify({"error": "password must be at least 6 characters"}), 400
+
+    try:
+        db = get_connection()
+
+        # 检查邮箱是否已存在
+        existing = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+        if existing:
+            db.close()
+            return jsonify({"code": 400, "message": "邮箱已被注册", "data": None}), 400
+
+        # 创建用户
+        import uuid
+        import hashlib
+        import time as _time
+
+        user_id = str(uuid.uuid4())
+        tenant_id = str(uuid.uuid4())
+        salt = secrets.token_hex(16)
+        pw_hash = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+
+        now = int(_time.time() * 1000)
+        db.execute(
+            "INSERT INTO users (id, email, password_hash, salt, display_name, tenant_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, email, pw_hash, salt, display_name or email.split("@")[0], tenant_id, now)
+        )
+        db.commit()
+
+        # 生成 JWT Token
+        import jwt
+        JWT_SECRET = os.environ.get("JWT_SECRET", "default-secret")
+        access_payload = {
+            "userId": user_id,
+            "tenantId": tenant_id,
+            "type": "access",
+            "iat": _time.time(),
+            "exp": _time.time() + 30 * 86400
+        }
+        refresh_payload = {
+            "userId": user_id,
+            "tenantId": tenant_id,
+            "type": "refresh",
+            "id": secrets.token_hex(16),
+            "iat": _time.time(),
+            "exp": _time.time() + 30 * 86400
+        }
+        access_token = jwt.encode(access_payload, JWT_SECRET, algorithm="HS256")
+        refresh_token = jwt.encode(refresh_payload, JWT_SECRET, algorithm="HS256")
+
+        db.close()
+
+        return jsonify({
+            "code": 0,
+            "message": "注册成功",
+            "data": {
+                "userId": user_id,
+                "tenantId": tenant_id,
+                "accessToken": access_token,
+                "refreshToken": refresh_token,
+                "expiresAt": int((_time.time() + 30 * 86400) * 1000)
+            }
+        })
+    except Exception as e:
+        logger.error("auth_register error: %s", e)
+        return jsonify({"code": 500, "message": str(e), "data": None}), 500
+
+@app.route("/auth/refresh", methods=["POST"])
+def auth_refresh():
+    """刷新 Token"""
+    data = request.get_json() or {}
+    refresh_token = data.get("refreshToken", "")
+
+    if not refresh_token:
+        return jsonify({"code": 400, "message": "refreshToken required"}), 400
+
+    try:
+        import jwt
+        import time as _time
+
+        JWT_SECRET = os.environ.get("JWT_SECRET", "default-secret")
+        payload = jwt.decode(refresh_token, JWT_SECRET, algorithms=["HS256"])
+
+        if payload.get("type") != "refresh":
+            return jsonify({"code": 401, "message": "invalid token type"}), 401
+
+        user_id = payload.get("userId")
+        tenant_id = payload.get("tenantId")
+
+        access_payload = {
+            "userId": user_id,
+            "tenantId": tenant_id,
+            "type": "access",
+            "iat": _time.time(),
+            "exp": _time.time() + 30 * 86400
+        }
+        new_access_token = jwt.encode(access_payload, JWT_SECRET, algorithm="HS256")
+
+        return jsonify({
+            "code": 0,
+            "message": "刷新成功",
+            "data": {
+                "userId": user_id,
+                "tenantId": tenant_id,
+                "accessToken": new_access_token,
+                "refreshToken": refresh_token,
+                "expiresAt": int((_time.time() + 30 * 86400) * 1000)
+            }
+        })
+    except jwt.ExpiredSignatureError:
+        return jsonify({"code": 401, "message": "token expired", "data": None}), 401
+    except Exception as e:
+        logger.error("auth_refresh error: %s", e)
+        return jsonify({"code": 500, "message": str(e), "data": None}), 500
 
 @app.route("/api/auth/heartbeat", methods=["POST"])
 @rate_limit(max_requests=60, window_seconds=60)

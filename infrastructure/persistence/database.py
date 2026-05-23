@@ -28,6 +28,18 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        -- 用户表 (用于云端同步的邮箱登录)
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            salt TEXT NOT NULL,
+            display_name TEXT NOT NULL DEFAULT '',
+            tenant_id TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
         CREATE TABLE IF NOT EXISTS keyword_rules (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             device_id TEXT NOT NULL,
@@ -197,6 +209,25 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_admin_sessions_phone ON admin_sessions(phone);
         CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at);
+
+        CREATE TABLE IF NOT EXISTS ota_versions (
+            version_code INTEGER PRIMARY KEY,
+            version_name TEXT NOT NULL,
+            download_url TEXT NOT NULL,
+            file_size INTEGER NOT NULL DEFAULT 0,
+            md5 TEXT NOT NULL DEFAULT '',
+            release_notes TEXT NOT NULL DEFAULT '',
+            channel TEXT NOT NULL DEFAULT 'default',
+            is_force_update INTEGER NOT NULL DEFAULT 0,
+            min_required_version INTEGER NOT NULL DEFAULT 1,
+            is_published INTEGER NOT NULL DEFAULT 1,
+            release_date INTEGER,
+            created_at INTEGER NOT NULL
+        );
+
+        -- 插入初始 OTA 版本记录
+        INSERT OR IGNORE INTO ota_versions (version_code, version_name, download_url, file_size, md5, release_notes, channel, is_force_update, min_required_version, is_published, release_date, created_at)
+        VALUES (1, '1.0.0', 'https://example.com/csbaby-v1.0.0.apk', 0, '', '初始版本', 'default', 0, 1, 1, 1704067200000, 1704067200000);
     """)
     db.commit()
     db.close()
