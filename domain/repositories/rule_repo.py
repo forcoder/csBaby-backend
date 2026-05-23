@@ -27,3 +27,7 @@ class RuleRepository(ABC):
     @abstractmethod
     def batch_create(self, rules: List[KeywordRule], user_id: str, mode: str) -> int:
         pass
+
+    @abstractmethod
+    def upsert(self, rule: KeywordRule) -> KeywordRule:
+        pass

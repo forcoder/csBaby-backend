@@ -75,6 +75,47 @@ class SqliteModelRepository(ModelRepository):
         db.close()
         return cursor.rowcount > 0
 
+    def upsert(self, config: ModelConfig) -> ModelConfig:
+        """Insert or update a model config."""
+        db = get_connection()
+        try:
+            existing = db.execute(
+                "SELECT id FROM model_configs WHERE id=? AND user_id=?",
+                (config.id, config.user_id)
+            ).fetchone()
+
+            if existing:
+                if config.is_default:
+                    db.execute("UPDATE model_configs SET is_default=0 WHERE user_id=?", (config.user_id,))
+                db.execute(
+                    """UPDATE model_configs SET name=?, model_type=?, model=?, api_key=?, api_endpoint=?,
+                    temperature=?, max_tokens=?, is_default=?, enabled=?, updated_at=CURRENT_TIMESTAMP
+                    WHERE id=? AND user_id=?""",
+                    (config.name, config.model_type, config.model, config.api_key, config.api_endpoint,
+                     config.temperature, config.max_tokens, int(config.is_default), int(config.enabled),
+                     config.id, config.user_id),
+                )
+            else:
+                if config.is_default:
+                    db.execute("UPDATE model_configs SET is_default=0 WHERE user_id=?", (config.user_id,))
+                cursor = db.execute(
+                    """INSERT INTO model_configs
+                    (user_id, name, model_type, model, api_key, api_endpoint, temperature, max_tokens, is_default, enabled)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (config.user_id, config.name, config.model_type, config.model,
+                     config.api_key, config.api_endpoint, config.temperature, config.max_tokens,
+                     int(config.is_default), int(config.enabled)),
+                )
+                config.id = cursor.lastrowid
+
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+        return config
+
     @staticmethod
     def _row_to_entity(r) -> ModelConfig:
         return ModelConfig(

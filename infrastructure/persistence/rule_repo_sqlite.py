@@ -102,3 +102,43 @@ class SqliteRuleRepository(RuleRepository):
         finally:
             db.close()
         return len(rules)
+
+    def upsert(self, rule: KeywordRule) -> KeywordRule:
+        """Insert or update a rule, handling WAL auto-commit correctly."""
+        db = get_connection()
+        try:
+            # Check if rule exists
+            existing = db.execute(
+                "SELECT id FROM keyword_rules WHERE id=? AND user_id=?",
+                (rule.id, rule.user_id)
+            ).fetchone()
+
+            if existing:
+                # Update existing rule
+                db.execute(
+                    """UPDATE keyword_rules SET keyword=?, match_type=?, reply_template=?, category=?,
+                    target_type=?, target_names=?, priority=?, enabled=?, updated_at=CURRENT_TIMESTAMP
+                    WHERE id=? AND user_id=?""",
+                    (rule.keyword, rule.match_type, rule.reply_template, rule.category,
+                     rule.target_type, json.dumps(rule.target_names), rule.priority,
+                     int(rule.enabled), rule.id, rule.user_id),
+                )
+            else:
+                # Insert new rule - let SQLite auto-generate id if rule.id is 0 or None
+                insert_id = rule.id if rule.id else None
+                db.execute(
+                    """INSERT INTO keyword_rules
+                    (id, user_id, keyword, match_type, reply_template, category, target_type, target_names, priority, enabled)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (insert_id, rule.user_id, rule.keyword, rule.match_type, rule.reply_template,
+                     rule.category, rule.target_type, json.dumps(rule.target_names), rule.priority, int(rule.enabled)),
+                )
+                rule.id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+        return rule
