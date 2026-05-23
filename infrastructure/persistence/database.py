@@ -1,18 +1,28 @@
 import os
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
 
-# Try to import psycopg2, make it optional
+# Detect if we're on Windows Store Python (Python 3.14+) which may have issues
+IS_WINDOWS_STORE_PYTHON = sys.version_info >= (3, 14)
+
+# Try to import psycopg2, make it optional for environments without PostgreSQL
+psycopg2 = None
+pg_pool_module = None
+PSYCOPG2_AVAILABLE = False
+
 try:
-    import psycopg2
-    from psycopg2 import pool as pg_pool_module
+    # psycopg2 may fail to build on some Python distributions
+    from psycopg2 import pool as _pool_module
+    import psycopg2 as _psycopg2
+    psycopg2 = _psycopg2
+    pg_pool_module = _pool_module
     PSYCOPG2_AVAILABLE = True
-except ImportError:
-    psycopg2 = None
-    pg_pool_module = None
-    PSYCOPG2_AVAILABLE = False
-    logger.warning("psycopg2 not available, PostgreSQL features disabled")
+except ImportError as e:
+    logger.warning(f"psycopg2 not available: {e}. PostgreSQL features disabled.")
+except Exception as e:
+    logger.warning(f"psycopg2 import failed: {e}. PostgreSQL features disabled.")
 
 
 # Flask app reference for logging (set by app.py)
@@ -34,7 +44,10 @@ class PostgresqlConnectionPool:
     @classmethod
     def get_pool(cls):
         if not PSYCOPG2_AVAILABLE:
-            raise RuntimeError("psycopg2 is not installed. Install psycopg2-binary to use PostgreSQL.")
+            raise RuntimeError(
+                "psycopg2 is not installed or failed to load. "
+                "Install psycopg2-binary: pip install psycopg2-binary"
+            )
         if cls._pool is None:
             cls._pool = pg_pool_module.ThreadedConnectionPool(
                 minconn=1,
@@ -340,11 +353,12 @@ def _create_tables(db):
 def init_db():
     """Initialize database connection pool and create tables."""
     if not DATABASE_URL:
-        if _flask_app:
-            _flask_app.logger.warning("DATABASE_URL not set, running without database initialization")
-        else:
-            logger.warning("DATABASE_URL not set, running without database initialization")
-        return  # Skip DB init if no DATABASE_URL (for local dev without PostgreSQL)
+        logger.warning("DATABASE_URL not set, skipping database initialization")
+        return  # Skip DB init if no DATABASE_URL
+
+    if not PSYCOPG2_AVAILABLE:
+        logger.error("psycopg2 is not available. Cannot initialize PostgreSQL connection.")
+        return  # Don't fail startup, just skip DB init
 
     # Create tables
     db = get_connection()
