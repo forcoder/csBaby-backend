@@ -6,11 +6,11 @@ logger = logging.getLogger(__name__)
 # Try to import psycopg2, make it optional
 try:
     import psycopg2
-    from psycopg2 import pool
+    from psycopg2 import pool as pg_pool_module
     PSYCOPG2_AVAILABLE = True
 except ImportError:
     psycopg2 = None
-    pool = None
+    pg_pool_module = None
     PSYCOPG2_AVAILABLE = False
     logger.warning("psycopg2 not available, PostgreSQL features disabled")
 
@@ -36,7 +36,7 @@ class PostgresqlConnectionPool:
         if not PSYCOPG2_AVAILABLE:
             raise RuntimeError("psycopg2 is not installed. Install psycopg2-binary to use PostgreSQL.")
         if cls._pool is None:
-            cls._pool = psycopg2.pool.ThreadedConnectionPool(
+            cls._pool = pg_pool_module.ThreadedConnectionPool(
                 minconn=1,
                 maxconn=10,
                 dsn=DATABASE_URL,
