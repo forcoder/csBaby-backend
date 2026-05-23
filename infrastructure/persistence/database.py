@@ -1,6 +1,17 @@
 import psycopg2
 from psycopg2 import pool
 import os
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+# Flask app reference for logging (set by app.py)
+_flask_app = None
+
+def set_flask_app(app):
+    global _flask_app
+    _flask_app = app
 
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -318,7 +329,11 @@ def _create_tables(db):
 def init_db():
     """Initialize database connection pool and create tables."""
     if not DATABASE_URL:
-        raise ValueError("DATABASE_URL environment variable is required")
+        if _flask_app:
+            _flask_app.logger.warning("DATABASE_URL not set, running without database initialization")
+        else:
+            logger.warning("DATABASE_URL not set, running without database initialization")
+        return  # Skip DB init if no DATABASE_URL (for local dev without PostgreSQL)
 
     # Create tables
     db = get_connection()
