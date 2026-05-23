@@ -6,6 +6,7 @@ services:
     autoDeploy: true
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn "app:app" --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    region: oregon
     envVars:
       - key: JWT_SECRET
         generateValue: true
@@ -17,7 +18,12 @@ services:
         value: "13800138000"
       - key: ADMIN_PASSWORD
         value: "admin123"
-      - key: DATABASE_PATH
-        value: "/var/data/csBaby.db"
       - key: PYTHON_VERSION
         value: "3.11"
+      # PostgreSQL connection - using existing quick-speech-db
+      - key: DATABASE_URL
+        sync: false
+        value: "postgresql://quick_speech_user:2dF2oFGycQlKNkKlTBRZzw27WZZSWM9J@dpg-d7pu5hm8bjmc73blqp40-a.oregon-postgres.render.com:5432/quick_speech"
+      - key: DB_SCHEMA
+        sync: false
+        value: "csbaby"
