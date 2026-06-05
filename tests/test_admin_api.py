@@ -14,8 +14,11 @@ def admin_client():
     db_fd, db_path = tempfile.mkstemp(suffix=".db")
     os.close(db_fd)
 
-    # Set env vars BEFORE importing app (app.py requires JWT_SECRET at import time)
-    os.environ["DATABASE_PATH"] = db_path
+    # Set env vars BEFORE importing app (app.py requires JWT_SECRET at import time).
+    # In tests we point DATABASE_URL at a local SQLite file so the same
+    # SQLAlchemy-based code path is exercised without needing a live PG server.
+    os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
+    os.environ["DATABASE_PATH"] = db_path  # backwards-compat for any legacy reader
     os.environ["JWT_SECRET"] = "test-secret-key"
     os.environ["ADMIN_PHONE"] = "13800138000"
     os.environ["ADMIN_PASSWORD"] = "testadmin123"

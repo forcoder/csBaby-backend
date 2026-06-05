@@ -20,6 +20,7 @@ services:
         value: "admin123"
       - key: PYTHON_VERSION
         value: "3.11"
-      # SQLite database path (using Render persistent disk)
-      - key: DATABASE_PATH
-        value: "/var/data/csBaby.db"
+      # PostgreSQL connection string (configure in Render Dashboard → Environment).
+      # Leave sync: false so the value is not committed to git.
+      - key: DATABASE_URL
+        sync: false
